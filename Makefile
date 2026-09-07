@@ -7,7 +7,8 @@ help:
 	@echo "test         跑全部测试"
 	@echo "lint         代码检查"
 	@echo "preview      浏览器预览 H5（最快，不需要开发者工具）"
-	@echo "shot         截图自检 PAGE=home，改完 UI 必跑"
+	@echo "preview-bg   后台预览，不占终端"
+	@echo "shot         截图自检 PAGE=home，改完 UI 必跑（独立端口）"
 	@echo "codegen      Pydantic → openapi.json → core/types/generated.ts"
 	@echo "check        codegen + lint + test，CI 用"
 
@@ -21,24 +22,42 @@ dev-server:
 dev-miniapp:
 	pnpm --filter @enersight/miniapp dev:weapp
 
+# 端口分工：4173 给人看（常驻），4174 给截图用（每次自起自清）
+PREVIEW_PORT ?= 4173
+SHOT_PORT    ?= 4174
+
 # 页面截图自检：改完 UI 必须跑一遍看结果，不要凭想象交付
 # 用法：make shot PAGE=home
+# 独立端口，不会干掉 make preview 起的常驻服务
 PAGE ?= home
 shot:
 	pnpm --filter @enersight/miniapp build:h5
-	@(cd packages/miniapp/dist/h5 && python3 -m http.server 4173 >/dev/null 2>&1 &) ; sleep 2
+	@(cd packages/miniapp/dist/h5 && python3 -m http.server $(SHOT_PORT) >/dev/null 2>&1 &) ; sleep 2
 	@node packages/miniapp/scripts/screenshot.mjs \
-		"http://127.0.0.1:4173/#/pages/$(PAGE)/index" \
+		"http://127.0.0.1:$(SHOT_PORT)/#/pages/$(PAGE)/index" \
 		"/tmp/enersight-$(PAGE).png" 1500
-	@pkill -f "http.server 4173" 2>/dev/null || true
+	@pkill -f "http.server $(SHOT_PORT)" 2>/dev/null || true
 	@echo "→ /tmp/enersight-$(PAGE).png"
 
 # 浏览器预览：不需要微信开发者工具，也不需要 AppID
+# 前台运行，Ctrl+C 停止
 preview:
 	pnpm --filter @enersight/miniapp build:h5
 	@echo ""
-	@echo "→ http://127.0.0.1:4173   （手机尺寸下看，Chrome 设备模拟 iPhone）"
-	@cd packages/miniapp/dist/h5 && python3 -m http.server 4173
+	@echo "→ http://127.0.0.1:$(PREVIEW_PORT)   （Chrome 设备模拟切 iPhone 尺寸）"
+	@echo ""
+	@cd packages/miniapp/dist/h5 && python3 -m http.server $(PREVIEW_PORT) --bind 127.0.0.1
+
+# 后台常驻预览，不占终端。停止：make preview-stop
+preview-bg:
+	pnpm --filter @enersight/miniapp build:h5
+	@pkill -f "http.server $(PREVIEW_PORT)" 2>/dev/null || true
+	@(cd packages/miniapp/dist/h5 && nohup python3 -m http.server $(PREVIEW_PORT) --bind 127.0.0.1 \
+		> /tmp/enersight-preview.log 2>&1 &) ; sleep 2
+	@echo "→ http://127.0.0.1:$(PREVIEW_PORT)   （后台运行，make preview-stop 停止）"
+
+preview-stop:
+	@pkill -f "http.server $(PREVIEW_PORT)" 2>/dev/null && echo "已停止" || echo "没有在运行" 
 
 test:
 	pnpm -r test

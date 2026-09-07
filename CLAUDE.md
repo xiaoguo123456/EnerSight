@@ -147,8 +147,9 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 
 ```bash
 # 看页面效果
-make preview                         # 浏览器预览 H5，不需要开发者工具与 AppID
-make shot PAGE=home                  # ★ 截图自检，改完 UI 必跑
+make preview-bg                      # 后台预览 → http://127.0.0.1:4173
+make preview-stop                    # 停掉后台预览
+make shot PAGE=home                  # ★ 截图自检 → /tmp/enersight-home.png，改完 UI 必跑
 
 # 小程序
 pnpm --filter @enersight/miniapp dev:weapp    # watch，产物 dist/weapp/
