@@ -143,7 +143,7 @@
 | 状态 | 颜色 | 应用 |
 | --- | --- | --- |
 | 运行正常 | Energy Green | 站点状态点、状态徽章 |
-| 设备待机 | Primary Blue | 储能站点等 |
+| 设备待机 | Primary Blue | 未发电但设备正常 |
 | 设备异常 | Danger Red | 告警站点 |
 | 轻度风险 | Energy Green | 预警筛选、等级徽章 |
 | 中度风险 | Warning Orange | 预警筛选、等级徽章 |
