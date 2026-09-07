@@ -112,7 +112,7 @@ core    ──→ 不依赖任何端
 | 模块 | 内容 | 对应文档 |
 | --- | --- | --- |
 | `types/` | Station、Weather、Layer、Alert、AIReport 等模型 | 04 |
-| `api/` | 请求封装、错误处理、重试；平台差异通过注入 adapter 隔离 | 06 |
+| `api/` | 请求封装、错误处理、重试；平台差异通过注入 adapter 隔离 | [06](./06-api-contract.md) |
 | `metrics/` | 环境指数、发电估算、环比、等效小时、CO₂、收益 | 07 |
 | `format/` | kW/MW 与 kWh/GWh 进位、千分位、经纬度、时区 | 02、04 |
 
@@ -572,6 +572,6 @@ BFF 需部署在**境内**并完成 ICP 备案，否则小程序无法配置为�
 | 文档 | 关系 |
 | --- | --- |
 | [04 数据说明](./04-data-specification.md) | `core/types`、`server/providers` 的依据 |
-| 06 API 接口契约（待写） | `core/api`、`server/routes` 的依据 |
+| [06 API 接口契约](./06-api-contract.md) | `core/api`、`server/routes` 的依据 |
 | [07 指标计算规则](./07-metrics.md) | `core/metrics` 的依据 |
 | [08 AI 分析设计](./08-ai-design.md) | `server/ai` 的依据 |

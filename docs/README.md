@@ -15,7 +15,7 @@
 | [03 组件库规范 · Component Library](./03-component-library.md) | 基础 / 数据 / 地图 / 业务组件共 37 个，附组件与页面对照表 |
 | [04 数据说明文档 · Data Specification](./04-data-specification.md) | 数据体系、气象 / 卫星数据、地图图层规格、站点运行指标、预警与 AI 分析字段、单位约定 |
 | [05 技术架构 · Architecture](./05-architecture.md) | 技术选型、跨端策略、monorepo 结构、BFF 职责、地图图层方案、技术风险 |
-| 06 API 接口契约 | *待写 —— 架构确认后补* |
+| [06 API 接口契约 · API Contract](./06-api-contract.md) | 16 个接口定义、坐标系与单位约定、公共类型、错误码、前端调用约定 |
 | [07 指标计算规则 · Metrics](./07-metrics.md) | 新能源环境指数算法、发电估算、环比、短临外推、预警阈值、参数配置清单 |
 | [08 AI 分析设计 · AI Design](./08-ai-design.md) | AI 三类输出、模型选型与合规、调用时机与缓存、结构化输出、降级、成本估算 |
 | 09 小程序合规清单 | *待写* |
