@@ -1,0 +1,76 @@
+// 设计 token —— 唯一来源是 docs/02-design-system.md
+// 改动前先改文档。所有页面与组件只用变量，禁止硬编码色值与尺寸。
+//
+// 注意两点：
+// 1. 挂在 page 上而非 :root —— 小程序没有 :root，写了不生效
+// 2. 本文件只由 global.scss 引入一次，产出到 app.wxss 全局生效。
+//    不要放进 config 的 sass.resource，否则每个页面的 wxss 都会重复带一份
+
+page {
+  // ── 主色 ──────────────────────────────────
+  --color-primary: #1677ff; // 主按钮、激活态、图表主色
+  --color-energy:  #16a34a; // 新能源、正常状态、环境指数
+  --color-warning: #f59e0b; // 风险提醒、中度风险
+  --color-danger:  #ef4444; // 严重告警、重度风险
+  --color-bg:      #f5f9fc;
+
+  // ── 辅助色 ────────────────────────────────
+  --color-purple:  #8b5cf6; // AI 分析报告
+  --color-cyan:    #06b6d4; // 站点管理
+  --color-surface: #ffffff; // 卡片底
+  --color-divider: #eff3f7;
+
+  // ── 中性色 ────────────────────────────────
+  --color-text:      #1f2937; // 标题、数值
+  --color-text-sub:  #6b7280; // 描述、副标题
+  --color-text-weak: #9ca3af; // 时间戳、单位、占位符
+
+  // ── 状态色 ────────────────────────────────
+  --color-status-normal:  var(--color-energy);
+  --color-status-standby: var(--color-primary);
+  --color-status-fault:   var(--color-danger);
+
+  // 风险等级
+  --color-risk-minor:    var(--color-energy);
+  --color-risk-moderate: var(--color-warning);
+  --color-risk-severe:   var(--color-danger);
+
+  // 环比：上升红、下降绿。表示变化方向不是好坏，不要反转
+  --color-delta-up:   var(--color-danger);
+  --color-delta-down: var(--color-energy);
+
+  // ── 间距 ──────────────────────────────────
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --space-page:      var(--space-4); // 页面边距
+  --space-card-gap:  var(--space-3); // 卡片间距
+  --space-card-pad:  var(--space-4); // 卡片内边距
+  --space-grid-gap:  var(--space-2); // 四宫格单元间距
+  --space-tabbar:    var(--space-6); // 底部导航上方安全间距
+
+  // ── 圆角 ──────────────────────────────────
+  --radius-card:   16px;
+  --radius-module: 24px;
+  --radius-button: 16px;
+  --radius-thumb:  12px;
+  --radius-pill:   999px; // 筛选 Tab、状态徽章、悬浮按钮
+
+  // ── 字号 ──────────────────────────────────
+  --font-page-title:   32px;
+  --font-module-title: 20px;
+  --font-metric:       36px; // 数据数字 32–40
+  --font-metric-lg:    40px;
+  --font-body:         16px;
+  --font-unit:         16px;
+  --font-caption:      13px;
+
+  // ── 阴影 ──────────────────────────────────
+  // 浅色底上的卡片靠留白分层，不叠重阴影。地图浮层才需要
+  --shadow-float: 0 2px 8px rgba(31, 41, 55, 0.08);
+  --shadow-panel: 0 -2px 16px rgba(31, 41, 55, 0.10);
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // hoisted node_modules 会把所有 @types 拉进隐式作用域，显式收敛
+    "types": []
+  },
+  "include": ["src"]
+}

@@ -32,3 +32,11 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# 生成产物
+packages/server/openapi.json
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

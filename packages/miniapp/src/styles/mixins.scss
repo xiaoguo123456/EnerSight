@@ -1,0 +1,37 @@
+// 复用的样式片段
+
+// 卡片：白底 + 圆角 + 内边距，无阴影（docs/02 §六）
+@mixin card {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  padding: var(--space-card-pad);
+}
+
+// 数值 + 单位：单位字号约为数值的 40%，颜色降一级（docs/02 §三）
+@mixin metric-value {
+  font-size: var(--font-metric);
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.1;
+}
+
+@mixin metric-unit {
+  font-size: var(--font-unit);
+  font-weight: 400;
+  color: var(--color-text-sub);
+  margin-left: 4px;
+}
+
+// 单行省略
+@mixin ellipsis($lines: 1) {
+  @if $lines == 1 {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  } @else {
+    display: -webkit-box;
+    -webkit-line-clamp: $lines;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}

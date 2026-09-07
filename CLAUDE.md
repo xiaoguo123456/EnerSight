@@ -164,15 +164,44 @@ make codegen                         # openapi.json → core/types/
 - 文档与代码同批提交，不要让文档滞后
 
 
+## 已知的环境坑
+
+搭脚手架时踩到的，都已修复，记下来免得再踩：
+
+| 坑 | 处理 |
+| --- | --- |
+| Taro 插件与 babel preset 用 require 解析未声明的同级依赖 | `.npmrc` 设 `node-linker=hoisted`；`babel-preset-taro` 还需手动装 `@babel/plugin-proposal-class-properties` |
+| Taro 4.0.9 的 peer 是 vite@4 / @vitejs/plugin-react@4 / @babel/core@7 | 版本已 pin，升级前先确认 Taro 的 peer |
+| 小程序没有 `:root` | CSS 变量挂在 `page` 选择器上 |
+| `sass.resource` 会注入到每个 scss | 只放 mixin（无 CSS 输出）；token 由 `global.scss` 引入一次进 app.wxss |
+| hoisted 布局把所有 `@types` 拉进隐式作用域 | 两个 tsconfig 都显式写了 `types` |
+| `designWidth` 决定 px→rpx 比例 | 取 375（02 的字号是 375pt 基准标注）；换基准改 config，不要改 token 数值 |
+
 ## 当前状态
 
-**文档齐了，代码未起，有两类事情卡在前面。**
+**脚手架已跑通，`make check` 全绿。**
 
-### 阻塞项：地图 spike 未做
+已完成：
+- monorepo（pnpm workspace + uv），`make` 任务入口
+- `core/format` 单位进位与千分位，19 个测试
+- `core/api` client：401 重登重试、502 与网络错误重试、坐标系参数注入
+- 小程序：7 个页面骨架、设计 token、Taro API adapter、两个 Zustand store，构建产物正常
+- BFF：FastAPI + Open-Meteo provider + 错误码体系
+- `server/app/metrics`：pvlib 出力模型与环境指数，19 个测试
+- codegen 链路：Pydantic → openapi.json → `core/types/generated.ts`，已接入 `make check`
 
-[05 §6.7](docs/05-architecture.md) 列了 7 项验证，整套地图方案建立在其上。
-其中第 6 项（Himawari 数据通道）决定卫星云图功能是否成立，应第一天确认。
-spike 结论出来前不要大规模写地图页代码。
+### 下一步
+
+**阻塞项：地图 spike 未做。** [05 §6.7](docs/05-architecture.md) 列了 7 项验证，
+整套地图方案建立在其上。第 6 项（Himawari 数据通道）决定卫星云图功能是否成立，
+应第一天确认。spike 结论前不要写地图页业务代码。
+
+**前置项：合规办理周期最长**，见 [09 §九](docs/09-miniapp-compliance.md)。
+
+不依赖以上、可以直接做的：
+- `docs/06` 的接口逐个落地（先 stations 与 home）
+- `docs/03` 的非地图组件（Badge、MetricCard、SegmentedTabs 等）
+- 按 [07 §八](docs/07-metrics.md) 拉历史气象校准指数分档
 
 ### 环境指数：物理出力比，不是加权评分
 
@@ -189,11 +218,4 @@ spike 结论出来前不要大规模写地图页代码。
 
 ### 待产品确认（5 项）
 
-见 [docs/README.md](docs/README.md) 末尾。都不阻塞脚手架与 core 层开发。
-
-### 可以立即开始（不依赖以上）
-
-- 合规前置项办理 —— 周期最长，见 [09 §九](docs/09-miniapp-compliance.md)
-- 工程脚手架、`core/format`、设计 token
-- BFF 骨架 + Open-Meteo 接入 + `app/metrics/`（pvlib）
-- 非地图页面的静态组件
+见 [docs/README.md](docs/README.md) 末尾。都不阻塞当前开发。
