@@ -1,0 +1,24 @@
+// 用 sticky 而非 fixed：fixed 相对视口定位，H5 下会被 tabBar 盖住；
+// sticky 相对滚动容器（.taro_page，高度已排除 tabBar），两端表现一致。
+.fab-wrap {
+  position: sticky;
+  bottom: 12px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  margin-top: 4px;
+}
+
+.fab {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 22px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  box-shadow: 0 4px 14px rgba(22, 119, 255, .32);
+
+  &__text { font-size: 14px; font-weight: 600; color: #fff; }
+}

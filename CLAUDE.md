@@ -200,9 +200,11 @@ make codegen                         # openapi.json → core/types/
 - `core/format` 单位进位与千分位，19 个测试
 - `core/api` client：401 重登重试、502 与网络错误重试、坐标系参数注入
 - 小程序：7 个页面骨架、设计 token、Taro API adapter、两个 Zustand store
-- 首页已按设计稿实现（mock 数据），11 个组件：AppHeader / StationSelector /
-  EnergyScoreCard / MetricGrid / MetricCard / TrendDelta / StatusBadge /
-  SectionHeader / AlertBanner / QuickEntryGrid
+- **7 个页面全部实现**（mock 数据）：首页 / 地图 / 预警 / 站点 / 站点详情 /
+  AI报告 / 我的
+- **24 个组件**，全部按 docs/02、docs/03 落地，只用设计 token
+- `TrendChart` Canvas 2D 自绘：折线 + 面积渐变、空心数据点、
+  选中态纵向虚线与悬浮气泡、缺测断线不补 0
 - 两端构建产物正常：`dist/weapp/`（开发者工具导入）与 `dist/h5/`（浏览器预览）
 - BFF：FastAPI + Open-Meteo provider + 错误码体系
 - `server/app/metrics`：pvlib 出力模型与环境指数，19 个测试

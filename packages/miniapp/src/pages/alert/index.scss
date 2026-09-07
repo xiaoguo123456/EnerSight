@@ -1,5 +1,18 @@
-.page {
+.alerts {
   min-height: 100vh;
-  padding: var(--space-page);
-  padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  background: var(--color-bg);
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-card-gap);
+    padding: var(--space-page);
+    padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  }
+
+  &__card {
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    padding: 14px;
+  }
 }

@@ -1,0 +1,37 @@
+.alert-card {
+  padding: 14px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+
+  &--minor    { background: linear-gradient(120deg, #fff8ea 0%, #fffdf7 100%); }
+  &--moderate { background: linear-gradient(120deg, #fff4e8 0%, #fffbf6 100%); }
+  &--severe   { background: linear-gradient(120deg, #fef0f0 0%, #fffafa 100%); }
+  &--cleared  { background: linear-gradient(120deg, #eef9f2 0%, #fbfdfc 100%); }
+
+  &__head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  &__icon {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+
+    &--minor    { background: rgba(245, 158, 11, .14); }
+    &--moderate { background: rgba(249, 115, 22, .14); }
+    &--severe   { background: rgba(239, 68, 68, .12); }
+    &--cleared  { background: rgba(22, 163, 74, .12); }
+  }
+  &__spacer { flex: 1; }
+  &__time { font-size: 10px; color: var(--color-text-weak); }
+
+  &__title {
+    display: block;
+    font-size: 14px; font-weight: 600; line-height: 1.4;
+    color: var(--color-text);
+    margin-bottom: 5px;
+  }
+  &__desc {
+    display: block;
+    font-size: 12px; line-height: 1.6;
+    color: var(--color-text-sub);
+  }
+}

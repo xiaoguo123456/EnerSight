@@ -1,0 +1,22 @@
+.map-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  width: 176px;
+  padding: 8px 10px;
+  border-radius: var(--radius-thumb);
+  background: rgba(255, 255, 255, .92);
+  box-shadow: var(--shadow-float);
+
+  &__title { font-size: 10px; color: var(--color-text-sub); }
+  &__bar {
+    height: 6px;
+    margin: 5px 0 3px;
+    border-radius: 3px;
+  }
+  &__scale {
+    display: flex;
+    justify-content: space-between;
+  }
+  &__tick { font-size: 8px; color: var(--color-text-weak); }
+}

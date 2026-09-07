@@ -6,7 +6,7 @@ import {
 import { useState } from 'react'
 import {
   AlertBanner, AppHeader, EnergyScoreCard, MetricCard, MetricGrid,
-  QuickEntryGrid, SectionHeader, SegmentedTabs, StationSelector,
+  QuickEntryGrid, SectionHeader, SegmentedTabs, StationSelector, TrendChart,
 } from '@/components'
 import type { QuickEntry } from '@/components'
 import { mockHome } from '@/mocks/home'
@@ -26,11 +26,13 @@ const TREND_TABS = [
   { value: 'radiation', label: '辐射（W/m²）' },
   { value: 'wind_speed', label: '风速（m/s）' },
   { value: 'cloud_cover', label: '云量（%）' },
-]
+] as const
+
+type TrendKey = (typeof TREND_TABS)[number]['value']
 
 export default function Home() {
   const { station, index, weather, alert } = mockHome
-  const [trend, setTrend] = useState('radiation')
+  const [trend, setTrend] = useState<TrendKey>('radiation')
 
   return (
     <View className="home">
@@ -77,12 +79,12 @@ export default function Home() {
             icon="trendingUp" title="24小时趋势" action="查看更多"
           />
           <SegmentedTabs
-            options={TREND_TABS}
+            options={TREND_TABS as unknown as { value: string; label: string }[]}
             value={trend}
-            onChange={setTrend}
+            onChange={(v) => setTrend(v as TrendKey)}
           />
-          <View className="home__chart-placeholder">
-            趋势图待实现（Canvas 2D 自绘）
+          <View className="home__chart">
+            <TrendChart id="home-trend" data={mockHome.trends[trend]} />
           </View>
         </View>
 

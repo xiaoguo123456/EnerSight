@@ -1,0 +1,26 @@
+.summary-grid {
+  display: flex;
+  gap: 6px;
+
+  &__cell {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 10px 6px;
+    border-radius: var(--radius-thumb);
+    background: var(--color-bg);
+  }
+  &__icon {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+
+    &--energy  { background: rgba(22, 163, 74, .12); }
+    &--primary { background: rgba(22, 119, 255, .12); }
+    &--purple  { background: rgba(139, 92, 246, .12); }
+    &--warning { background: rgba(245, 158, 11, .14); }
+  }
+  &__label { font-size: 10px; color: var(--color-text-sub); @include ellipsis; }
+  &__value { display: flex; align-items: baseline; }
+  &__num { font-size: 16px; font-weight: 700; color: var(--color-text); }
+  &__unit { font-size: 9px; color: var(--color-text-sub); margin-left: 2px; }
+}

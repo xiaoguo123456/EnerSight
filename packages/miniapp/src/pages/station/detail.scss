@@ -1,5 +1,61 @@
-.page {
+.detail {
   min-height: 100vh;
-  padding: var(--space-page);
-  padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  background: var(--color-bg);
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-card-gap);
+    padding: var(--space-page);
+    padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  }
+
+  &__card {
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    padding: 14px;
+
+    // MetricGrid 自带卡片样式，嵌套时去掉内层的底与内边距
+    .metric-grid { padding: 0; background: transparent; }
+    .quick-entry { padding: 0; }
+  }
+
+  &__station {
+    display: flex; gap: 10px;
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    padding: 14px;
+  }
+  &__thumb {
+    width: 48px; height: 48px;
+    border-radius: var(--radius-thumb);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+
+    &--solar { background: linear-gradient(135deg, #ffc978, #f59e0b); }
+    &--wind  { background: linear-gradient(135deg, #7fc4f5, #1677ff); }
+  }
+  &__station-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  &__station-row { display: flex; align-items: center; gap: 6px; }
+  &__station-name { font-size: 16px; font-weight: 700; color: var(--color-text); }
+  &__station-addr { display: flex; align-items: center; gap: 3px; min-width: 0; }
+  &__station-addr-text {
+    font-size: 10.5px; color: var(--color-text-sub);
+    @include ellipsis;
+  }
+  &__station-spec { display: flex; align-items: center; gap: 4px; }
+  &__spec-text { font-size: 11px; color: var(--color-text-sub); }
+  &__spec-divider {
+    width: 1px; height: 10px;
+    background: var(--color-divider);
+    margin: 0 4px;
+  }
+
+  &__weather-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    .section-header { margin-bottom: 10px; }
+  }
+  &__updated { font-size: 10px; color: var(--color-text-weak); }
+
+  &__chart { margin-top: 10px; }
 }

@@ -1,5 +1,105 @@
-.page {
+.map-page {
   min-height: 100vh;
-  padding: var(--space-page);
-  padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+
+  &__search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 var(--space-page) 10px;
+    padding: 8px;
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+  &__station { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  &__station-thumb {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ffc978, #f59e0b);
+    display: flex; align-items: center; justify-content: center;
+  }
+  &__station-text { display: flex; flex-direction: column; max-width: 84px; }
+  &__station-name {
+    font-size: 12px; font-weight: 700; color: var(--color-text);
+    @include ellipsis;
+  }
+  &__station-addr {
+    font-size: 9px; color: var(--color-text-weak);
+    @include ellipsis;
+  }
+
+  &__input {
+    flex: 1; min-width: 0;
+    display: flex; align-items: center; gap: 5px;
+    height: 32px; padding: 0 10px;
+    border-radius: var(--radius-pill);
+    background: var(--color-bg);
+  }
+  &__input-el { flex: 1; min-width: 0; font-size: 12px; color: var(--color-text); }
+  &__ph { color: var(--color-text-weak); font-size: 12px; }
+
+  &__canvas {
+    position: relative;
+    height: 46vh;
+    min-height: 300px;
+    margin: 0 var(--space-page);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  &__map { width: 100%; height: 100%; }
+
+  &__tools {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    width: 34px;
+  }
+  &__tool {
+    width: 34px; height: 34px;
+    margin-top: 6px;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: var(--shadow-float);
+  }
+  &__tool-icon {
+    width: 16px; height: 16px;
+    margin: 9px;
+    display: block;
+    :global(img) { width: 100%; height: 100%; }
+  }
+
+  &__sheet {
+    margin: 10px var(--space-page) 0;
+    padding: 8px 14px 14px;
+    border-radius: var(--radius-module) var(--radius-module) 0 0;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+    flex: 1;
+    padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+
+    .metric-grid { padding: 12px 0 0; background: transparent; }
+  }
+  &__handle {
+    width: 36px; height: 4px;
+    margin: 0 auto 10px;
+    border-radius: 2px;
+    background: var(--color-divider);
+  }
+  &__sheet-head { display: flex; align-items: center; gap: 5px; }
+  &__sheet-name { font-size: 15px; font-weight: 700; color: var(--color-text); }
+
+  &__hint {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius-thumb);
+    background: var(--color-bg);
+  }
+  &__hint-text {
+    flex: 1; min-width: 0;
+    font-size: 11.5px; color: var(--color-text-sub);
+    @include ellipsis;
+  }
 }

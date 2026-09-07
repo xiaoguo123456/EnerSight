@@ -1,5 +1,93 @@
-.page {
+.report {
   min-height: 100vh;
-  padding: var(--space-page);
-  padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  background: var(--color-bg);
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-card-gap);
+    padding: var(--space-page);
+    padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  }
+
+  &__card {
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    padding: 14px;
+  }
+
+  // ── 报告元信息 ──
+  &__meta {
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    padding: 14px;
+  }
+  &__station { display: flex; align-items: center; gap: 10px; }
+  &__thumb {
+    width: 38px; height: 38px;
+    border-radius: var(--radius-thumb);
+    background: linear-gradient(135deg, #ffc978, #f59e0b);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  &__station-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  &__station-name { font-size: 15px; font-weight: 700; color: var(--color-text); }
+  &__station-addr { display: flex; align-items: center; gap: 3px; min-width: 0; }
+  &__station-addr-text {
+    font-size: 10px; color: var(--color-text-sub);
+    @include ellipsis;
+  }
+  &__dates {
+    display: flex; flex-direction: column; gap: 2px;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--color-divider);
+  }
+  &__date { font-size: 10.5px; color: var(--color-text-weak); }
+
+  // ── 综合判断 ──
+  &__verdict {
+    padding: 14px;
+    border-radius: var(--radius-module);
+    background: linear-gradient(115deg, #e8f7ee 0%, #f1faf4 60%, #e4f4ec 100%);
+  }
+  &__verdict-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+  &__verdict-label { font-size: 13px; font-weight: 600; color: var(--color-text); }
+  &__verdict-title {
+    display: block;
+    font-size: 17px; font-weight: 700; line-height: 1.4;
+    color: var(--color-energy);
+    margin-bottom: 6px;
+  }
+  &__verdict-detail {
+    display: block;
+    font-size: 12px; line-height: 1.6;
+    color: var(--color-text-sub);
+  }
+
+  // ── 风险提醒 ──
+  &__risk {
+    padding: 14px;
+    border-radius: var(--radius-card);
+    background: linear-gradient(120deg, #fff8ea 0%, #fffdf7 100%);
+  }
+  &__risk-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  &__risk-label {
+    flex: 1;
+    font-size: 15px; font-weight: 600; color: var(--color-warning);
+  }
+  &__risk-more {
+    display: flex; align-items: center; gap: 2px;
+    font-size: 12px; color: var(--color-text-sub);
+  }
+  &__risk-title {
+    display: block;
+    font-size: 14px; font-weight: 600; line-height: 1.4;
+    color: var(--color-text);
+    margin-bottom: 5px;
+  }
+  &__risk-detail {
+    display: block;
+    font-size: 12px; line-height: 1.6;
+    color: var(--color-text-sub);
+  }
 }

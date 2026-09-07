@@ -1,3 +1,3 @@
 export default definePageConfig({
-  navigationBarTitleText: '预警中心',
+  navigationStyle: 'custom',
 })

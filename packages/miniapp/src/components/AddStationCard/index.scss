@@ -1,0 +1,45 @@
+.add-station {
+  padding: 14px;
+  border-radius: var(--radius-card);
+  // 浅绿渐变 + 右侧地图插画（插画待素材）。docs/02 §二
+  background: linear-gradient(115deg, #eaf7f0 0%, #f4fbf7 100%);
+
+  &__head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  &__plus {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(22, 119, 255, .1);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  &__text { display: flex; flex-direction: column; gap: 1px; }
+  &__title { font-size: 15px; font-weight: 700; color: var(--color-text); }
+  &__sub { font-size: 11px; color: var(--color-text-sub); }
+
+  &__ways { display: flex; gap: 8px; }
+  &__way {
+    flex: 1; min-width: 0;
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 8px;
+    border-radius: var(--radius-thumb);
+    background: var(--color-surface);
+  }
+  &__way-icon {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+
+    &--blue  { background: rgba(22, 119, 255, .1); }
+    &--green { background: rgba(22, 163, 74, .1); }
+  }
+  &__way-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  &__way-title {
+    font-size: 12px; font-weight: 600; color: var(--color-text);
+    @include ellipsis;
+  }
+  &__way-sub {
+    font-size: 10px; color: var(--color-text-weak);
+    @include ellipsis;
+  }
+}

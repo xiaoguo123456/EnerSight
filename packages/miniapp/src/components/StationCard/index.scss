@@ -1,0 +1,56 @@
+.station-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  padding: 14px;
+
+  &__head { display: flex; gap: 10px; }
+
+  &__thumb {
+    width: 44px; height: 44px;
+    border-radius: var(--radius-thumb);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+
+    &--solar { background: linear-gradient(135deg, #ffc978, #f59e0b); }
+    &--wind  { background: linear-gradient(135deg, #7fc4f5, #1677ff); }
+  }
+
+  &__info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  &__row { display: flex; align-items: center; gap: 3px; }
+  &__spacer { flex: 1; }
+  &__name {
+    font-size: 15px; font-weight: 700; color: var(--color-text);
+    @include ellipsis;
+  }
+  &__more { padding: 2px; }
+  &__cap { font-size: 12px; color: var(--color-text-sub); }
+
+  &__addr { display: flex; align-items: center; gap: 3px; min-width: 0; }
+  &__addr-text {
+    font-size: 10.5px; color: var(--color-text-sub);
+    @include ellipsis;
+  }
+
+  &__grid {
+    display: flex;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-divider);
+  }
+  &__cell {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 0 5px;
+
+    & + & { border-left: 1px solid var(--color-divider); }
+  }
+  &__cell-head { display: flex; align-items: center; gap: 3px; }
+  &__cell-label {
+    font-size: 10px; color: var(--color-text-sub);
+    @include ellipsis;
+  }
+  &__cell-value { display: flex; align-items: baseline; }
+  &__cell-num { font-size: 15px; font-weight: 700; color: var(--color-text); }
+  &__cell-unit { font-size: 9px; color: var(--color-text-sub); margin-left: 2px; }
+  &__cell-empty { font-size: 15px; color: var(--color-text-weak); }
+}

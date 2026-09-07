@@ -3,10 +3,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 52px var(--space-page) 32px;
-  // 氛围背景：山景 + 光伏板实景图，自右向左淡出至背景色。
-  // 实景图待设计出图，暂用渐变占位
-  background: linear-gradient(120deg, #eaf4fb 0%, #dcefe4 55%, #cfe8dd 100%);
+  padding: 52px var(--space-page) 16px;
+  background: var(--color-bg);
 
   &__brand {
     display: flex;

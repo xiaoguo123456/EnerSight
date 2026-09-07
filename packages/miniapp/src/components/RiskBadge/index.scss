@@ -1,0 +1,16 @@
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+  flex-shrink: 0;
+
+  // 配色见 docs/02 §二状态色
+  &--minor    { background: rgba(245, 158, 11, .12); color: #b45309; }
+  &--moderate { background: rgba(249, 115, 22, .14); color: #c2410c; }
+  &--severe   { background: rgba(239, 68, 68, .12);  color: var(--color-danger); }
+  &--cleared  { background: rgba(22, 163, 74, .12);  color: var(--color-energy); }
+}
