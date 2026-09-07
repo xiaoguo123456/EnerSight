@@ -1,0 +1,344 @@
+# 05 技术架构 · Architecture
+
+> EnerSight AI 新能源气象遥感分析平台 · 文档包 V1.0
+>
+> 端演进路径：**微信小程序（V1）→ App（V2）**
+
+
+## 一、选型结论
+
+
+| 层 | 选型 | 说明 |
+| --- | --- | --- |
+| 小程序框架 | Taro 4 | 基于 Vite，编译到微信小程序 |
+| UI 框架 | React 18 + TypeScript | 严格模式 |
+| 状态管理 | Zustand | 纯 TS、无平台依赖，可下沉到 core 层 |
+| 样式 | Sass + CSS 变量 | 设计 token 用 CSS 变量，跨端一致 |
+| 图表 | Canvas 2D 自绘或 F2 | 见 6.2 |
+| 地图 | 微信 `<map>` + 服务端渲染贴图 | 见第六章，架构核心 |
+| 包管理 | pnpm workspace | monorepo |
+| BFF | Node.js + TypeScript | 与前端共用类型定义 |
+
+
+选型依据：
+
+React 生态成熟、类型体系完善；组件全部自研（37 个，见 03），
+不依赖跨端 UI 库，因此跨端框架最大的坑（组件库不兼容）在本项目不存在。
+
+
+> 若团队主力是 Vue，改用 uni-app + Vue 3 同样成立，
+> 本文档除框架名外的所有架构决策均不受影响。
+
+
+---
+
+## 二、跨端策略
+
+
+### 2.1 一个必须先说清楚的判断
+
+**不要指望一套代码直接编译出 App。**
+
+Taro RN、uni-app nvue 在重图表、重地图场景都会掉链子。
+把 App 押在「编译一下就有了」上，是本项目最大的隐性风险。
+
+
+### 2.2 真正能兑现的复用：逻辑层
+
+```
+复用      packages/core     纯 TS，零 UI 依赖
+                            类型定义、API client、指标计算、格式化
+                            ↑ 小程序与 App 100% 共用
+
+不复用    UI 层             各端各写
+                            小程序用 Taro，App 用 RN 或 Flutter
+```
+
+按代码量估算，core 层能占到 30–40%，且是最容易出 bug、最需要一致性的部分
+（指标计算口径、单位换算、环比规则）。UI 层重写的成本远低于跨端框架失控的成本。
+
+
+### 2.3 演进路径
+
+| 阶段 | 端 | 做法 |
+| --- | --- | --- |
+| V1 | 微信小程序 | Taro 编译，core 同步建立 |
+| V2 | App | UI 用 RN 重写，直接依赖 core |
+| 可选 | H5 | Taro 同源编译，成本最低 |
+
+
+---
+
+## 三、工程结构
+
+```
+EnerSight/
+├── docs/                   文档包
+├── packages/
+│   ├── ui/                 设计稿
+│   ├── core/               ★ 跨端复用层（纯 TS）
+│   │   ├── types/          数据模型，与 04 文档对应
+│   │   ├── api/            API client，与 06 契约对应
+│   │   ├── metrics/        指标计算，与 07 文档对应
+│   │   └── format/         单位换算、千分位、时间格式化
+│   ├── miniapp/            Taro 微信小程序
+│   │   ├── src/pages/      6 个页面
+│   │   ├── src/components/ 37 个组件，与 03 文档对应
+│   │   ├── src/store/      Zustand
+│   │   └── src/styles/     设计 token，与 02 文档对应
+│   └── server/             BFF
+│       ├── src/routes/     对外接口
+│       ├── src/providers/  Open-Meteo / Himawari 适配
+│       ├── src/render/     ★ 图层图片渲染
+│       ├── src/ai/         AI 编排，与 08 文档对应
+│       └── src/jobs/       定时任务
+└── pnpm-workspace.yaml
+```
+
+依赖方向严格单向：
+
+```
+miniapp ──→ core
+server  ──→ core
+core    ──→ 不依赖任何端
+```
+
+
+---
+
+## 四、packages/core 职责
+
+
+| 模块 | 内容 | 对应文档 |
+| --- | --- | --- |
+| `types/` | Station、Weather、Layer、Alert、AIReport 等模型 | 04 |
+| `api/` | 请求封装、错误处理、重试；平台差异通过注入 adapter 隔离 | 06 |
+| `metrics/` | 环境指数、发电估算、环比、等效小时、CO₂、收益 | 07 |
+| `format/` | kW/MW 与 kWh/GWh 进位、千分位、经纬度、时区 | 02、04 |
+
+
+**平台差异隔离**：core 不直接调用 `Taro.request` 或 `fetch`，
+由各端注入一个 `HttpAdapter`：
+
+```ts
+// core
+export interface HttpAdapter {
+  request<T>(opts: RequestOptions): Promise<T>
+}
+
+// miniapp 注入 Taro.request
+// app 注入 fetch
+// server 注入 undici
+```
+
+指标计算放在 core 而非只放服务端的理由：
+端上要做乐观计算与离线展示，且两端口径必须一致 —— 同一份代码是唯一可靠的保证。
+
+
+---
+
+## 五、BFF 是必需的
+
+
+不是可选项，四个硬理由：
+
+| # | 理由 |
+| --- | --- |
+| 1 | 小程序 `request` 合法域名必须 HTTPS + ICP 备案，且有数量上限。直连 Open-Meteo / Himawari 走不通 |
+| 2 | 图层需要服务端渲染成图片（见第六章） |
+| 3 | AI 的 API Key 不能下发到前端 |
+| 4 | 环比要存昨日数据；Himawari 10 分钟一帧应全用户共享缓存，不能每端各拉一次 |
+
+
+### BFF 职责
+
+```
+对外：一个域名，收敛所有第三方依赖
+
+├── 数据聚合    Open-Meteo 多字段合并为一次响应
+├── 缓存        网格级缓存，相邻站点命中同一份
+├── 图层渲染    气象网格 / 卫星影像 → PNG
+├── 指标计算    复用 core/metrics
+├── AI 编排     见 08 文档
+└── 定时任务    预生成报告、扫描预警、拉取云图
+```
+
+
+### 缓存策略
+
+| 数据 | TTL | 缓存键 |
+| --- | --- | --- |
+| 实时天气 | 10 分钟 | 0.1° 网格 |
+| 小时预报 | 1 小时 | 0.1° 网格 |
+| 卫星云图帧 | 10 分钟 | 全局 + 时间戳 |
+| 图层渲染图 | 与数据源同步 | 图层 + bbox + zoom |
+| 环境指数 | 1 小时 | 站点 ID |
+| AI 一句话结论 | 1 小时 | 0.25° 网格（见 08） |
+| AI 完整报告 | 1 天 | 站点 ID + 日期 |
+
+按网格而非按站点缓存是成本关键：气象数据本就是网格化的，
+1000 个站点可能只落在 100 个网格里，缓存命中率相差一个数量级。
+
+
+---
+
+## 六、地图图层方案（架构核心）
+
+
+### 6.1 问题
+
+设计稿要求 5 个自定义数据图层 + 风场流线动画 + 色阶图例。
+
+微信小程序的 `<map>` 是**原生组件**，能力与 MapLibre 这类 Web 地图库差距很大：
+提供 marker / polyline / polygon / circle / ground-overlay / 个性化样式，
+**没有自定义瓦片图层与 WebGL 渲染管线**。
+
+设计稿里的白色流线粒子动画，在小程序原生 map 上做不出来。
+
+
+### 6.2 方案：服务端渲染，客户端贴图
+
+```
+服务端
+
+  Open-Meteo 网格 / Himawari 影像
+        ↓  按 bbox + zoom 渲染色阶、流线
+      PNG
+        ↓
+客户端
+
+  <map> + ground-overlay 贴图
+        + marker（站点）
+        + cover-view（图例、控件）
+```
+
+
+代价与收益：
+
+| | |
+| --- | --- |
+| 代价 | 需要服务端渲染能力；风场动画降级为多帧轮播；缩放时有重取延迟 |
+| 收益 | 小程序 / App / H5 三端表现完全一致，不赌任何一端的地图能力；客户端逻辑极简 |
+
+
+### 6.3 各图层落地方式
+
+| 图层 | 落地 |
+| --- | --- |
+| 云图 | Himawari 影像裁剪 → PNG → ground-overlay |
+| 温度 | 网格插值 → 色阶填充 PNG |
+| 辐射 | 网格插值 → 色阶填充 PNG |
+| 风场 | 服务端预渲染 8–12 帧流线 PNG，客户端轮播 |
+| 站点 | 原生 marker，不走贴图 |
+
+
+### 6.4 必须先做的验证（第 1 周）
+
+这套方案的每一条都要用 demo 打穿，不能靠文档假设：
+
+| # | 验证项 | 判定标准 |
+| --- | --- | --- |
+| 1 | `ground-overlay` 缩放/拖动时贴合精度 | 边界不错位 |
+| 2 | 贴图更新频率与内存 | 轮播 12 帧不卡顿不 OOM |
+| 3 | 图例与控件能否覆盖在 map 上 | `cover-view` 或 Skyline 同层渲染可行 |
+| 4 | 底部可拖拽面板与 map 的层级 | 面板能压住地图 |
+| 5 | 趋势图 Canvas 在低端安卓机性能 | 60fps 或可接受降级 |
+| 6 | Himawari 数据源获取方式与授权 | 有稳定可用的数据通道 |
+
+> 第 6 项是外部依赖风险，建议第一天就确认，它决定卫星云图功能是否成立。
+
+
+---
+
+## 七、小程序端
+
+
+### 7.1 页面路由
+
+| 路由 | 页面 | tabBar |
+| --- | --- | --- |
+| `pages/home/index` | 首页 | ● |
+| `pages/map/index` | 地图 | ● |
+| `pages/alert/index` | 预警中心 | ● |
+| `pages/station/index` | 我的站点 | ● |
+| `pages/mine/index` | 我的 | ● |
+| `pages/station/detail` | 站点详情 | |
+| `pages/report/index` | AI 分析报告 | |
+
+
+### 7.2 状态划分
+
+| Store | 内容 | 持久化 |
+| --- | --- | --- |
+| `stationStore` | 站点列表、当前站点 | ✓ Storage |
+| `weatherStore` | 当前站点气象与指数 | 内存 |
+| `mapStore` | 激活图层、视窗、缩放 | 激活图层持久化 |
+| `alertStore` | 预警列表与筛选 | 内存 |
+| `userStore` | 定位授权、用户配置 | ✓ Storage |
+
+
+### 7.3 设计 token
+
+02 文档的色值、间距、圆角落成 CSS 变量：
+
+```scss
+:root {
+  --color-primary: #1677FF;
+  --color-energy:  #16A34A;
+  --color-warning: #F59E0B;
+  --color-danger:  #EF4444;
+  --color-bg:      #F5F9FC;
+  --radius-card:   16px;
+  --spacing-page:  16px;
+}
+```
+
+尺寸单位用 `rpx`，Taro `designWidth` 按设计稿实际宽度配置。
+
+
+### 7.4 图表
+
+小程序无 DOM，ECharts 需走小程序适配版。
+本项目图表只有一个折线面积图，建议**用 Canvas 2D 自绘**：
+体积小、可控、无适配层黑盒。若后续图表变复杂再引入 F2。
+
+
+---
+
+## 八、构建与部署
+
+
+| 目标 | 命令 | 产物 |
+| --- | --- | --- |
+| 小程序开发 | `pnpm --filter miniapp dev:weapp` | `dist/`，开发者工具导入 |
+| 小程序构建 | `pnpm --filter miniapp build:weapp` | 上传微信后台 |
+| BFF | `pnpm --filter server build` | Docker 镜像 |
+
+BFF 需部署在**境内**并完成 ICP 备案，否则小程序无法配置为合法域名。
+
+
+---
+
+## 九、技术风险
+
+
+| 风险 | 影响 | 应对 |
+| --- | --- | --- |
+| 小程序 map 能力不足 | 地图页做不出设计效果 | 服务端渲染贴图方案 + 第 1 周 spike 验证 |
+| Himawari 数据源不可用 | 卫星云图功能不成立 | 第 1 天确认数据通道，备选降级为纯气象云量 |
+| 图层渲染服务性能 | 地图卡顿 | 网格级缓存 + CDN + 预渲染热点区域 |
+| App 阶段跨端失效 | V2 返工 | core 层承载复用，UI 层本就计划重写 |
+| 小程序合规卡上线 | 无法发布 | 见 09 合规清单，提前办理备案与类目 |
+| AI 成本失控 | 运营成本超预期 | 网格聚合 + 缓存 + 定时预生成，见 08 |
+
+
+---
+
+## 十、相关文档
+
+| 文档 | 关系 |
+| --- | --- |
+| [04 数据说明](./04-data-specification.md) | `core/types`、`server/providers` 的依据 |
+| 06 API 接口契约（待写） | `core/api`、`server/routes` 的依据 |
+| [07 指标计算规则](./07-metrics.md) | `core/metrics` 的依据 |
+| [08 AI 分析设计](./08-ai-design.md) | `server/ai` 的依据 |
