@@ -138,14 +138,18 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 客户端用自己请求的 bbox 贴图 —— 用服务端返回的对齐后 `bounds`
 - ❌ 实现储能站相关功能 —— V1 不做，设计稿里有但已明确排除
 - ❌ 用户请求时同步调 AI —— 全部预生成 + 缓存，见 08 §三
+- ❌ 把 `src/mocks/` 的数据当真 —— 接口落地后必须删除该目录
 
 
 ## 命令
 
 ```bash
+# 看页面效果
+make preview                         # ★ 浏览器预览 H5，不需要开发者工具与 AppID
+
 # 小程序
-pnpm --filter miniapp dev:weapp      # 开发，产物在 dist/，用开发者工具导入
-pnpm --filter miniapp build:weapp    # 构建
+pnpm --filter @enersight/miniapp dev:weapp    # watch，产物 dist/weapp/
+pnpm --filter @enersight/miniapp build:weapp
 
 # BFF
 uv run fastapi dev                   # 开发，含 /docs
@@ -176,6 +180,9 @@ make codegen                         # openapi.json → core/types/
 | `sass.resource` 会注入到每个 scss | 只放 mixin（无 CSS 输出）；token 由 `global.scss` 引入一次进 app.wxss |
 | hoisted 布局把所有 `@types` 拉进隐式作用域 | 两个 tsconfig 都显式写了 `types` |
 | `designWidth` 决定 px→rpx 比例 | 取 375（02 的字号是 375pt 基准标注）；换基准改 config，不要改 token 数值 |
+| H5 构建需 `src/index.html` 里的 Taro 占位符 | `<script><%= htmlWebpackPlugin.options.script %></script>` 不能删，否则不注入入口 |
+| 两端共用 `outputRoot` 会互相覆盖 | 已按 `dist/${TARO_ENV}` 分目录 |
+| Taro 组件 props 不兼容 `exactOptionalPropertyTypes` | miniapp 的 tsconfig 关掉该项，core 保留 |
 
 ## 当前状态
 
@@ -185,7 +192,11 @@ make codegen                         # openapi.json → core/types/
 - monorepo（pnpm workspace + uv），`make` 任务入口
 - `core/format` 单位进位与千分位，19 个测试
 - `core/api` client：401 重登重试、502 与网络错误重试、坐标系参数注入
-- 小程序：7 个页面骨架、设计 token、Taro API adapter、两个 Zustand store，构建产物正常
+- 小程序：7 个页面骨架、设计 token、Taro API adapter、两个 Zustand store
+- 首页已按设计稿实现（mock 数据），11 个组件：AppHeader / StationSelector /
+  EnergyScoreCard / MetricGrid / MetricCard / TrendDelta / StatusBadge /
+  SectionHeader / AlertBanner / QuickEntryGrid
+- 两端构建产物正常：`dist/weapp/`（开发者工具导入）与 `dist/h5/`（浏览器预览）
 - BFF：FastAPI + Open-Meteo provider + 错误码体系
 - `server/app/metrics`：pvlib 出力模型与环境指数，19 个测试
 - codegen 链路：Pydantic → openapi.json → `core/types/generated.ts`，已接入 `make check`

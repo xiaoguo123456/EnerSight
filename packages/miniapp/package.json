@@ -5,14 +5,18 @@
   "scripts": {
     "dev:weapp": "taro build --type weapp --watch",
     "build:weapp": "taro build --type weapp",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:h5": "taro build --type h5 --watch",
+    "build:h5": "taro build --type h5"
   },
   "dependencies": {
     "@enersight/core": "workspace:*",
     "@tarojs/components": "4.0.9",
     "@tarojs/plugin-framework-react": "4.0.9",
+    "@tarojs/plugin-platform-h5": "4.0.9",
     "@tarojs/plugin-platform-weapp": "4.0.9",
     "@tarojs/react": "4.0.9",
+    "@tarojs/router": "4.0.9",
     "@tarojs/runtime": "4.0.9",
     "@tarojs/taro": "4.0.9",
     "react": "^18.3.1",

@@ -1,0 +1,18 @@
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+
+  &__left { display: flex; align-items: center; gap: 8px; }
+  &__icon { font-size: 18px; }
+  &__title {
+    font-size: var(--font-module-title);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  &__action {
+    font-size: var(--font-caption);
+    color: var(--color-text-sub);
+  }
+}

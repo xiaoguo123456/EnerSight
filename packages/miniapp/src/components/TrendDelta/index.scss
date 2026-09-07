@@ -1,0 +1,15 @@
+.trend-delta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-caption);
+
+  &__label { color: var(--color-text-weak); }
+
+  // 上升红、下降绿：表示变化方向不是好坏，不要按涨跌习惯反转
+  &__value {
+    font-weight: 600;
+    &--up   { color: var(--color-delta-up); }
+    &--down { color: var(--color-delta-down); }
+  }
+}

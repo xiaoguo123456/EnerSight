@@ -3,8 +3,12 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "noEmit": true,
-    // 同 core：显式声明需要的 @types，避免隐式引入全部
+    // hoisted node_modules 会把所有 @types 拉进隐式作用域，显式收敛
     "types": ["node", "@tarojs/taro"],
+    // Taro 的组件 props 未按 exactOptionalPropertyTypes 编写，
+    // 传 onClick={undefined} 会报错。该标记的价值在 core 的数据模型上，
+    // 那里仍然开着；此处关闭。
+    "exactOptionalPropertyTypes": false,
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },

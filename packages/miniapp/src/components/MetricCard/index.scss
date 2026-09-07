@@ -1,0 +1,25 @@
+.metric-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &__head { display: flex; align-items: center; gap: 6px; }
+  &__icon { font-size: 18px; }
+  &__label {
+    font-size: var(--font-caption);
+    color: var(--color-text-sub);
+    @include ellipsis;
+  }
+
+  &__value { display: flex; align-items: baseline; }
+  &__num  { @include metric-value; }
+  &__unit { @include metric-unit; }
+
+  &__caption {
+    font-size: var(--font-caption);
+    color: var(--color-text-weak);
+    @include ellipsis;
+  }
+}

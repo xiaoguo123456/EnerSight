@@ -1,5 +1,33 @@
-.page {
+.home {
   min-height: 100vh;
-  padding: var(--space-page);
-  padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+  background: var(--color-bg);
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-card-gap);
+    padding: var(--space-page);
+    padding-bottom: calc(var(--space-page) + var(--space-tabbar));
+    margin-top: calc(var(--space-6) * -1);
+  }
+
+  &__card {
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    padding: var(--space-card-pad);
+
+    // 快捷入口自带卡片样式，嵌套时去掉内层的底与内边距
+    .quick-entry { padding: 0; background: transparent; }
+  }
+
+  &__chart-placeholder {
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-thumb);
+    background: var(--color-bg);
+    color: var(--color-text-weak);
+    font-size: var(--font-caption);
+  }
 }

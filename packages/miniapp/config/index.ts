@@ -14,7 +14,8 @@ export default {
   designWidth: 375,
   deviceRatio: { 640: 2.34 / 2, 750: 1, 828: 1.81 / 2, 375: 2 / 1 },
   sourceRoot: 'src',
-  outputRoot: 'dist',
+  // 按平台分目录，否则 h5 构建会覆盖小程序产物
+  outputRoot: `dist/${process.env.TARO_ENV}`,
   plugins: [],
   framework: 'react',
   compiler: 'vite',
@@ -29,6 +30,13 @@ export default {
     postcss: {
       pxtransform: { enable: true },
       url: { enable: true, config: { limit: 1024 } },
+    },
+  },
+  h5: {
+    publicPath: '/',
+    staticDirectory: 'static',
+    postcss: {
+      autoprefixer: { enable: true },
     },
   },
 } satisfies UserConfigExport<'vite'>

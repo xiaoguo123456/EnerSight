@@ -1,0 +1,29 @@
+.alert-banner {
+  padding: var(--space-card-pad);
+  border-radius: var(--radius-card);
+  // 浅琥珀底 + 右下角云朵插画。docs/02 §二
+  background: linear-gradient(120deg, #fff8ea 0%, #fffdf7 100%);
+
+  &__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  &__icon { font-size: 18px; }
+  &__label {
+    flex: 1;
+    font-size: var(--font-module-title);
+    font-weight: 600;
+    color: var(--color-warning);
+  }
+  &__more { font-size: var(--font-caption); color: var(--color-text-sub); }
+
+  &__title {
+    display: block;
+    font-size: var(--font-body);
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 6px;
+  }
+  &__desc {
+    font-size: var(--font-caption);
+    color: var(--color-text-sub);
+    line-height: 1.6;
+  }
+}

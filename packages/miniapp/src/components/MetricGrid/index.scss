@@ -1,0 +1,13 @@
+.metric-grid {
+  display: flex;
+  align-items: stretch;
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  padding: var(--space-card-pad);
+  gap: var(--space-grid-gap);
+
+  > view + view {
+    border-left: 1px solid var(--color-divider);
+    padding-left: var(--space-grid-gap);
+  }
+}

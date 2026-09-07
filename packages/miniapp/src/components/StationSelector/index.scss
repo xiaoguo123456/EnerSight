@@ -1,0 +1,26 @@
+.station-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  @include card;
+
+  &__thumb {
+    width: 52px; height: 52px;
+    border-radius: var(--radius-thumb);
+    background: linear-gradient(135deg, #bfe3ff, #7fc4f5);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+
+  &__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  &__row  { display: flex; align-items: center; gap: 6px; }
+  &__name { font-size: 17px; font-weight: 700; color: var(--color-text); }
+  &__caret { font-size: 14px; color: var(--color-text-weak); }
+  &__addr {
+    font-size: var(--font-caption);
+    color: var(--color-text-sub);
+    @include ellipsis;
+  }
+  &__arrow { font-size: 20px; color: var(--color-text-weak); flex-shrink: 0; }
+}

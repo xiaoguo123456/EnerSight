@@ -1,0 +1,21 @@
+{
+  "miniprogramRoot": "dist/weapp/",
+  "projectname": "EnerSight",
+  "description": "AI新能源气象遥感分析平台",
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "libVersion": "3.5.5",
+  "setting": {
+    "urlCheck": false,
+    "es6": false,
+    "enhance": false,
+    "postcss": false,
+    "minified": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "condition": {}
+}
