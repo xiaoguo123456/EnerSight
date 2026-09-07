@@ -2,7 +2,7 @@
 
 > EnerSight AI 新能源气象遥感分析平台 · 文档包 V1.0
 >
-> 产品名字里的 AI 具体怎么落地。对应 `packages/server/src/ai/`。
+> 产品名字里的 AI 具体怎么落地。对应 `packages/server/app/ai/`。
 
 
 ## 一、AI 在产品中的三个输出
@@ -75,13 +75,12 @@ AI 不是一个功能页面，是贯穿全产品的解释层。共三种输出�
 
 ### 2.4 Provider 抽象
 
-```ts
-// server/src/ai/provider.ts
-export interface AIProvider {
-  summarize(input: SummaryInput): Promise<string>          // 一句话结论
-  explainAlert(input: AlertInput): Promise<string>         // 预警解释
-  generateReport(input: ReportInput): Promise<AIReport>    // 完整报告
-}
+```python
+# server/app/ai/provider.py
+class AIProvider(Protocol):
+    async def summarize(self, inp: SummaryInput) -> str: ...          # 一句话结论
+    async def explain_alert(self, inp: AlertInput) -> str: ...        # 预警解释
+    async def generate_report(self, inp: ReportInput) -> AIReport: ...  # 完整报告
 ```
 
 切换模型只改一个实现文件，业务代码零改动。
@@ -142,25 +141,27 @@ export interface AIProvider {
 
 ### 4.1 Schema
 
-```ts
-import { z } from "zod"
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
 
-const PeriodSchema = z.object({
-  period: z.enum(["morning", "afternoon", "evening"]),
-  weather_summary: z.string(),      // 「晴转多云」
-  generation_impact: z.string(),    // 「发电条件良好」
-  level: z.enum(["good", "warning", "risk"]),  // 时间轴节点配色
-})
+class ReportPeriod(BaseModel):
+    period: Literal["morning", "afternoon", "evening"]
+    weather_summary: str                       # 「晴转多云」
+    generation_impact: str                     # 「发电条件良好」
+    level: Literal["good", "warning", "risk"]  # 时间轴节点配色
 
-const AIReportSchema = z.object({
-  verdict_title: z.string(),        // 「今日适宜发电，下午存在轻度云层风险」
-  verdict_detail: z.string(),       // 整体建议说明
-  periods: z.array(PeriodSchema).length(3),
-  risk_title: z.string(),
-  risk_detail: z.string(),
-  suggestions: z.array(z.string()).min(2).max(3),
-})
+class AIReport(BaseModel):
+    verdict_title: str          # 「今日适宜发电，下午存在轻度云层风险」
+    verdict_detail: str         # 整体建议说明
+    periods: list[ReportPeriod] = Field(min_length=3, max_length=3)
+    risk_title: str
+    risk_detail: str
+    suggestions: list[str] = Field(min_length=2, max_length=3)
 ```
+
+同一个 Pydantic 模型既约束模型输出，又参与 OpenAPI schema 生成 —— 
+[06 契约](./06-api-contract.md) 的 `AIReportResponse` 由它派生，不必写两遍。
 
 数据摘要（发电量 / 等效小时 / CO₂ / 收益）**不进 schema** —— 那是算出来的，
 由服务端直接填充，不经过模型。
@@ -168,25 +169,26 @@ const AIReportSchema = z.object({
 
 ### 4.2 调用（Claude 侧示例）
 
-```ts
-import Anthropic from "@anthropic-ai/sdk"
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod"
+```python
+import anthropic
 
-const client = new Anthropic()
+client = anthropic.Anthropic()
 
-const response = await client.messages.parse({
-  model: "claude-opus-5",
-  max_tokens: 4000,
-  system: [
-    { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-  ],
-  messages: [{ role: "user", content: buildReportInput(station, metrics) }],
-  output_config: { format: zodOutputFormat(AIReportSchema) },
-})
+response = client.messages.parse(
+    model="claude-opus-5",
+    max_tokens=4000,
+    system=[
+        {"type": "text", "text": SYSTEM_PROMPT,
+         "cache_control": {"type": "ephemeral"}},
+    ],
+    messages=[{"role": "user", "content": build_report_input(station, metrics)}],
+    output_format=AIReport,
+)
 
-// parsed_output 解析失败时为 null，必须判空后降级
-const report = response.parsed_output
-if (!report) return fallbackReport(station, metrics)
+# 解析失败时 parsed_output 为 None，必须判空后降级
+report = response.parsed_output
+if report is None:
+    return fallback_report(station, metrics)
 ```
 
 

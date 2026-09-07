@@ -2,7 +2,7 @@
 
 > EnerSight AI 新能源气象遥感分析平台 · 文档包 V1.0
 >
-> 小程序 ↔ BFF 的接口定义。对应 `packages/core/api/` 与 `packages/server/src/routes/`。
+> 小程序 ↔ BFF 的接口定义。对应 `packages/core/api/` 与 `packages/server/app/routers/`。
 > 字段语义见 [04 数据说明](./04-data-specification.md)，
 > 计算口径见 [07 指标计算规则](./07-metrics.md)。
 
@@ -69,6 +69,10 @@
 
 服务端内部存储与计算一律 WGS84，仅在响应序列化时转换。
 详见 [05 §6.6](./05-architecture.md)。
+
+> ⚠️ **GCJ-02 转换需自行实现。** `pyproj` 只做标准投影变换，
+> 不含 GCJ-02 —— 它是中国特有的非线性加密偏移，不是一个投影。
+> 需单独实现（约数十行）并覆盖单元测试，不要假设地理库自带。
 
 
 ### 2.3 单位
@@ -680,6 +684,11 @@ interface MetricWithDelta {
 // core/api/client.ts
 export function createClient(adapter: HttpAdapter, opts: ClientOptions): ApiClient
 ```
+
+本文档的 TypeScript 类型是**契约描述**。
+`core/types/` 由服务端的 Pydantic 模型经 OpenAPI codegen 生成，
+不手工维护 —— 本文档与生成结果不一致时，以 OpenAPI schema 为准，
+并回头修正本文档。生成流程见 [05 §1.3](./05-architecture.md)。
 
 `core/api` 负责：
 

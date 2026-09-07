@@ -41,8 +41,8 @@
 | --- | --- |
 | 小程序 | Taro 4 + React 18 + TypeScript |
 | 状态 | Zustand |
-| 跨端复用 | `packages/core`（纯 TS：类型、API client、指标计算） |
-| BFF | Node.js + TypeScript |
+| 跨端复用 | `packages/core`（类型 codegen、API client、格式化） |
+| BFF | Python 3.12 + FastAPI（pvlib / OpenCV / numpy） |
 | 地图图层 | 服务端渲染 PNG + `<map>` ground-overlay |
 
 端演进：微信小程序（V1）→ App（V2，UI 重写，复用 core）。

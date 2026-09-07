@@ -17,17 +17,63 @@
 | 图表 | Canvas 2D 自绘或 F2 | 见 6.2 |
 | 地图 | 微信 `<map>` + 服务端渲染贴图 | 见第六章，架构核心 |
 | 包管理 | pnpm workspace | monorepo |
-| BFF | Node.js + TypeScript | 与前端共用类型定义 |
+| BFF | Python 3.12 + FastAPI | 科学计算生态，见 1.2 |
+| 类型同步 | FastAPI OpenAPI → `openapi-typescript` | 生成 `core/types` |
 
 
-选型依据：
+### 1.1 前端选型依据
 
 React 生态成熟、类型体系完善；组件全部自研（37 个，见 03），
 不依赖跨端 UI 库，因此跨端框架最大的坑（组件库不兼容）在本项目不存在。
 
-
 > 若团队主力是 Vue，改用 uni-app + Vue 3 同样成立，
 > 本文档除框架名外的所有架构决策均不受影响。
+
+
+### 1.2 后端为什么是 Python
+
+**这个后端的本质是数据处理，不是 CRUD 服务。**
+
+气象网格插值、卫星影像处理、太阳几何、光伏建模、色阶渲染 ——
+每一项在 Python 里都有成熟的行业标准库，用 Node 或 Go 都要自己造轮子。
+
+| 需求 | 库 | 替代方案的代价 |
+| --- | --- | --- |
+| 太阳位置、晴空辐射、电池温度、GTI | `pvlib` | 手写简化公式，精度低且难验证 |
+| 云团位移估计（光流） | `opencv-python` | 自己实现光流算法 |
+| 网格插值 | `scipy.interpolate` | 自己实现双线性/克里金 |
+| 卫星影像读写 | `rasterio` | 手工解析 GeoTIFF |
+| 气象格式 GRIB / NetCDF | `xarray` + `cfgrib` | 几乎无可用实现 |
+| 色阶渲染 | `numpy` + `Pillow` | 可行，但插值仍要自己写 |
+
+其中 **`pvlib` 近乎决定性**：它是 NREL 支持的光伏建模事实标准库，
+[07 文档](./07-metrics.md) 中手写的太阳赤纬、日出日落、晴空辐射、
+电池温度模型，在 `pvlib` 里都有精度更高的现成实现（见 07 附录 A）。
+
+
+### 1.3 类型如何同步
+
+FastAPI 从 Pydantic 模型自动产出 OpenAPI schema：
+
+```
+server/  Pydantic 模型
+   ↓  自动生成
+      openapi.json
+   ↓  openapi-typescript
+core/types/  TypeScript 类型
+```
+
+纳入 CI：schema 变更未同步生成则构建失败，避免前后端类型漂移。
+
+
+### 1.4 代价
+
+| 代价 | 说明 |
+| --- | --- |
+| CPU 密集任务仍会阻塞 | numpy / OpenCV 计算释放 GIL，但在 async 路由里同步调用照样卡住该 worker，见 6.6 |
+| 镜像体积 | 比 Go 大，依赖管理用 `uv` 控制 |
+| 性能余量最小 | 三种语言中最小，但 6.5 测算仅 0.58 核，余量足够 |
+| 类型不能直接共享 | 需 codegen 一层，由 1.3 的 CI 约束兜住 |
 
 
 ---
@@ -47,15 +93,19 @@ Taro RN、uni-app nvue 在重图表、重地图场景都会掉链子。
 
 ```
 复用      packages/core     纯 TS，零 UI 依赖
-                            类型定义、API client、指标计算、格式化
+                            类型定义（codegen）、API client、格式化
                             ↑ 小程序与 App 100% 共用
 
 不复用    UI 层             各端各写
                             小程序用 Taro，App 用 RN 或 Flutter
 ```
 
-按代码量估算，core 层能占到 30–40%，且是最容易出 bug、最需要一致性的部分
-（指标计算口径、单位换算、环比规则）。UI 层重写的成本远低于跨端框架失控的成本。
+> **指标计算不在 core 层。** [06 契约](./06-api-contract.md) 已定为
+> 服务端算好后返回（`EnergyIndex` 直接给出 score / level / factors），
+> 端上不需要任何指标计算实现。这也是后端可以自由选语言的前提。
+
+core 层承载的是「与后端语言无关、且两端必须一致」的部分：
+接口调用约定、错误处理、单位进位与千分位规则。
 
 
 ### 2.3 演进路径
@@ -86,22 +136,29 @@ EnerSight/
 │   │   ├── src/components/ 37 个组件，与 03 文档对应
 │   │   ├── src/store/      Zustand
 │   │   └── src/styles/     设计 token，与 02 文档对应
-│   └── server/             BFF
-│       ├── src/routes/     对外接口
-│       ├── src/providers/  Open-Meteo / Himawari 适配
-│       ├── src/render/     ★ 图层图片渲染
-│       ├── src/ai/         AI 编排，与 08 文档对应
-│       └── src/jobs/       定时任务
-└── pnpm-workspace.yaml
+│   └── server/             BFF（Python + FastAPI）
+│       ├── app/routers/    对外接口，与 06 契约对应
+│       ├── app/schemas/    Pydantic 模型 → OpenAPI → core/types
+│       ├── app/providers/  Open-Meteo / Himawari / 腾讯位置服务 适配
+│       ├── app/metrics/    ★ 指标计算，与 07 文档对应（pvlib）
+│       ├── app/render/     ★ 图层图片渲染
+│       ├── app/satellite/  ★ 云图处理与光流位移估计（OpenCV）
+│       ├── app/ai/         AI 编排，与 08 文档对应
+│       └── app/jobs/       定时任务
+├── pnpm-workspace.yaml
+└── Makefile                跨语言任务入口（codegen、lint、test）
 ```
 
 依赖方向严格单向：
 
 ```
-miniapp ──→ core
-server  ──→ core
-core    ──→ 不依赖任何端
+miniapp ──→ core ──→ 不依赖任何端
+
+server  ──→ 不依赖 core（语言不同）
+        ──→ 通过 OpenAPI 单向产出 core/types
 ```
+
+前后端的唯一契约是 OpenAPI schema，不是共享代码。
 
 
 ---
@@ -109,12 +166,13 @@ core    ──→ 不依赖任何端
 ## 四、packages/core 职责
 
 
-| 模块 | 内容 | 对应文档 |
-| --- | --- | --- |
-| `types/` | Station、Weather、Layer、Alert、AIReport 等模型 | 04 |
-| `api/` | 请求封装、错误处理、重试；平台差异通过注入 adapter 隔离 | [06](./06-api-contract.md) |
-| `metrics/` | 环境指数、发电估算、环比、等效小时、CO₂、收益 | 07 |
-| `format/` | kW/MW 与 kWh/GWh 进位、千分位、经纬度、时区 | 02、04 |
+| 模块 | 内容 | 来源 | 对应文档 |
+| --- | --- | --- | --- |
+| `types/` | Station、Weather、Layer、Alert、AIReport 等模型 | **codegen 生成，不手写** | 04、06 |
+| `api/` | 请求封装、错误处理、重试；平台差异通过注入 adapter 隔离 | 手写 | [06](./06-api-contract.md) |
+| `format/` | kW/MW 与 kWh/GWh 进位、千分位、经纬度、时区 | 手写 | 02、04 |
+
+`types/` 目录纳入版本控制但标记为生成产物，禁止手工修改。
 
 
 **平台差异隔离**：core 不直接调用 `Taro.request` 或 `fetch`，
@@ -131,8 +189,8 @@ export interface HttpAdapter {
 // server 注入 undici
 ```
 
-指标计算放在 core 而非只放服务端的理由：
-端上要做乐观计算与离线展示，且两端口径必须一致 —— 同一份代码是唯一可靠的保证。
+**指标计算不放 core。** 06 契约已定为服务端算好返回，端上没有计算需求；
+放在 core 只会产生死代码，并把后端锁死在 TypeScript 上。
 
 
 ---
@@ -157,8 +215,9 @@ export interface HttpAdapter {
 
 ├── 数据聚合    Open-Meteo 多字段合并为一次响应
 ├── 缓存        网格级缓存，相邻站点命中同一份
+├── 指标计算    pvlib + numpy，见 07 文档
 ├── 图层渲染    气象网格 / 卫星影像 → PNG（无状态模块，见 6.6）
-├── 指标计算    复用 core/metrics
+├── 云图处理    OpenCV 光流位移估计，见 07 §4.1
 ├── AI 编排     见 08 文档
 └── 定时任务    预渲染图层、预生成报告、扫描预警、拉取云图
 ```
@@ -397,8 +456,16 @@ V2 做 App / H5 时才有选择空间（MapLibre + 自建或第三方瓦片）�
 
 但有一个真实问题必须处理：
 
-> **Node 是单线程，图片渲染是 CPU 密集操作。**
-> 在请求路径里同步渲染会阻塞事件循环，拖慢所有 API —— 包括跟地图无关的接口。
+> **CPU 密集任务不能跑在 async 请求路径里。**
+> FastAPI 的 async 路由跑在事件循环上，同步的 numpy / OpenCV 调用会卡住该 worker，
+> 拖慢所有 API —— 包括跟地图无关的接口。
+>
+> numpy 与 OpenCV 在计算时会释放 GIL，所以**多线程是有效的**，
+> 这与纯 Python 计算不同。但前提是不能在事件循环里直接同步调用。
+
+> 补充：这不是 Python 独有的问题。Node 也一样 ——
+> 区别只在 Node 用 `worker_threads`、Python 用线程池或独立 worker，复杂度相当。
+> 选语言时不必把这条算作某一方的缺点。
 
 两条应对，都不需要拆服务：
 
@@ -414,19 +481,27 @@ V2 做 App / H5 时才有选择空间（MapLibre + 自建或第三方瓦片）�
 
 渲染跑在 `jobs/` 里，天然与 API 路径隔离。
 
-**② worker_threads 线程池（兜底手段）**
+**② 线程池执行器（兜底手段）**
 
-按需渲染那部分放工作线程池，不阻塞主线程。
-2–4 个线程足够覆盖测算量。
+按需渲染那部分丢进 executor，不阻塞事件循环：
+
+```python
+await loop.run_in_executor(render_pool, render_tile, layer, bbox, zoom, t)
+```
+
+`render_pool` 用 `ThreadPoolExecutor`（numpy / OpenCV 释放 GIL，线程有效），
+2–4 个线程足够覆盖 6.5 的测算量。
+
+纯 Python 的计算才需要 `ProcessPoolExecutor`，本项目的热点都在 C 扩展里，不需要。
 
 
 #### 按「随时可拆」的方式写
 
-`server/src/render/` 保持**无状态**，不依赖 BFF 的数据库与会话：
+`server/app/render/` 保持**无状态**，不依赖 BFF 的数据库与会话：
 
-```ts
-// 渲染入口是一个纯函数
-render(layer: LayerType, bbox: BBox, zoom: number, t: Date): Promise<Buffer>
+```python
+# 渲染入口是一个纯函数
+def render(layer: LayerType, bbox: BBox, zoom: int, t: datetime) -> bytes: ...
 ```
 
 将来要拆，就是把这个目录搬到新仓库、把函数调用换成 HTTP 调用，
@@ -543,7 +618,11 @@ Windy、Tomorrow.io 这类提供现成气象瓦片，但四条都不满足：
 | --- | --- | --- |
 | 小程序开发 | `pnpm --filter miniapp dev:weapp` | `dist/`，开发者工具导入 |
 | 小程序构建 | `pnpm --filter miniapp build:weapp` | 上传微信后台 |
-| BFF | `pnpm --filter server build` | Docker 镜像 |
+| BFF 开发 | `uv run fastapi dev` | 本地服务 + `/docs` |
+| BFF 构建 | `docker build packages/server` | 镜像 |
+| 类型生成 | `make codegen` | `openapi.json` → `core/types/` |
+
+`make codegen` 必须纳入 CI：生成结果与仓库不一致则构建失败。
 
 BFF 需部署在**境内**并完成 ICP 备案，否则小程序无法配置为合法域名。
 
@@ -560,7 +639,8 @@ BFF 需部署在**境内**并完成 ICP 备案，否则小程序无法配置为�
 | 风场动画带宽成本 | CDN 费用超预期 | 限制 zoom、降帧、WebP；V1 可降级为静态风羽图，见 6.5 |
 | App 阶段跨端失效 | V2 返工 | core 层承载复用，UI 层本就计划重写 |
 | 坐标系混用 | 站点与图层错位，难排查 | 存储计算统一 WGS84，仅出口转 GCJ-02，见 6.6 |
-| 渲染阻塞事件循环 | 全部 API 变慢 | 渲染移出请求路径 + worker_threads，见 6.6 |
+| 渲染阻塞事件循环 | 全部 API 变慢 | 渲染移出请求路径 + 线程池执行器，见 6.6 |
+| 前后端类型漂移 | 接口对不上，运行时才发现 | OpenAPI codegen 纳入 CI，见 1.3 |
 | 小程序合规卡上线 | 无法发布 | 见 09 合规清单，提前办理备案与类目 |
 | AI 成本失控 | 运营成本超预期 | 网格聚合 + 缓存 + 定时预生成，见 08 |
 
@@ -571,7 +651,7 @@ BFF 需部署在**境内**并完成 ICP 备案，否则小程序无法配置为�
 
 | 文档 | 关系 |
 | --- | --- |
-| [04 数据说明](./04-data-specification.md) | `core/types`、`server/providers` 的依据 |
+| [04 数据说明](./04-data-specification.md) | `core/types`、`server/app/providers/` 的依据 |
 | [06 API 接口契约](./06-api-contract.md) | `core/api`、`server/routes` 的依据 |
-| [07 指标计算规则](./07-metrics.md) | `core/metrics` 的依据 |
+| [07 指标计算规则](./07-metrics.md) | `server/app/metrics/` 的依据 |
 | [08 AI 分析设计](./08-ai-design.md) | `server/ai` 的依据 |
