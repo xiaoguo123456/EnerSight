@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+._*
+
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+build/
+.temp/
+.output/
+unpackage/
+
+# 小程序开发者工具
+project.private.config.json
+
+# 环境变量与密钥
+.env
+.env.local
+.env.*.local
+
+# 日志
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 编辑器
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
