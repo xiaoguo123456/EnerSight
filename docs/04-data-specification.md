@@ -555,6 +555,12 @@ v = -wind_speed × cos(wind_direction × π / 180)
 | `address` | string | 否 | 江苏省苏州市吴中区（逆地理编码自动填充） |
 | `image` | url | 否 | 站点封面图，列表与详情页展示 |
 | `created_at` | datetime | 自动 | 用于计算运行时长 |
+| `tilt` | number | 否 | 光伏组件倾角（°），默认取纬度绝对值 |
+| `azimuth` | number | 否 | 光伏组件方位角（°），默认 180 正南 |
+| `hub_height` | number | 否 | 风机轮毂高度（m），默认按容量估算 |
+
+后三个字段是物理出力模型的输入（见 [07 §2.3](./07-metrics.md)），
+选填，不填用默认值。
 
 
 录入方式：

@@ -278,6 +278,11 @@ interface CreateStationRequest {
   longitude: number
   capacity: number           // kW
   coord?: "wgs84" | "gcj02"  // 入参坐标系，默认 wgs84
+
+  // 出力模型参数，选填，不填用默认值（见 07 §2.3）
+  tilt?: number              // 光伏倾角（°），默认 |latitude|
+  azimuth?: number           // 光伏方位角（°），默认 180
+  hub_height?: number        // 风机轮毂高度（m），默认按容量估算
 }
 ```
 
@@ -620,12 +625,16 @@ interface EnergyIndex {
   score: number | null                 // 0-100，不可算时为 null
   level: "excellent" | "good" | "fair" | "poor" | null
   summary: string | null               // AI 一句话结论
-  factors: {                           // 因子分，供说明弹窗展示
-    radiation: number | null
-    cloud: number | null
-    temperature: number | null
-    wind: number | null
-  }
+  estimated: boolean                   // true 表示部分气象因子由气候平均值填补
+  attribution: IndexAttribution[]      // 归因，供说明弹窗展示
+}
+
+// 归因不是权重，是「该因子使指数偏离理想值多少分」，算出来的
+// 见 07 §1.6
+interface IndexAttribution {
+  factor: "radiation" | "temperature" | "wind"
+  delta: number                        // 负数为扣分，正数为加分
+  description: string                  // 「云层使辐照降至晴空的 64%」
 }
 
 interface CurrentWeather {
