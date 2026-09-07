@@ -202,7 +202,7 @@ make codegen                         # openapi.json → core/types/
 - 小程序：7 个页面骨架、设计 token、Taro API adapter、两个 Zustand store
 - **7 个页面全部实现**（mock 数据）：首页 / 地图 / 预警 / 站点 / 站点详情 /
   AI报告 / 我的
-- **24 个组件**，全部按 docs/02、docs/03 落地，只用设计 token
+- **27 个组件**，全部按 docs/02、docs/03 落地，只用设计 token
 - `TrendChart` Canvas 2D 自绘：折线 + 面积渐变、空心数据点、
   选中态纵向虚线与悬浮气泡、缺测断线不补 0
 - 两端构建产物正常：`dist/weapp/`（开发者工具导入）与 `dist/h5/`（浏览器预览）
