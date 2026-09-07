@@ -1,6 +1,7 @@
 import { View, Text } from '@tarojs/components'
 import { formatCoordinate } from '@enersight/core/format'
 import type { StationStatus } from '@enersight/core/types'
+import { Icon } from '../Icon'
 import { StatusBadge } from '../StatusBadge'
 import './index.scss'
 
@@ -18,18 +19,23 @@ export function StationSelector({
 }: Props) {
   return (
     <View className="station-selector" onClick={onTap}>
-      <View className="station-selector__thumb">☀️</View>
+      <View className="station-selector__thumb">
+        <Icon name="sun" size={22} color="#ffffff" />
+      </View>
       <View className="station-selector__body">
         <View className="station-selector__row">
           <Text className="station-selector__name">{name}</Text>
-          <Text className="station-selector__caret">⌄</Text>
+          <Icon name="chevronDown" size={12} color="#9ca3af" />
           <StatusBadge status={status} />
         </View>
-        <Text className="station-selector__addr">
-          📍 {address}（{formatCoordinate(latitude, longitude)}）
-        </Text>
+        <View className="station-selector__addr">
+          <Icon name="mapPin" size={11} color="#9ca3af" />
+          <Text className="station-selector__addr-text">
+            {address}（{formatCoordinate(latitude, longitude)}）
+          </Text>
+        </View>
       </View>
-      <Text className="station-selector__arrow">›</Text>
+      <Icon name="chevronRight" size={16} color="#9ca3af" />
     </View>
   )
 }

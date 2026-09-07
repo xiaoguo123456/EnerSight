@@ -1,4 +1,5 @@
 import { View, Text } from '@tarojs/components'
+import { Icon } from '../Icon'
 import './index.scss'
 
 interface Props {
@@ -12,9 +13,12 @@ export function AlertBanner({ title, description, onMore }: Props) {
   return (
     <View className="alert-banner">
       <View className="alert-banner__head">
-        <Text className="alert-banner__icon">⚠️</Text>
+        <Icon name="alertTriangle" size={16} color="#f59e0b" />
         <Text className="alert-banner__label">今日预警</Text>
-        <Text className="alert-banner__more" onClick={onMore}>查看更多 ›</Text>
+        <View className="alert-banner__more" onClick={onMore}>
+          <Text>查看更多</Text>
+          <Icon name="chevronRight" size={12} color="#9ca3af" />
+        </View>
       </View>
       <Text className="alert-banner__title">{title}</Text>
       <Text className="alert-banner__desc">{description}</Text>

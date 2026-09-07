@@ -8,26 +8,24 @@
     gap: var(--space-card-gap);
     padding: var(--space-page);
     padding-bottom: calc(var(--space-page) + var(--space-tabbar));
-    margin-top: calc(var(--space-6) * -1);
+    margin-top: -20px;
   }
 
   &__card {
     background: var(--color-surface);
     border-radius: var(--radius-card);
-    padding: var(--space-card-pad);
-
-    // 快捷入口自带卡片样式，嵌套时去掉内层的底与内边距
-    .quick-entry { padding: 0; background: transparent; }
+    padding: 14px;
   }
 
   &__chart-placeholder {
-    height: 160px;
+    margin-top: 10px;
+    height: 130px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-thumb);
     background: var(--color-bg);
     color: var(--color-text-weak);
-    font-size: var(--font-caption);
+    font-size: 12px;
   }
 }

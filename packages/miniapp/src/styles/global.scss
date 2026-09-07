@@ -1,6 +1,8 @@
 @import './tokens.scss';
 
-page {
+// 同 tokens：两端根元素不同，都要写
+page,
+body {
   background: var(--color-bg);
   color: var(--color-text);
   font-size: var(--font-body);

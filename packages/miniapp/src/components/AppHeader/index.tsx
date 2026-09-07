@@ -1,4 +1,5 @@
 import { View, Text } from '@tarojs/components'
+import { Icon } from '../Icon'
 import './index.scss'
 
 interface Props {
@@ -12,9 +13,7 @@ export function AppHeader({ title, subtitle, slogan }: Props) {
   return (
     <View className="app-header">
       <View className="app-header__brand">
-        <View className="app-header__logo">
-          <Text className="app-header__leaf">🍃</Text>
-        </View>
+        <Icon name="leaf" size={26} color="#16a34a" strokeWidth={1.8} />
         <View className="app-header__text">
           <Text className="app-header__title">{title}</Text>
           {subtitle && <Text className="app-header__subtitle">{subtitle}</Text>}

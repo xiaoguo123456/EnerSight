@@ -1,24 +1,29 @@
 import { View, Text } from '@tarojs/components'
+import { Icon, type IconName } from '../Icon'
 import './index.scss'
 
 interface Props {
-  icon: string
+  icon: IconName
+  iconColor?: string
   title: string
   action?: string
   onAction?: () => void
 }
 
-export function SectionHeader({ icon, title, action, onAction }: Props) {
+export function SectionHeader({
+  icon, iconColor = '#1677ff', title, action, onAction,
+}: Props) {
   return (
     <View className="section-header">
       <View className="section-header__left">
-        <Text className="section-header__icon">{icon}</Text>
+        <Icon name={icon} size={16} color={iconColor} />
         <Text className="section-header__title">{title}</Text>
       </View>
       {action && (
-        <Text className="section-header__action" onClick={onAction}>
-          {action} ›
-        </Text>
+        <View className="section-header__action" onClick={onAction}>
+          <Text>{action}</Text>
+          <Icon name="chevronRight" size={12} color="#9ca3af" />
+        </View>
       )}
     </View>
   )

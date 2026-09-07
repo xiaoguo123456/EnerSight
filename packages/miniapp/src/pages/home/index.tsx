@@ -1,31 +1,39 @@
-import { View, ScrollView } from '@tarojs/components'
+import { View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import {
   formatPercent, formatRadiation, formatTemperature, formatWindSpeed,
 } from '@enersight/core/format'
+import { useState } from 'react'
 import {
   AlertBanner, AppHeader, EnergyScoreCard, MetricCard, MetricGrid,
-  QuickEntryGrid, SectionHeader, StationSelector,
+  QuickEntryGrid, SectionHeader, SegmentedTabs, StationSelector,
 } from '@/components'
 import type { QuickEntry } from '@/components'
 import { mockHome } from '@/mocks/home'
 import './index.scss'
 
 const ENTRIES: QuickEntry[] = [
-  { icon: '🗺️', title: '地图总览', subtitle: '宏观掌握区域情况', tone: 'energy',
+  { icon: 'map', title: '地图总览', subtitle: '宏观掌握区域情况', tone: 'energy',
     onTap: () => Taro.switchTab({ url: '/pages/map/index' }) },
-  { icon: '🛰️', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary' },
-  { icon: '📄', title: 'AI分析报告', subtitle: '智能生成专业分析', tone: 'purple',
+  { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary' },
+  { icon: 'fileText', title: 'AI分析报告', subtitle: '智能生成专业分析', tone: 'purple',
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
-  { icon: '⚙️', title: '站点管理', subtitle: '站点信息与设备', tone: 'cyan',
+  { icon: 'settings', title: '站点管理', subtitle: '站点信息与设备', tone: 'cyan',
     onTap: () => Taro.switchTab({ url: '/pages/station/index' }) },
+]
+
+const TREND_TABS = [
+  { value: 'radiation', label: '辐射（W/m²）' },
+  { value: 'wind_speed', label: '风速（m/s）' },
+  { value: 'cloud_cover', label: '云量（%）' },
 ]
 
 export default function Home() {
   const { station, index, weather, alert } = mockHome
+  const [trend, setTrend] = useState('radiation')
 
   return (
-    <ScrollView scrollY className="home">
+    <View className="home">
       <AppHeader
         title="AI新能源气象遥感分析平台"
         subtitle="数据驱动绿色未来"
@@ -43,31 +51,38 @@ export default function Home() {
 
         <MetricGrid>
           <MetricCard
-            icon="☀️" label="天气"
+            icon="cloudSun" iconColor="#f59e0b" label="天气"
             metric={formatTemperature(weather.temperature.value)}
             caption={weather.weather_text}
           />
           <MetricCard
-            icon="💨" label="风速"
+            icon="wind" iconColor="#1677ff" label="风速"
             metric={formatWindSpeed(weather.wind_speed.value)}
             deltaPercent={weather.wind_speed.delta_percent}
           />
           <MetricCard
-            icon="☁️" label="云量"
+            icon="cloud" iconColor="#60a5fa" label="云量"
             metric={formatPercent(weather.cloud_cover.value)}
             deltaPercent={weather.cloud_cover.delta_percent}
           />
           <MetricCard
-            icon="🔆" label="辐射"
+            icon="sun" iconColor="#f97316" label="辐射"
             metric={formatRadiation(weather.radiation.value)}
             deltaPercent={weather.radiation.delta_percent}
           />
         </MetricGrid>
 
         <View className="home__card">
-          <SectionHeader icon="📈" title="24小时趋势" action="查看更多" />
+          <SectionHeader
+            icon="trendingUp" title="24小时趋势" action="查看更多"
+          />
+          <SegmentedTabs
+            options={TREND_TABS}
+            value={trend}
+            onChange={setTrend}
+          />
           <View className="home__chart-placeholder">
-            趋势图待实现（Canvas 2D 自绘，见 docs/05 §7.4）
+            趋势图待实现（Canvas 2D 自绘）
           </View>
         </View>
 
@@ -78,10 +93,10 @@ export default function Home() {
         />
 
         <View className="home__card">
-          <SectionHeader icon="🔳" title="快捷入口" />
+          <SectionHeader icon="grid" title="快捷入口" />
           <QuickEntryGrid entries={ENTRIES} />
         </View>
       </View>
-    </ScrollView>
+    </View>
   )
 }

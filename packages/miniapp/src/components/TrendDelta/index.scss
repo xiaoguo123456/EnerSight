@@ -1,12 +1,13 @@
 .trend-delta {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: var(--font-caption);
+  gap: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;   // 「较昨日 ↑12%」必须单行，四宫格里换行会撑破布局
 
   &__label { color: var(--color-text-weak); }
 
-  // 上升红、下降绿：表示变化方向不是好坏，不要按涨跌习惯反转
   &__value {
     font-weight: 600;
     &--up   { color: var(--color-delta-up); }

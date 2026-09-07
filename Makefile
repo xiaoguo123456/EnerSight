@@ -7,6 +7,7 @@ help:
 	@echo "test         跑全部测试"
 	@echo "lint         代码检查"
 	@echo "preview      浏览器预览 H5（最快，不需要开发者工具）"
+	@echo "shot         截图自检 PAGE=home，改完 UI 必跑"
 	@echo "codegen      Pydantic → openapi.json → core/types/generated.ts"
 	@echo "check        codegen + lint + test，CI 用"
 
@@ -19,6 +20,18 @@ dev-server:
 
 dev-miniapp:
 	pnpm --filter @enersight/miniapp dev:weapp
+
+# 页面截图自检：改完 UI 必须跑一遍看结果，不要凭想象交付
+# 用法：make shot PAGE=home
+PAGE ?= home
+shot:
+	pnpm --filter @enersight/miniapp build:h5
+	@(cd packages/miniapp/dist/h5 && python3 -m http.server 4173 >/dev/null 2>&1 &) ; sleep 2
+	@node packages/miniapp/scripts/screenshot.mjs \
+		"http://127.0.0.1:4173/#/pages/$(PAGE)/index" \
+		"/tmp/enersight-$(PAGE).png" 1500
+	@pkill -f "http.server 4173" 2>/dev/null || true
+	@echo "→ /tmp/enersight-$(PAGE).png"
 
 # 浏览器预览：不需要微信开发者工具，也不需要 AppID
 preview:

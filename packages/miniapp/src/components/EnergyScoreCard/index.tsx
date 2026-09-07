@@ -1,5 +1,6 @@
 import { View, Text } from '@tarojs/components'
 import type { IndexLevel } from '@enersight/core/types'
+import { Icon } from '../Icon'
 import './index.scss'
 
 interface Props {
@@ -14,27 +15,29 @@ interface Props {
 export function EnergyScoreCard({ score, level, summary, onExplain }: Props) {
   return (
     <View className="score-card">
-      <View className="score-card__ring">
-        <Text className="score-card__leaf">🍃</Text>
-      </View>
-      <View className="score-card__body">
-        <View className="score-card__head">
-          <Text className="score-card__label">新能源环境指数</Text>
-          <Text className="score-card__help" onClick={onExplain}>?</Text>
-        </View>
-        {score === null ? (
-          <Text className="score-card__empty">数据获取中</Text>
-        ) : (
-          <View className={`score-card__value score-card__value--${level ?? 'poor'}`}>
-            <Text className="score-card__num">{Math.round(score)}</Text>
-            <Text className="score-card__unit">分</Text>
-          </View>
-        )}
-        {summary && <Text className="score-card__summary">{summary}</Text>}
-      </View>
       <View className="score-card__slogan">
         <Text>绿电同行</Text>
         <Text>共建零碳未来</Text>
+      </View>
+      <View className="score-card__main">
+        <View className="score-card__ring">
+          <Icon name="leaf" size={30} color="#16a34a" strokeWidth={1.8} />
+        </View>
+        <View className="score-card__body">
+          <View className="score-card__head" onClick={onExplain}>
+            <Text className="score-card__label">新能源环境指数</Text>
+            <Icon name="helpCircle" size={12} color="#9ca3af" />
+          </View>
+          {score === null ? (
+            <Text className="score-card__empty">数据获取中</Text>
+          ) : (
+            <View className={`score-card__value score-card__value--${level ?? 'poor'}`}>
+              <Text className="score-card__num">{Math.round(score)}</Text>
+              <Text className="score-card__unit">分</Text>
+            </View>
+          )}
+          {summary && <Text className="score-card__summary">{summary}</Text>}
+        </View>
       </View>
     </View>
   )
