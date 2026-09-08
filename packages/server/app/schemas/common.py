@@ -50,10 +50,8 @@ class AlertLevel(StrEnum):
 class MetricWithDelta(BaseModel):
     """值 + 环比。delta_percent 为 None 时前端隐藏环比标签。"""
 
-    value: float | None = None
-    delta_percent: float | None = Field(
-        default=None, description="较昨日同期百分比，None 时前端隐藏标签"
-    )
+    value: float | None
+    delta_percent: float | None = Field(description="较昨日同期百分比，None 时前端隐藏标签")
 
 
 class IndexAttributionFactor(StrEnum):

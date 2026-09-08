@@ -13,6 +13,15 @@ export interface ChartData {
   yMax: number | null
 }
 
+/** 接口的 TrendSeries → 图表输入 */
+export function fromTrendSeries(t: {
+  points: { value: number | null }[]
+  unit: string
+  y_max: number | null
+}): ChartData {
+  return { values: t.points.map((p) => p.value), unit: t.unit, yMax: t.y_max }
+}
+
 export interface ChartTheme {
   line: string
   areaTop: string

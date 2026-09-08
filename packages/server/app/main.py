@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
-from app.routers import auth, health, stations
+from app.routers import auth, health, home, stations
 
 
 def _check_production_config() -> None:
@@ -58,3 +58,4 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)  # t
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(stations.router)
+app.include_router(home.router)

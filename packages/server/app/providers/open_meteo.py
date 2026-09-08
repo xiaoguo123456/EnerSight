@@ -23,7 +23,7 @@ HOURLY_FIELDS = [
     "direct_radiation",
     "diffuse_radiation",
     "direct_normal_irradiance",
-    "global_tilted_irradiance",
+    "is_day",
 ]
 
 
@@ -38,13 +38,16 @@ class OpenMeteoProvider:
         latitude: float,
         longitude: float,
         *,
-        forecast_days: int = 7,
+        forecast_days: int = 2,
         past_days: int = 1,
     ) -> dict:
-        """逐小时预报。
+        """逐小时预报，默认 昨日 + 今日 + 明日 共 72 点。
 
         past_days=1 拿昨日数据，用于环比计算 —— 环比不能只靠实时数据
         推出来，见 docs/04「昨日同期对比数据」。
+        forecast_days=2 是因为 24 小时趋势图要到「明日 00:00」这一点。
+
+        wind_speed_unit=ms 必须传：Open-Meteo 默认 km/h，漏了风速会错 3.6 倍。
         """
         params = {
             "latitude": latitude,
@@ -53,6 +56,7 @@ class OpenMeteoProvider:
             "timezone": "auto",
             "forecast_days": forecast_days,
             "past_days": past_days,
+            "wind_speed_unit": "ms",
         }
         return await self._get(f"{settings.open_meteo_base}/forecast", params)
 
@@ -65,6 +69,7 @@ class OpenMeteoProvider:
             "timezone": "auto",
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
+            "wind_speed_unit": "ms",
         }
         return await self._get(f"{settings.open_meteo_archive_base}/archive", params)
 

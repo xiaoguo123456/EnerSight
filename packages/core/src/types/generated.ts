@@ -74,10 +74,65 @@ export interface paths {
         patch: operations["update_station_v1_stations__station_id__patch"];
         trace?: never;
     };
+    "/v1/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Home */
+        get: operations["get_home_v1_home_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Trends */
+        get: operations["get_trends_v1_trends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AlertLevel
+         * @enum {string}
+         */
+        AlertLevel: "minor" | "moderate" | "severe" | "cleared";
+        /** AlertSummary */
+        AlertSummary: {
+            /** Id */
+            id: string;
+            level: components["schemas"]["AlertLevel"];
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Published At */
+            published_at: string;
+            /** Station Id */
+            station_id: string;
+            /** Source */
+            source: string;
+        };
         /**
          * Coord
          * @enum {string}
@@ -109,6 +164,66 @@ export interface components {
             /** Hub Height */
             hub_height?: number | null;
         };
+        /** CurrentWeather */
+        CurrentWeather: {
+            /** @description ℃ */
+            temperature: components["schemas"]["MetricWithDelta"];
+            /**
+             * Apparent Temperature
+             * @description ℃ 体感
+             */
+            apparent_temperature: number | null;
+            /**
+             * Humidity
+             * @description %
+             */
+            humidity: number | null;
+            /** @description m/s */
+            wind_speed: components["schemas"]["MetricWithDelta"];
+            /**
+             * Wind Direction
+             * @description °
+             */
+            wind_direction: number | null;
+            /** @description % */
+            cloud_cover: components["schemas"]["MetricWithDelta"];
+            /** @description W/m² */
+            radiation: components["schemas"]["MetricWithDelta"];
+            /**
+             * Weather Text
+             * @description 「晴转多云」
+             */
+            weather_text: string | null;
+            /** Observed At */
+            observed_at: string;
+        };
+        /**
+         * EnergyIndex
+         * @description 环境指数 = 今日预测发电量 / 今日理想发电量 × 100。docs/07 §一
+         */
+        EnergyIndex: {
+            /** Score */
+            score?: number | null;
+            level?: components["schemas"]["IndexLevel"] | null;
+            /**
+             * Summary
+             * @description AI 一句话结论
+             */
+            summary?: string | null;
+            /**
+             * Estimated
+             * @description True 表示部分气象因子由气候平均值填补
+             * @default false
+             */
+            estimated: boolean;
+            /** Attribution */
+            attribution?: components["schemas"]["IndexAttribution"][];
+        };
+        /** Envelope[HomeResponse] */
+        Envelope_HomeResponse_: {
+            data: components["schemas"]["HomeResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[LoginResponse] */
         Envelope_LoginResponse_: {
             data: components["schemas"]["LoginResponse"];
@@ -124,6 +239,11 @@ export interface components {
             data: components["schemas"]["StationSummary"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[TrendSeries] */
+        Envelope_TrendSeries_: {
+            data: components["schemas"]["TrendSeries"];
+            meta: components["schemas"]["Meta"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -136,6 +256,42 @@ export interface components {
             /** Server Time */
             server_time: string;
         };
+        /** HomeResponse */
+        HomeResponse: {
+            /** Has Station */
+            has_station: boolean;
+            station: components["schemas"]["StationSummary"] | null;
+            index: components["schemas"]["EnergyIndex"] | null;
+            weather: components["schemas"]["CurrentWeather"] | null;
+            /** @description 24 小时，默认辐射 */
+            trends: components["schemas"]["TrendSeries"] | null;
+            /** @description 今日最高等级一条，无预警为 null */
+            alert: components["schemas"]["AlertSummary"] | null;
+        };
+        /**
+         * IndexAttribution
+         * @description 归因：该因子使指数偏离理想值多少分。算出来的，不是权重。docs/07 §1.6
+         */
+        IndexAttribution: {
+            factor: components["schemas"]["IndexAttributionFactor"];
+            /**
+             * Delta
+             * @description 负数为扣分，正数为加分
+             */
+            delta: number;
+            /** Description */
+            description: string;
+        };
+        /**
+         * IndexAttributionFactor
+         * @enum {string}
+         */
+        IndexAttributionFactor: "radiation" | "temperature" | "wind";
+        /**
+         * IndexLevel
+         * @enum {string}
+         */
+        IndexLevel: "excellent" | "good" | "fair" | "poor";
         /** LoginRequest */
         LoginRequest: {
             /** Code */
@@ -153,6 +309,19 @@ export interface components {
             coord: components["schemas"]["Coord"];
             /** Server Time */
             server_time: string;
+        };
+        /**
+         * MetricWithDelta
+         * @description 值 + 环比。delta_percent 为 None 时前端隐藏环比标签。
+         */
+        MetricWithDelta: {
+            /** Value */
+            value: number | null;
+            /**
+             * Delta Percent
+             * @description 较昨日同期百分比，None 时前端隐藏标签
+             */
+            delta_percent: number | null;
         };
         /** StationCounts */
         StationCounts: {
@@ -231,6 +400,40 @@ export interface components {
          * @enum {string}
          */
         StationType: "solar" | "wind";
+        /**
+         * TrendMetric
+         * @enum {string}
+         */
+        TrendMetric: "radiation" | "wind_speed" | "cloud_cover";
+        /** TrendPoint */
+        TrendPoint: {
+            /** Time */
+            time: string;
+            /**
+             * Value
+             * @description 缺测为 null，前端断线不补 0
+             */
+            value: number | null;
+        };
+        /**
+         * TrendRange
+         * @enum {string}
+         */
+        TrendRange: "24h" | "7d";
+        /** TrendSeries */
+        TrendSeries: {
+            metric: components["schemas"]["TrendMetric"];
+            /** Unit */
+            unit: string;
+            range: components["schemas"]["TrendRange"];
+            /**
+             * Y Max
+             * @description 固定纵轴上限；null 表示自适应。由服务端下发
+             */
+            y_max: number | null;
+            /** Points */
+            points: components["schemas"]["TrendPoint"][];
+        };
         /**
          * UpdateStationRequest
          * @description PATCH：全部可选。docs/06 §5.4
@@ -461,6 +664,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_StationSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_home_v1_home_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+                station_id?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_HomeResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trends_v1_trends_get: {
+        parameters: {
+            query: {
+                station_id: string;
+                metric?: components["schemas"]["TrendMetric"];
+                range?: components["schemas"]["TrendRange"];
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_TrendSeries_"];
                 };
             };
             /** @description Validation Error */

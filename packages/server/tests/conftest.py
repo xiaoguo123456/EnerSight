@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -28,8 +29,11 @@ async def client() -> AsyncIterator[AsyncClient]:
             yield s
 
     app.dependency_overrides[get_session] = _override
+    # ASGITransport 不触发 lifespan，手动准备 app.state.http（respx 会拦截它）
+    app.state.http = httpx.AsyncClient(timeout=5.0)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+    await app.state.http.aclose()
     app.dependency_overrides.clear()
     await engine.dispose()
 

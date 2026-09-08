@@ -20,17 +20,20 @@ type S = components['schemas']
 export type Coord = S['Coord']
 export type StationType = S['CreateStationRequest']['type']
 export type StationStatus = S['StationSummary']['status']
+export type AlertLevel = S['AlertLevel']
+export type IndexLevel = S['IndexLevel']
+export type MetricWithDelta = S['MetricWithDelta']
+export type EnergyIndex = S['EnergyIndex']
+export type IndexAttribution = S['IndexAttribution']
+export type CurrentWeather = S['CurrentWeather']
+export type TrendSeries = S['TrendSeries']
+export type TrendPoint = S['TrendPoint']
+export type TrendMetric = S['TrendMetric']
+export type AlertSummary = S['AlertSummary']
+export type HomeResponse = S['HomeResponse']
 
 // ── 对应接口尚未落地，OpenAPI 里还没有，暂时手写。落地后改为 S['...'] ──
 export type LayerType = 'cloud' | 'wind' | 'temperature' | 'radiation'
-export type AlertLevel = 'minor' | 'moderate' | 'severe' | 'cleared'
-export type IndexLevel = 'excellent' | 'good' | 'fair' | 'poor'
-
-/** 值 + 环比。delta_percent 为 null 时前端隐藏环比标签。docs/06 §2.5 */
-export interface MetricWithDelta {
-  value: number | null
-  delta_percent: number | null
-}
 
 export type StationSummary = S['StationSummary']
 export type StationMetrics = S['StationMetrics']
