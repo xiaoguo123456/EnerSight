@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/weapp/",
   "projectname": "EnerSight",
   "description": "AI新能源气象遥感分析平台",
-  "appid": "wxf5d0866cde9cf391",
+  "appid": "wx61a4a74de8bc126b",
   "compileType": "miniprogram",
   "libVersion": "3.16.2",
   "setting": {
