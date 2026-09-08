@@ -92,10 +92,10 @@ class TestApi:
         # bounds 是块边界（对齐后），不是请求 bbox；且已转 GCJ-02（有偏移）
         sw = imgs[0]["bounds"]["sw"]
         assert abs(sw["latitude"] - 28.0) < 0.01 and sw["latitude"] != 28.0
-        # 图片可访问
-        path = imgs[0]["url"].split("http://test")[1]
-        img = await client.get(path)
-        assert img.status_code == 200 and img.content[:8] == b"\x89PNG\r\n\x1a\n"
+        # 图片已落盘且是合法 PNG（静态服务是 Starlette 的，不在此测）
+        rel = imgs[0]["url"].split("/tiles/")[1]
+        png = (tiles.tile_dir() / rel).read_bytes()
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
 
     async def test_同块只回源一次(self, client: AsyncClient, open_meteo):
         await client.get("/v1/map/layers/radiation", params={"bbox": "120.5,28.5,121.5,29.5"})
