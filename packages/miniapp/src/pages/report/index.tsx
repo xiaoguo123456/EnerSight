@@ -27,7 +27,7 @@ export default function Report() {
 
   return (
     <View className="report">
-      <PageHeader title="AI分析报告" subtitle="数据驱动绿色未来" />
+      <PageHeader title="AI分析报告" />
 
       <View className="report__body">
         <View className="report__meta">

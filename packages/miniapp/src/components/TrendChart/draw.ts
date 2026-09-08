@@ -49,6 +49,21 @@ function hhmm(i: number): string {
   return `${String(i).padStart(2, '0')}:00`
 }
 
+/** 手画圆角矩形。不用 ctx.roundRect —— 小程序 canvas 上它存在但行为不一致 */
+function roundedRect(ctx: any, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y)
+  ctx.arcTo(x + w, y, x + w, y + r, r)
+  ctx.lineTo(x + w, y + h - r)
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
+  ctx.lineTo(x + r, y + h)
+  ctx.arcTo(x, y + h, x, y + h - r, r)
+  ctx.lineTo(x, y + r)
+  ctx.arcTo(x, y, x + r, y, r)
+  ctx.closePath()
+}
+
 export function draw(
   ctx: any,
   size: { w: number; h: number },
@@ -191,18 +206,16 @@ export function draw(
   const above = ay - bh - 8
   const by = above >= 2 ? above : ay + 10
 
+  // 先画一层偏移的淡色当阴影，再画气泡本体，白卡片上也能浮起来
+  roundedRect(ctx, bx, by + 1.5, bw, bh, 7)
+  ctx.fillStyle = 'rgba(17, 24, 39, 0.08)'
+  ctx.fill()
+  roundedRect(ctx, bx, by, bw, bh, 7)
   ctx.fillStyle = t.tipBg
+  ctx.fill()
   ctx.strokeStyle = t.tipBorder
   ctx.lineWidth = 1
-  if (ctx.roundRect) {
-    ctx.beginPath()
-    ctx.roundRect(bx, by, bw, bh, 6)
-    ctx.fill()
-    ctx.stroke()
-  } else {
-    ctx.fillRect(bx, by, bw, bh)
-    ctx.strokeRect(bx, by, bw, bh)
-  }
+  ctx.stroke()
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'

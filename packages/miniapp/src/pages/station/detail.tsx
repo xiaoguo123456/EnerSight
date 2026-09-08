@@ -14,9 +14,9 @@ import { mockHome, mockStations } from '@/mocks'
 import './detail.scss'
 
 const TREND_TABS = [
-  { value: 'radiation', label: '辐射（W/m²）' },
-  { value: 'wind_speed', label: '风速（m/s）' },
-  { value: 'cloud_cover', label: '云量（%）' },
+  { value: 'radiation', label: '辐射' },
+  { value: 'wind_speed', label: '风速' },
+  { value: 'cloud_cover', label: '云量' },
 ] as const
 type TrendKey = (typeof TREND_TABS)[number]['value']
 
@@ -39,6 +39,7 @@ export default function StationDetail() {
       <PageHeader title="站点详情" />
 
       <View className="detail__body">
+        <View className="detail__group">
         <View className="detail__station">
           <View className={`detail__thumb detail__thumb--${station.type}`}>
             <Icon name={station.type === 'solar' ? 'sun' : 'wind'} size={20} color="#fff" />
@@ -74,22 +75,23 @@ export default function StationDetail() {
             <Text className="detail__updated">数据更新时间：2026-09-07 09:41</Text>
           </View>
           <MetricGrid>
-            <MetricCard icon="cloudSun" iconColor="#f59e0b" label="气温"
+            <MetricCard icon="cloudSun" label="气温"
               metric={formatTemperature(weather.temperature.value)}
               caption={weather.weather_text} />
-            <MetricCard icon="wind" iconColor="#1677ff" iconFill={false} label="风速"
+            <MetricCard icon="wind" iconFill={false} label="风速"
               metric={formatWindSpeed(weather.wind_speed.value)}
               deltaPercent={weather.wind_speed.delta_percent} />
-            <MetricCard icon="cloud" iconColor="#60a5fa" label="云量"
+            <MetricCard icon="cloud" label="云量"
               metric={formatPercent(weather.cloud_cover.value)}
               deltaPercent={weather.cloud_cover.delta_percent} />
-            <MetricCard icon="sun" iconColor="#f97316" label="辐射"
+            <MetricCard icon="sun" label="辐射"
               metric={formatRadiation(weather.radiation.value)}
               deltaPercent={weather.radiation.delta_percent} />
           </MetricGrid>
         </View>
 
         <EnergyScoreCard score={index.score} level={index.level} summary={index.summary} />
+        </View>
 
         <View className="detail__card">
           <SectionHeader icon="trendingUp" title="24小时趋势" action="查看详情" />

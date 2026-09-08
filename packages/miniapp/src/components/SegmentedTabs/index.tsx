@@ -24,6 +24,8 @@ export function SegmentedTabs({ options, value, onChange }: Props) {
         <View
           key={o.value}
           className={`seg-tabs__item ${o.value === value ? 'seg-tabs__item--active' : ''}`}
+          hoverClass="pressed"
+          hoverStayTime={60}
           onClick={() => onChange(o.value)}
         >
           {o.dotColor && (

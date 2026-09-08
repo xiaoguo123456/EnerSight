@@ -5,9 +5,15 @@
   &__body {
     display: flex;
     flex-direction: column;
+    gap: var(--space-group);
+    padding: 4px var(--space-page) calc(var(--space-page) + var(--space-tabbar));
+  }
+
+  // Hero + 四宫格：8px 紧贴，读作一组
+  &__group {
+    display: flex;
+    flex-direction: column;
     gap: var(--space-card-gap);
-    padding: var(--space-page);
-    padding-bottom: calc(var(--space-page) + var(--space-tabbar));
   }
 
   &__card {
@@ -16,5 +22,5 @@
     padding: 14px;
   }
 
-  &__chart { margin-top: 10px; }
+  &__chart { margin-top: 8px; }
 }

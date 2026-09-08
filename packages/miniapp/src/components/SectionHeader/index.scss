@@ -6,15 +6,16 @@
 
   &__left { display: flex; align-items: center; gap: 6px; }
   &__title {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: var(--font-module-title);
+    font-weight: 700;
     color: var(--color-text);
   }
   &__action {
     display: flex;
     align-items: center;
-    gap: 2px;
-    font-size: 12px;
-    color: var(--color-text-sub);
+    gap: 1px;
+    font-size: var(--font-caption);
+    color: var(--color-text-weak);
+    @include pressable;
   }
 }

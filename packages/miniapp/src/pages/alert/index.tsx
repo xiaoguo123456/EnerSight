@@ -2,7 +2,7 @@ import { View } from '@tarojs/components'
 import { useMemo, useState } from 'react'
 import type { AlertLevel } from '@enersight/core/types'
 import {
-  AlertCard, AlertRecordList, AppHeader, CloudMotionStats,
+  AlertCard, AlertRecordList, CloudMotionStats, PageTitleBar,
   SatelliteCloudCard, SectionHeader, SegmentedTabs,
 } from '@/components'
 import { mockAlerts } from '@/mocks'
@@ -22,40 +22,44 @@ export default function AlertCenter() {
 
   return (
     <View className="alerts">
-      <AppHeader title="预警中心" subtitle="实时监测 · 精准预警 · 助力稳定发电" />
+      <PageTitleBar title="预警中心" aside={`${records.length} 条记录`} />
 
       <View className="alerts__body">
-        <SegmentedTabs
-          value={filter}
-          onChange={(v) => setFilter(v as Filter)}
-          options={[
-            { value: 'all', label: '全部' },
-            { value: 'minor', label: '轻度', dotColor: '#16a34a' },
-            { value: 'moderate', label: '中度', dotColor: '#f59e0b' },
-            { value: 'severe', label: '重度', dotColor: '#ef4444' },
-          ]}
-        />
+        {/*
+          信息层级：用户最关心「还有多久受影响」。
+          当前预警 + 外推数据编成一组放最上面，云图退到第二组，记录最后。
+        */}
+        <View className="alerts__group">
+          <AlertCard
+            level={current.level}
+            title={current.title}
+            description={current.description}
+            publishedAt={current.published_at}
+          />
+          <CloudMotionStats
+            distanceKm={cloudMotion.distance_km}
+            direction={cloudMotion.direction}
+            directionDetail={cloudMotion.direction_detail}
+            impactInMinutes={cloudMotion.impact_in_minutes}
+            impactStartTime={cloudMotion.impact_start_time}
+            referenceStation={cloudMotion.reference_station}
+          />
+        </View>
 
         <SatelliteCloudCard observedAt={satellite.observed_at} />
 
-        <AlertCard
-          level={current.level}
-          title={current.title}
-          description={current.description}
-          publishedAt={current.published_at}
-        />
-
-        <CloudMotionStats
-          distanceKm={cloudMotion.distance_km}
-          direction={cloudMotion.direction}
-          directionDetail={cloudMotion.direction_detail}
-          impactInMinutes={cloudMotion.impact_in_minutes}
-          impactStartTime={cloudMotion.impact_start_time}
-          referenceStation={cloudMotion.reference_station}
-        />
-
         <View className="alerts__card">
-          <SectionHeader icon="clipboard" title="预警记录" action="查看更多" />
+          <SectionHeader icon="clipboard" title="预警记录" />
+          <SegmentedTabs
+            value={filter}
+            onChange={(v) => setFilter(v as Filter)}
+            options={[
+              { value: 'all', label: '全部' },
+              { value: 'minor', label: '轻度', dotColor: '#16a34a' },
+              { value: 'moderate', label: '中度', dotColor: '#f59e0b' },
+              { value: 'severe', label: '重度', dotColor: '#ef4444' },
+            ]}
+          />
           <AlertRecordList records={list} />
         </View>
       </View>

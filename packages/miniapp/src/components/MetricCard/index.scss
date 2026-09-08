@@ -3,30 +3,21 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 
-  &__head { display: flex; align-items: center; gap: 3px; }
+  &__head { display: flex; align-items: center; gap: 4px; }
   &__label {
-    font-size: 11px;
+    font-size: var(--font-caption);
     color: var(--color-text-sub);
     @include ellipsis;
   }
 
   &__value { display: flex; align-items: baseline; }
-  &__num {
-    font-size: 22px;
-    font-weight: 700;
-    line-height: 1.1;
-    color: var(--color-text);
-  }
-  &__unit {
-    font-size: 10px;
-    color: var(--color-text-sub);
-    margin-left: 2px;
-  }
+  &__num  { @include metric-value; }
+  &__unit { @include metric-unit; }
 
   &__caption {
-    font-size: 11px;
+    font-size: var(--font-caption);
     line-height: 1.2;
     color: var(--color-text-weak);
     @include ellipsis;

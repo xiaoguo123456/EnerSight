@@ -22,7 +22,7 @@ export function QuickEntryGrid({ entries }: { entries: QuickEntry[] }) {
   return (
     <View className="quick-entry">
       {entries.map((e) => (
-        <View className="quick-entry__item" key={e.title} onClick={e.onTap}>
+        <View className="quick-entry__item" key={e.title} hoverClass="pressed" hoverStayTime={80} onClick={e.onTap}>
           <View className={`quick-entry__icon quick-entry__icon--${e.tone}`}>
             <Icon name={e.icon} size={20} color={TONE_COLOR[e.tone]} fill strokeWidth={2.3} />
           </View>

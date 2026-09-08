@@ -142,6 +142,7 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 用 emoji 当图标 —— 用 `<Icon name="..."/>`，字形随系统变化不可控
 - ❌ 改完 UI 不看结果就交付 —— H5 跑 `make shot`，小程序跑 `devtools-shot.sh`，实际查看 PNG
 - ❌ 只在 H5 验证小程序样式 —— WXSS 与浏览器 CSS 差异大（选择器容错、`:root`、原生组件层级），必须在开发者工具里看
+- ❌ 一页多个 Hero / 四宫格图标四种颜色 / 顶栏放品牌口号 —— 层级原则见 docs/02 §九
 
 
 ## 命令
@@ -194,6 +195,9 @@ make codegen                         # openapi.json → core/types/
 | `libVersion` 写了不存在的版本 | 工具弹「下载基础库失败」，页面全白。用本地已缓存的版本（`~/Library/Application Support/微信开发者工具/*/WeappVendor/`） |
 | map 浮层 | 基础库 3.16.2 起支持同层渲染，浮层用普通 `View`，不用 `cover-view`；底部面板可叠在地图上 |
 | 开发者工具每次重编译回到启动页 | `TARO_APP_LAUNCH=<page>` 临时切启动页调试，生产构建不要设 |
+| 连续快速重编译会把开发者工具搞挂 | 表现为所有页面空白但 tabBar 在、控制台无报错、连旧代码都白。**先怀疑工具再怀疑代码**：`git stash` 构建上一提交验证；重启工具即恢复 |
+| `:active` 在小程序不响应触摸 | 按下态用 `hoverClass="pressed"`，H5 走 `:active`，mixin `pressable` 两者都写 |
+| `ctx.roundRect` 小程序 canvas 行为不一致 | 手画圆角矩形（`arcTo`），见 TrendChart/draw.ts |
 | Playwright 截图 `fullPage` 截不全 | Taro 的 `.taro_page` 是内层滚动容器，用足够高的视口代替 fullPage |
 | tabBar 图标只接受图片文件 | 不支持 data URI；用 `scripts/gen-tabbar-icons.mjs` 由 SVG 渲染 PNG |
 | 两端共用 `outputRoot` 会互相覆盖 | 已按 `dist/${TARO_ENV}` 分目录 |

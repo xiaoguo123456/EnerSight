@@ -3,12 +3,8 @@
   align-items: stretch;
   background: var(--color-surface);
   border-radius: var(--radius-card);
-  padding: 14px 10px;
+  padding: 14px 8px;
 
-  > view {
-    padding: 0 6px;
-  }
-  > view + view {
-    border-left: 1px solid var(--color-divider);
-  }
+  > view { padding: 0 8px; }
+  > view + view { border-left: 1px solid var(--color-divider); }
 }

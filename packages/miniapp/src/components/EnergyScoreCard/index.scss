@@ -1,58 +1,72 @@
-.score-card {
+.hero {
   position: relative;
-  padding: 16px;
+  padding: 18px 18px 16px;
   border-radius: var(--radius-module);
-  // 浅绿渐变 + 远山插画，右侧留白给手写体。docs/02 §二
-  background: linear-gradient(115deg, #e8f7ee 0%, #f1faf4 60%, #e4f4ec 100%);
   overflow: hidden;
+  // 渐变只做底色氛围，不做装饰。等级不同底色不同，一眼分辨好坏
+  background: linear-gradient(135deg, #e6f6ec 0%, #f2fbf5 100%);
 
-  &__main { display: flex; align-items: center; gap: 14px; }
+  &--fair { background: linear-gradient(135deg, #fff4dd 0%, #fffaf0 100%); }
+  &--poor { background: linear-gradient(135deg, #fde8e8 0%, #fff5f5 100%); }
 
-  &__ring {
-    width: 60px; height: 60px;
-    border-radius: 50%;
-    background: rgba(22, 163, 74, .12);
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-
-  &__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   &__head { display: flex; align-items: center; gap: 4px; }
-  &__label { font-size: 13px; font-weight: 600; color: var(--color-text); }
-
-  &__value { display: flex; align-items: baseline; }
-  &__num {
-    font-size: 34px;
-    font-weight: 700;
-    line-height: 1.05;
-    color: var(--color-energy);
-  }
-  &__unit { font-size: 13px; margin-left: 2px; color: var(--color-energy); }
-
-  // 一般 / 较差用警示色，避免低分也显示成绿色
-  &__value--fair .score-card__num,
-  &__value--fair .score-card__unit { color: var(--color-warning); }
-  &__value--poor .score-card__num,
-  &__value--poor .score-card__unit { color: var(--color-danger); }
-
-  &__empty { font-size: 17px; color: var(--color-text-weak); padding: 6px 0; }
-
-  &__summary {
-    display: block;
-    margin-top: 4px;
-    font-size: 12px;
-    line-height: 1.45;
+  &__label {
+    font-size: var(--font-caption);
+    font-weight: 600;
+    letter-spacing: .02em;
     color: var(--color-text-sub);
   }
 
-  &__slogan {
-    position: absolute;
-    right: 12px; top: 14px;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
-    font-size: 10px;
-    line-height: 1.35;
+  &__score {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    margin-top: 2px;
+  }
+  &__num {
+    @include numeric;
+    font-size: var(--font-hero);
+    font-weight: 800;
+    line-height: 1;
     color: var(--color-energy);
-    opacity: .55;
-    transform: rotate(-4deg);
+  }
+  &__unit {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-energy);
+    margin-right: 8px;
+  }
+  &--fair .hero__num, &--fair .hero__unit { color: #d97706; }
+  &--poor .hero__num, &--poor .hero__unit { color: var(--color-danger); }
+
+  &__level {
+    padding: 2px 9px;
+    border-radius: var(--radius-pill);
+    background: rgba(22, 163, 74, .12);
+    color: var(--color-energy);
+    font-size: var(--font-caption);
+    font-weight: 600;
+    transform: translateY(-4px);
+  }
+  &--fair .hero__level { background: rgba(217, 119, 6, .12); color: #d97706; }
+  &--poor .hero__level { background: rgba(239, 68, 68, .12); color: var(--color-danger); }
+
+  &__empty { font-size: 20px; color: var(--color-text-weak); padding: 10px 0; }
+
+  &__summary {
+    display: block;
+    margin-top: 8px;
+    font-size: var(--font-body);
+    line-height: 1.5;
+    color: var(--color-text);
+    max-width: 78%;
+  }
+
+  // 右侧大叶子水印，压得很淡，只做质感不抢戏
+  &__deco {
+    position: absolute;
+    right: -14px;
+    bottom: -18px;
+    pointer-events: none;
   }
 }

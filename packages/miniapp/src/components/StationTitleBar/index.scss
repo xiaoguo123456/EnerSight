@@ -1,0 +1,32 @@
+.station-title {
+  padding-left: var(--space-page);
+  padding-bottom: 10px;
+  background: var(--color-bg);
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    @include pressable;
+  }
+  &__name {
+    font-size: var(--font-page-title);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--color-text);
+    @include ellipsis;
+  }
+
+  &__sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  &__addr {
+    font-size: var(--font-caption);
+    color: var(--color-text-sub);
+    @include ellipsis;
+  }
+}

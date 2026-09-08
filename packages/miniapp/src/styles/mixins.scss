@@ -7,19 +7,39 @@
   padding: var(--space-card-pad);
 }
 
-// 数值 + 单位：单位字号约为数值的 40%，颜色降一级（docs/02 §三）
-@mixin metric-value {
-  font-size: var(--font-metric);
-  font-weight: 700;
-  color: var(--color-text);
-  line-height: 1.1;
+// 数字排版：等宽数字对齐 + 紧字距，数字是这个产品的主角
+@mixin numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  letter-spacing: -0.02em;
 }
 
-@mixin metric-unit {
-  font-size: var(--font-unit);
-  font-weight: 400;
-  color: var(--color-text-sub);
-  margin-left: 4px;
+// 数值 + 单位：单位字号约为数值的 35%，颜色降一级（docs/02 §三）
+@mixin metric-value($size: var(--font-metric)) {
+  @include numeric;
+  font-size: $size;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.05;
+}
+
+@mixin metric-unit($size: var(--font-micro)) {
+  font-size: $size;
+  font-weight: 500;
+  color: var(--color-text-weak);
+  margin-left: 2px;
+}
+
+// 按下态：所有可点击的卡片与按钮都要有反馈，否则像静态图。
+// H5 走 :active；小程序的触摸不触发 :active，要在元素上加 hoverClass="pressed"，
+// 两端各走各的，样式一致。
+@mixin pressable {
+  transition: transform .12s ease, opacity .12s ease;
+  &:active,
+  &.pressed {
+    transform: scale(.985);
+    opacity: .85;
+  }
 }
 
 // 单行省略

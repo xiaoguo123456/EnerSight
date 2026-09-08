@@ -22,9 +22,10 @@
   --color-divider: #eff3f7;
 
   // ── 中性色 ────────────────────────────────
-  --color-text:      #1f2937; // 标题、数值
+  --color-text:      #111827; // 标题、数值（比之前更深，加强对比）
   --color-text-sub:  #6b7280; // 描述、副标题
   --color-text-weak: #9ca3af; // 时间戳、单位、占位符
+  --color-icon:      #64748b; // 指标图标统一色，克制，不抢数值的戏
 
   // ── 状态色 ────────────────────────────────
   --color-status-normal:  var(--color-energy);
@@ -49,7 +50,8 @@
   --space-8: 32px;
 
   --space-page:      var(--space-4); // 页面边距
-  --space-card-gap:  var(--space-3); // 卡片间距
+  --space-group:     var(--space-4); // 逻辑组之间（16）
+  --space-card-gap:  var(--space-2); // 同组卡片之间（8）
   --space-card-pad:  var(--space-4); // 卡片内边距
   --space-grid-gap:  var(--space-2); // 四宫格单元间距
   --space-tabbar:    var(--space-6); // 底部导航上方安全间距
@@ -62,13 +64,15 @@
   --radius-pill:   999px; // 筛选 Tab、状态徽章、悬浮按钮
 
   // ── 字号 ──────────────────────────────────
-  --font-page-title:   32px;
-  --font-module-title: 20px;
-  --font-metric:       36px; // 数据数字 32–40
-  --font-metric-lg:    40px;
-  --font-body:         16px;
-  --font-unit:         16px;
-  --font-caption:      13px;
+  // 层级必须拉开：Hero 数字是普通数字的 2 倍以上，否则没有主次
+  --font-hero:         52px; // 页面唯一 Hero 数字
+  --font-page-title:   22px; // 页面标题（顶栏）
+  --font-module-title: 15px; // 模块标题
+  --font-metric:       22px; // 四宫格数字
+  --font-metric-sm:    17px; // 次级数字（站点卡）
+  --font-body:         14px;
+  --font-caption:      11px;
+  --font-micro:        10px;
 
   // ── 阴影 ──────────────────────────────────
   // 浅色底上的卡片靠留白分层，不叠重阴影。地图浮层才需要

@@ -1,6 +1,6 @@
 import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { AppHeader, Icon } from '@/components'
+import { Icon, PageTitleBar } from '@/components'
 import type { IconName } from '@/components'
 import { mockStations } from '@/mocks'
 import './index.scss'
@@ -47,7 +47,7 @@ export default function Mine() {
 
   return (
     <View className="mine">
-      <AppHeader title="我的" subtitle="账号与偏好设置" />
+      <PageTitleBar title="我的" />
 
       <View className="mine__body">
         <View className="mine__profile">

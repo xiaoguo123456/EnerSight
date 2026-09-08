@@ -1,6 +1,9 @@
 .seg-tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg);
 
   &__item {
     flex: 1;
@@ -9,21 +12,22 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    height: 30px;
-    padding: 0 4px;
+    height: 28px;
+    padding: 0 6px;
     border-radius: var(--radius-pill);
-    background: var(--color-bg);
+    @include pressable;
 
     &--active {
-      background: var(--color-primary);
-      .seg-tabs__label { color: #fff; font-weight: 600; }
+      background: var(--color-surface);
+      box-shadow: 0 1px 3px rgba(17, 24, 39, .08);
+      .seg-tabs__label { color: var(--color-text); font-weight: 700; }
     }
   }
 
   &__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
   &__label {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--color-text-sub);
     @include ellipsis;
   }

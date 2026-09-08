@@ -5,7 +5,7 @@
   &__cell {
     flex: 1; min-width: 0;
     display: flex; flex-direction: column; align-items: center; gap: 3px;
-    padding: 12px 6px;
+    padding: 12px 6px 10px;
     border-radius: var(--radius-card);
     background: var(--color-surface);
   }
@@ -18,7 +18,9 @@
   }
   &__label { font-size: 10px; color: var(--color-text-sub); @include ellipsis; }
   &__value { display: flex; align-items: baseline; }
-  &__num { font-size: 18px; font-weight: 700; color: var(--color-text); }
+  &__num { @include metric-value(20px); }
+  // 第三格「预计影响时间」是决策依据，用主色标出
+  &__cell:last-child &__num { color: var(--color-warning); }
   &__unit { font-size: 9px; color: var(--color-text-sub); margin-left: 2px; }
   &__sub {
     font-size: 9px; line-height: 1.3;

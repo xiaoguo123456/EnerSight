@@ -5,9 +5,15 @@
   &__body {
     display: flex;
     flex-direction: column;
+    gap: var(--space-group);
+    padding: 4px var(--space-page) calc(var(--space-page) + var(--space-tabbar));
+  }
+
+  // 站点信息 + 天气 + 指数编成一组
+  &__group {
+    display: flex;
+    flex-direction: column;
     gap: var(--space-card-gap);
-    padding: var(--space-page);
-    padding-bottom: calc(var(--space-page) + var(--space-tabbar));
   }
 
   &__card {
@@ -37,7 +43,7 @@
   }
   &__station-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   &__station-row { display: flex; align-items: center; gap: 6px; }
-  &__station-name { font-size: 16px; font-weight: 700; color: var(--color-text); }
+  &__station-name { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); }
   &__station-addr { display: flex; align-items: center; gap: 3px; min-width: 0; }
   &__station-addr-text {
     font-size: 10.5px; color: var(--color-text-sub);

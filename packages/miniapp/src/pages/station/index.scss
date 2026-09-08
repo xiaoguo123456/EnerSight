@@ -6,8 +6,23 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-card-gap);
-    padding: var(--space-page);
+    padding: 4px var(--space-page) var(--space-page);
     min-height: calc(100vh - 100px);
-    padding-bottom: var(--space-page);
   }
+
+  &__add {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    margin-bottom: 4px;
+  }
+  &__add-item {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    @include pressable;
+  }
+  &__add-text { font-size: 12px; font-weight: 600; color: var(--color-text); }
+  &__add-divider { width: 1px; height: 16px; background: var(--color-divider); }
 }

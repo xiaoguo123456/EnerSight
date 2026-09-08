@@ -6,8 +6,8 @@ import './index.scss'
 
 interface Props {
   icon: IconName
-  iconColor: string
-  /** 闭合形状开填充更有分量；wind 这类开放路径不要开 */
+  /** 不传则用统一的中性图标色。四宫格不要四种颜色，克制 */
+  iconColor?: string
   iconFill?: boolean
   label: string
   metric: Formatted
@@ -17,12 +17,12 @@ interface Props {
 }
 
 export function MetricCard({
-  icon, iconColor, iconFill = true, label, metric, deltaPercent, caption,
+  icon, iconColor = '#64748b', iconFill = true, label, metric, deltaPercent, caption,
 }: Props) {
   return (
     <View className="metric-card">
       <View className="metric-card__head">
-        <Icon name={icon} size={16} color={iconColor} fill={iconFill} strokeWidth={2.4} />
+        <Icon name={icon} size={14} color={iconColor} fill={iconFill} strokeWidth={2.2} />
         <Text className="metric-card__label">{label}</Text>
       </View>
       <View className="metric-card__value">

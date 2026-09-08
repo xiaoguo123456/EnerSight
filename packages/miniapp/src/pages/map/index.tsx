@@ -151,13 +151,13 @@ export default function MapPage() {
             <MetricCard icon="leaf" iconColor="#16a34a" label="环境指数"
               metric={{ value: String(index.score), unit: '分' }}
               caption="良好" />
-            <MetricCard icon="cloudSun" iconColor="#f59e0b" label="天气"
+            <MetricCard icon="cloudSun" label="天气"
               metric={formatTemperature(weather.temperature.value)}
               caption={weather.weather_text} />
-            <MetricCard icon="wind" iconColor="#1677ff" iconFill={false} label="风速"
+            <MetricCard icon="wind" iconFill={false} label="风速"
               metric={formatWindSpeed(weather.wind_speed.value)}
               deltaPercent={weather.wind_speed.delta_percent} />
-            <MetricCard icon="sun" iconColor="#f97316" label="辐射"
+            <MetricCard icon="sun" label="辐射"
               metric={formatRadiation(weather.radiation.value)}
               deltaPercent={weather.radiation.delta_percent} />
           </MetricGrid>

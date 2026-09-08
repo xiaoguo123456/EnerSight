@@ -8,9 +8,9 @@
   &--severe   { background: linear-gradient(120deg, #fef0f0 0%, #fffafa 100%); }
   &--cleared  { background: linear-gradient(120deg, #eef9f2 0%, #fbfdfc 100%); }
 
-  &__head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  &__head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
   &__icon {
-    width: 30px; height: 30px;
+    width: 28px; height: 28px;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
@@ -25,9 +25,10 @@
 
   &__title {
     display: block;
-    font-size: 14px; font-weight: 600; line-height: 1.4;
+    font-size: 17px; font-weight: 800; line-height: 1.35;
+    letter-spacing: -0.01em;
     color: var(--color-text);
-    margin-bottom: 5px;
+    margin-bottom: 6px;
   }
   &__desc {
     display: block;

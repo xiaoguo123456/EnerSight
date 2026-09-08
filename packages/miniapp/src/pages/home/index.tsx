@@ -1,12 +1,12 @@
 import { View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
+import { useState } from 'react'
 import {
   formatPercent, formatRadiation, formatTemperature, formatWindSpeed,
 } from '@enersight/core/format'
-import { useState } from 'react'
 import {
-  AlertBanner, AppHeader, EnergyScoreCard, MetricCard, MetricGrid,
-  QuickEntryGrid, SectionHeader, SegmentedTabs, StationSelector, TrendChart,
+  AlertBanner, EnergyScoreCard, MetricCard, MetricGrid,
+  QuickEntryGrid, SectionHeader, SegmentedTabs, StationTitleBar, TrendChart,
 } from '@/components'
 import type { QuickEntry } from '@/components'
 import { mockHome } from '@/mocks/home'
@@ -23,57 +23,60 @@ const ENTRIES: QuickEntry[] = [
 ]
 
 const TREND_TABS = [
-  { value: 'radiation', label: '辐射（W/m²）' },
-  { value: 'wind_speed', label: '风速（m/s）' },
-  { value: 'cloud_cover', label: '云量（%）' },
+  { value: 'radiation', label: '辐射' },
+  { value: 'wind_speed', label: '风速' },
+  { value: 'cloud_cover', label: '云量' },
 ] as const
-
 type TrendKey = (typeof TREND_TABS)[number]['value']
 
+/**
+ * 首页信息层级：
+ *   顶栏     站点名 = 页面标题
+ *   Hero     环境指数，全页唯一大字
+ *   支撑     四宫格，紧贴 Hero，8px 间距把它们编成一组
+ *   ── 16px ──
+ *   趋势     次级内容
+ *   预警     需要打断用户的，用左侧色条
+ *   入口     辅助
+ */
 export default function Home() {
   const { station, index, weather, alert } = mockHome
   const [trend, setTrend] = useState<TrendKey>('radiation')
 
   return (
     <View className="home">
-      <AppHeader title="AI新能源气象遥感分析平台" subtitle="数据驱动绿色未来" />
+      <StationTitleBar
+        name={station.name}
+        status={station.status}
+        address={station.address}
+      />
 
       <View className="home__body">
-        <StationSelector {...station} />
-
-        <EnergyScoreCard
-          score={index.score}
-          level={index.level}
-          summary={index.summary}
-        />
-
-        <MetricGrid>
-          <MetricCard
-            icon="cloudSun" iconColor="#f59e0b" label="天气"
-            metric={formatTemperature(weather.temperature.value)}
-            caption={weather.weather_text}
+        {/* Hero + 支撑数据编成一组 */}
+        <View className="home__group">
+          <EnergyScoreCard
+            score={index.score}
+            level={index.level}
+            summary={index.summary}
           />
-          <MetricCard
-            icon="wind" iconColor="#1677ff" iconFill={false} label="风速"
-            metric={formatWindSpeed(weather.wind_speed.value)}
-            deltaPercent={weather.wind_speed.delta_percent}
-          />
-          <MetricCard
-            icon="cloud" iconColor="#60a5fa" label="云量"
-            metric={formatPercent(weather.cloud_cover.value)}
-            deltaPercent={weather.cloud_cover.delta_percent}
-          />
-          <MetricCard
-            icon="sun" iconColor="#f97316" label="辐射"
-            metric={formatRadiation(weather.radiation.value)}
-            deltaPercent={weather.radiation.delta_percent}
-          />
-        </MetricGrid>
+          <MetricGrid>
+            <MetricCard icon="cloudSun" label="天气"
+              metric={formatTemperature(weather.temperature.value)}
+              caption={weather.weather_text} />
+            <MetricCard icon="wind" iconFill={false} label="风速"
+              metric={formatWindSpeed(weather.wind_speed.value)}
+              deltaPercent={weather.wind_speed.delta_percent} />
+            <MetricCard icon="cloud" label="云量"
+              metric={formatPercent(weather.cloud_cover.value)}
+              deltaPercent={weather.cloud_cover.delta_percent} />
+            <MetricCard icon="sun" label="辐射"
+              metric={formatRadiation(weather.radiation.value)}
+              deltaPercent={weather.radiation.delta_percent} />
+          </MetricGrid>
+        </View>
 
         <View className="home__card">
-          <SectionHeader
-            icon="trendingUp" title="24小时趋势" action="查看更多"
-          />
+          <SectionHeader icon="trendingUp" title="24小时趋势" action="查看更多" />
           <SegmentedTabs
             options={TREND_TABS as unknown as { value: string; label: string }[]}
             value={trend}

@@ -11,12 +11,12 @@ interface Props {
 }
 
 export function SectionHeader({
-  icon, iconColor = '#1677ff', title, action, onAction,
+  icon, iconColor = '#64748b', title, action, onAction,
 }: Props) {
   return (
     <View className="section-header">
       <View className="section-header__left">
-        <Icon name={icon} size={16} color={iconColor} />
+        <Icon name={icon} size={15} color={iconColor} strokeWidth={2.2} />
         <Text className="section-header__title">{title}</Text>
       </View>
       {action && (
