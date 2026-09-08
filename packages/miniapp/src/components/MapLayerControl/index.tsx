@@ -1,5 +1,5 @@
-import { CoverView, CoverImage } from '@tarojs/components'
-import { ICON_PATHS, type IconName } from '../Icon/paths'
+import { View, Text } from '@tarojs/components'
+import { Icon, type IconName } from '../Icon'
 import './index.scss'
 
 export type MapLayer = 'cloud' | 'wind' | 'temperature' | 'radiation' | 'station'
@@ -7,44 +7,36 @@ export type MapLayer = 'cloud' | 'wind' | 'temperature' | 'radiation' | 'station
 const LAYERS: { value: MapLayer; label: string; icon: IconName }[] = [
   { value: 'cloud', label: '云图', icon: 'cloud' },
   { value: 'wind', label: '风场', icon: 'wind' },
-  { value: 'temperature', label: '温度', icon: 'sun' },
-  { value: 'radiation', label: '辐射', icon: 'zap' },
+  { value: 'temperature', label: '温度', icon: 'thermometer' },
+  { value: 'radiation', label: '辐射', icon: 'sun' },
   { value: 'station', label: '站点', icon: 'mapPin' },
 ]
 
-function iconUri(name: IconName, color: string): string {
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ` +
-    `stroke="${color}" stroke-width="2" stroke-linecap="round" ` +
-    `stroke-linejoin="round">${ICON_PATHS[name]}</svg>`
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`
-}
-
 /**
- * 图层切换器。必须用 CoverView —— map 是原生组件，普通 View 盖不住它。
- * controls 属性已废弃，官方推荐 cover-view。
+ * 图层切换器。
+ *
+ * 基础库 3.16.2 起 <map> 支持同层渲染，浮层可用普通 View
+ * （控制台会提示「建议使用 view 代替 cover-view」）。
+ * 上线前在 mp 后台把最低基础库设到支持同层渲染的版本。
  */
 export function MapLayerControl({
   value, onChange,
 }: { value: MapLayer; onChange: (l: MapLayer) => void }) {
   return (
-    <CoverView className="layer-ctrl">
+    <View className="layer-ctrl">
       {LAYERS.map((l) => {
         const active = l.value === value
         return (
-          <CoverView
+          <View
             key={l.value}
             className={`layer-ctrl__item ${active ? 'layer-ctrl__item--active' : ''}`}
             onClick={() => onChange(l.value)}
           >
-            <CoverImage
-              className="layer-ctrl__icon"
-              src={iconUri(l.icon, active ? '#ffffff' : '#1677ff')}
-            />
-            <CoverView className="layer-ctrl__label">{l.label}</CoverView>
-          </CoverView>
+            <Icon name={l.icon} size={18} color={active ? '#ffffff' : '#1677ff'} />
+            <Text className="layer-ctrl__label">{l.label}</Text>
+          </View>
         )
       })}
-    </CoverView>
+    </View>
   )
 }

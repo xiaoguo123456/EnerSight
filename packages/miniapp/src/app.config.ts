@@ -1,13 +1,21 @@
+const PAGES = [
+  'pages/home/index',
+  'pages/map/index',
+  'pages/alert/index',
+  'pages/station/index',
+  'pages/mine/index',
+  'pages/station/detail',
+  'pages/report/index',
+]
+
+// 开发期切换启动页：TARO_APP_LAUNCH=map pnpm build:weapp
+// 开发者工具每次重编译都回到启动页，调试非首页时省得手点。生产构建不要设。
+const launch = process.env.TARO_APP_LAUNCH
+const entry = launch ? PAGES.find((p) => p.includes(`/${launch}`)) : undefined
+const pages = entry ? [entry, ...PAGES.filter((p) => p !== entry)] : PAGES
+
 export default defineAppConfig({
-  pages: [
-    'pages/home/index',
-    'pages/map/index',
-    'pages/alert/index',
-    'pages/station/index',
-    'pages/mine/index',
-    'pages/station/detail',
-    'pages/report/index',
-  ],
+  pages,
   window: {
     backgroundTextStyle: 'light',
     navigationStyle: 'custom',

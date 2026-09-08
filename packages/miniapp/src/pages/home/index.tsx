@@ -36,11 +36,7 @@ export default function Home() {
 
   return (
     <View className="home">
-      <AppHeader
-        title="AI新能源气象遥感分析平台"
-        subtitle="数据驱动绿色未来"
-        slogan={['让清洁能源', '点亮更美好的明天']}
-      />
+      <AppHeader title="AI新能源气象遥感分析平台" subtitle="数据驱动绿色未来" />
 
       <View className="home__body">
         <StationSelector {...station} />

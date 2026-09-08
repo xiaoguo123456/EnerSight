@@ -1,10 +1,12 @@
 .app-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
-  padding: 52px var(--space-page) 16px;
+  padding-bottom: 14px;
+  padding-left: var(--space-page);
   background: var(--color-bg);
+  // padding-top / padding-right 由 JS 按安全区注入，见 index.tsx
 
   &__brand {
     display: flex;
@@ -16,7 +18,7 @@
 
   &__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   &__title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--color-text);
     @include ellipsis;

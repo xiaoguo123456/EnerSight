@@ -1,14 +1,16 @@
 @import './tokens.scss';
 
-// 同 tokens：两端根元素不同，都要写
-page,
-body {
+@mixin page-base {
   background: var(--color-bg);
   color: var(--color-text);
   font-size: var(--font-body);
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC',
     'Helvetica Neue', Helvetica, sans-serif;
 }
+
+// 拆开写，理由同 tokens.scss
+page { @include page-base; }
+body { @include page-base; }
 
 view, text, image, scroll-view {
   box-sizing: border-box;

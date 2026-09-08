@@ -1,15 +1,13 @@
 // 设计 token —— 唯一来源是 docs/02-design-system.md
 // 改动前先改文档。所有页面与组件只用变量，禁止硬编码色值与尺寸。
 //
-// 注意两点：
-// 1. 必须同时写 page 与 :root —— 小程序的根是 page（无 :root），
-//    H5 的根是 :root（无 page）。只写一个会导致另一端全部变量失效，
-//    表现为间距、圆角、字号集体消失。
-// 2. 本文件只由 global.scss 引入一次，产出到 app.wxss 全局生效。
-//    不要放进 config 的 sass.resource，否则每个页面的 wxss 都会重复带一份
+// ⚠️ 必须为 page 与 :root 各写一条独立规则，不能合并成 `page, :root`。
+// 两端根元素不同（小程序是 page，H5 是 :root），而 WXSS 对逗号选择器里的
+// 非法项是**整条作废** —— 合写会让小程序端所有变量失效，
+// 表现为背景、圆角、主色集体消失，且不报任何错。
+// 同理 global.scss 里的 `page, body` 也必须拆开。
 
-page,
-:root {
+@mixin design-tokens {
   // ── 主色 ──────────────────────────────────
   --color-primary: #1677ff; // 主按钮、激活态、图表主色
   --color-energy:  #16a34a; // 新能源、正常状态、环境指数
@@ -77,3 +75,6 @@ page,
   --shadow-float: 0 2px 8px rgba(31, 41, 55, 0.08);
   --shadow-panel: 0 -2px 16px rgba(31, 41, 55, 0.10);
 }
+
+page { @include design-tokens; }
+:root { @include design-tokens; }

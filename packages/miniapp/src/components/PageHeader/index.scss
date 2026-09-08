@@ -1,16 +1,19 @@
 .page-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
-  padding: 52px var(--space-page) 16px;
+  padding-bottom: 14px;
+  padding-left: var(--space-page);
   background: var(--color-bg);
+  // padding-top / padding-right 由 JS 按安全区注入，见 index.tsx
 
   &__back {
-    width: 28px; height: 28px;
+    width: 26px; height: 26px;
     display: flex; align-items: center; justify-content: center;
     margin-left: -6px;
+    flex-shrink: 0;
   }
   &__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-  &__title { font-size: 19px; font-weight: 700; color: var(--color-text); }
+  &__title { font-size: 18px; font-weight: 700; color: var(--color-text); }
   &__subtitle { font-size: 11px; color: var(--color-text-sub); }
 }

@@ -140,7 +140,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 用户请求时同步调 AI —— 全部预生成 + 缓存，见 08 §三
 - ❌ 把 `src/mocks/` 的数据当真 —— 接口落地后必须删除该目录
 - ❌ 用 emoji 当图标 —— 用 `<Icon name="..."/>`，字形随系统变化不可控
-- ❌ 改完 UI 不看结果就交付 —— 跑 `make shot` 并实际查看 PNG
+- ❌ 改完 UI 不看结果就交付 —— H5 跑 `make shot`，小程序跑 `devtools-shot.sh`，实际查看 PNG
+- ❌ 只在 H5 验证小程序样式 —— WXSS 与浏览器 CSS 差异大（选择器容错、`:root`、原生组件层级），必须在开发者工具里看
 
 
 ## 命令
@@ -149,7 +150,11 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 # 看页面效果
 make preview-bg                      # 后台预览 → http://127.0.0.1:4173
 make preview-stop                    # 停掉后台预览
-make shot PAGE=home                  # ★ 截图自检 → /tmp/enersight-home.png，改完 UI 必跑
+make shot PAGE=home                  # H5 截图自检 → /tmp/enersight-home.png
+
+# 小程序真实效果（需开发者工具已打开项目 + 终端有「屏幕录制」权限）
+TARO_APP_LAUNCH=map pnpm --filter @enersight/miniapp build:weapp   # 切启动页，免手点
+packages/miniapp/scripts/devtools-shot.sh /tmp/sim.png             # ★ 截模拟器画面
 
 # 小程序
 pnpm --filter @enersight/miniapp dev:weapp    # watch，产物 dist/weapp/
@@ -185,7 +190,11 @@ make codegen                         # openapi.json → core/types/
 | hoisted 布局把所有 `@types` 拉进隐式作用域 | 两个 tsconfig 都显式写了 `types` |
 | `designWidth` 决定 px→rpx 比例 | 取 375（02 的字号是 375pt 基准标注）；换基准改 config，不要改 token 数值 |
 | H5 构建需 `src/index.html` 里的 Taro 占位符 | `<script><%= htmlWebpackPlugin.options.script %></script>` 不能删，否则不注入入口 |
-| CSS 变量的根选择器两端不同 | token 必须同时写 `page` 与 `:root`，只写一个会让另一端**全部变量失效**（表现为间距圆角字号集体消失） |
+| CSS 变量的根选择器两端不同 | token 要给 `page` 与 `:root` **各写一条独立规则**。合写成 `page, :root` 会让小程序端全部变量失效 —— WXSS 对逗号选择器里的非法项是整条作废，且不报错 |
+| `navigationStyle: custom` 要自己避开状态栏与胶囊 | 用 `getSafeArea()`（`hooks/useSafeArea.ts`）算 paddingTop / paddingRight，不要写死 |
+| `libVersion` 写了不存在的版本 | 工具弹「下载基础库失败」，页面全白。用本地已缓存的版本（`~/Library/Application Support/微信开发者工具/*/WeappVendor/`） |
+| map 浮层 | 基础库 3.16.2 起支持同层渲染，浮层用普通 `View`，不用 `cover-view`；底部面板可叠在地图上 |
+| 开发者工具每次重编译回到启动页 | `TARO_APP_LAUNCH=<page>` 临时切启动页调试，生产构建不要设 |
 | Playwright 截图 `fullPage` 截不全 | Taro 的 `.taro_page` 是内层滚动容器，用足够高的视口代替 fullPage |
 | tabBar 图标只接受图片文件 | 不支持 data URI；用 `scripts/gen-tabbar-icons.mjs` 由 SVG 渲染 PNG |
 | 两端共用 `outputRoot` 会互相覆盖 | 已按 `dist/${TARO_ENV}` 分目录 |

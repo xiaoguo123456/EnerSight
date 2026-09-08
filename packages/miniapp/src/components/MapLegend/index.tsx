@@ -1,4 +1,4 @@
-import { CoverView } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import './index.scss'
 
 export interface LegendSpec {
@@ -15,22 +15,19 @@ export interface LegendSpec {
  * docs/06 §7.2
  */
 export function MapLegend({ spec }: { spec: LegendSpec }) {
+  const ticks = spec.stops ?? spec.labels ?? ['低', '高']
   return (
-    <CoverView className="map-legend">
-      <CoverView className="map-legend__title">{spec.title}</CoverView>
-      <CoverView
+    <View className="map-legend">
+      <Text className="map-legend__title">{spec.title}</Text>
+      <View
         className="map-legend__bar"
         style={{ background: `linear-gradient(90deg, ${spec.colors.join(', ')})` }}
       />
-      <CoverView className="map-legend__scale">
-        {spec.stops
-          ? spec.stops.map((s) => (
-              <CoverView className="map-legend__tick" key={s}>{s}</CoverView>
-            ))
-          : (spec.labels ?? ['低', '高']).map((l) => (
-              <CoverView className="map-legend__tick" key={l}>{l}</CoverView>
-            ))}
-      </CoverView>
-    </CoverView>
+      <View className="map-legend__scale">
+        {ticks.map((t) => (
+          <Text className="map-legend__tick" key={String(t)}>{t}</Text>
+        ))}
+      </View>
+    </View>
   )
 }

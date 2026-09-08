@@ -1,4 +1,5 @@
 import { View, Text } from '@tarojs/components'
+import { getSafeArea } from '@/hooks/useSafeArea'
 import { Icon } from '../Icon'
 import './index.scss'
 
@@ -10,8 +11,17 @@ interface Props {
 }
 
 export function AppHeader({ title, subtitle, slogan }: Props) {
+  // navigationStyle: 'custom' 下必须自己避开状态栏与右上角胶囊按钮
+  const safe = getSafeArea()
+
   return (
-    <View className="app-header">
+    <View
+      className="app-header"
+      style={{
+        paddingTop: `${safe.statusBarHeight + 6}px`,
+        paddingRight: `${Math.max(safe.menuGuardRight, 16)}px`,
+      }}
+    >
       <View className="app-header__brand">
         <Icon name="leaf" size={26} color="#16a34a" strokeWidth={1.8} />
         <View className="app-header__text">
@@ -19,6 +29,7 @@ export function AppHeader({ title, subtitle, slogan }: Props) {
           {subtitle && <Text className="app-header__subtitle">{subtitle}</Text>}
         </View>
       </View>
+      {/* 胶囊按钮占住右上角，slogan 只能放在标题下方一行的右侧 */}
       {slogan && (
         <View className="app-header__slogan">
           <Text>{slogan[0]}</Text>
