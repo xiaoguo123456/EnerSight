@@ -1,0 +1,50 @@
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 14px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+
+  &__line {
+    height: 14px;
+    border-radius: 7px;
+    background: linear-gradient(90deg, #eef2f6 25%, #f6f8fb 50%, #eef2f6 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.state-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 24px;
+  text-align: center;
+
+  &__icon {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--color-surface);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 6px;
+  }
+  &__title { font-size: 15px; font-weight: 700; color: var(--color-text); }
+  &__desc { font-size: var(--font-caption); color: var(--color-text-sub); line-height: 1.5; }
+  &__btn {
+    margin-top: 12px;
+    padding: 8px 22px;
+    border-radius: var(--radius-pill);
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    @include pressable;
+  }
+}

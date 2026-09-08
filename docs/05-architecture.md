@@ -208,6 +208,20 @@ export interface HttpAdapter {
 | 4 | 环比要存昨日数据；Himawari 10 分钟一帧应全用户共享缓存，不能每端各拉一次 |
 
 
+### 基础设施选型
+
+| | 选型 | 理由 | 升级路径 |
+| --- | --- | --- | --- |
+| 数据库 | SQLAlchemy 2.0 async + Alembic；本地 SQLite，线上 PostgreSQL | 本地零依赖起步，Alembic 管迁移 | 换 `DATABASE_URL` 即可，迁移用 batch 模式兼容两端 |
+| 缓存 | 进程内 TTL cache，接口抽象 | 单实例够用 | 水平扩容时换 Redis，业务代码不动 |
+| 调度 | APScheduler 进程内 | V1 不需要独立 worker | 任务量大时拆 worker |
+
+时间字段一律存 **naive UTC**，出口再按站点时区格式化 —— SQLite 与 PostgreSQL
+对 timezone-aware 的处理不一致，统一成 naive UTC 最省事。
+
+非 debug 模式下带着开发默认值（JWT 密钥、SQLite）启动会被拒绝，见 `main.py`。
+
+
 ### BFF 职责
 
 ```

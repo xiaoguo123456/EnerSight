@@ -1,0 +1,22 @@
+/**
+ * 站点接口。docs/06 §五
+ * 类型全部来自 codegen，不手写。
+ */
+import type {
+  CreateStationRequest, StationListResponse, StationSummary, StationType,
+  UpdateStationRequest,
+} from '@enersight/core/types'
+import { api } from './index'
+
+export const stationsApi = {
+  list: (type?: StationType) =>
+    api.get<StationListResponse>('/v1/stations', type ? { type } : undefined),
+
+  create: (body: CreateStationRequest) =>
+    api.post<StationSummary>('/v1/stations', body),
+
+  update: (id: string, body: UpdateStationRequest) =>
+    api.patch<StationSummary>(`/v1/stations/${id}`, body),
+
+  remove: (id: string) => api.delete(`/v1/stations/${id}`),
+}

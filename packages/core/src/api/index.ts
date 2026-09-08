@@ -43,13 +43,15 @@ export interface ClientOptions {
 }
 
 export class ApiError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status: number,
-  ) {
+  // 不用 TS 的构造器参数属性写法 —— Taro 的 babel 链路不认，会在构建时报错
+  readonly code: string
+  readonly status: number
+
+  constructor(code: string, message: string, status: number) {
     super(message)
     this.name = 'ApiError'
+    this.code = code
+    this.status = status
   }
 
   /** 4xx 与 503 不重试；502 与网络错误可重试。docs/06 §十四 */

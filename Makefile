@@ -74,9 +74,14 @@ codegen:
 	pnpm exec openapi-typescript packages/server/openapi.json \
 		-o packages/core/src/types/generated.ts
 
-# CI 入口。codegen 后若工作区有改动说明类型未同步，直接失败
-check: codegen
-	@git diff --exit-code packages/core/src/types/generated.ts \
-		|| (echo ""; echo "✗ 类型未同步，请跑 make codegen 并提交生成结果"; exit 1)
+# CI 入口。跑一次 codegen，若生成结果与跑之前不同，说明有人改了 schema
+# 却没重新生成 —— 直接失败。比对的是「跑前 vs 跑后」而非 git HEAD，
+# 这样本地改完 schema、跑过 codegen 但尚未提交时也能通过。
+GEN := packages/core/src/types/generated.ts
+check:
+	@cp $(GEN) /tmp/enersight-gen-before.ts 2>/dev/null || true
+	@$(MAKE) codegen >/dev/null
+	@cmp -s /tmp/enersight-gen-before.ts $(GEN) \
+		|| (echo ""; echo "✗ 类型未同步：schema 变了但没跑 make codegen"; exit 1)
 	$(MAKE) lint
 	$(MAKE) test

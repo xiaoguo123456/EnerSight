@@ -24,9 +24,12 @@ def _pv_inputs(times: pd.DatetimeIndex, *, cloudy: float = 1.0, temp: float = 25
     """用晴空辐射乘一个折减系数模拟云天。"""
     cs = solar.clearsky(LAT, LON, TZ, times)
     return idx.PvInputs(
-        latitude=LAT, longitude=LON, tz=TZ,
+        latitude=LAT,
+        longitude=LON,
+        tz=TZ,
         capacity_kw=500.0,
-        tilt=pv.default_tilt(LAT), azimuth=180.0,
+        tilt=pv.default_tilt(LAT),
+        azimuth=180.0,
         times=times,
         ghi=cs["ghi"] * cloudy,
         dni=cs["dni"] * cloudy,
@@ -109,8 +112,12 @@ class TestWindPowerCurve:
 class TestWindIndex:
     @pytest.mark.parametrize(
         ("cf", "level"),
-        [(0.50, IndexLevel.EXCELLENT), (0.35, IndexLevel.GOOD),
-         (0.22, IndexLevel.FAIR), (0.10, IndexLevel.POOR)],
+        [
+            (0.50, IndexLevel.EXCELLENT),
+            (0.35, IndexLevel.GOOD),
+            (0.22, IndexLevel.FAIR),
+            (0.10, IndexLevel.POOR),
+        ],
     )
     def test_容量因子分档(self, cf: float, level: IndexLevel):
         cap = 2000.0
@@ -122,6 +129,7 @@ class TestWindIndex:
 
     def test_分数随容量因子单调不减(self):
         cap = 2000.0
-        scores = [idx.wind_index(cf * cap * 24.0, cap).score
-                  for cf in (0.05, 0.15, 0.25, 0.35, 0.5, 0.8)]
+        scores = [
+            idx.wind_index(cf * cap * 24.0, cap).score for cf in (0.05, 0.15, 0.25, 0.35, 0.5, 0.8)
+        ]
         assert scores == sorted(scores)

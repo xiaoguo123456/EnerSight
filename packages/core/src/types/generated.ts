@@ -21,16 +21,252 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Stations */
+        get: operations["list_stations_v1_stations_get"];
+        put?: never;
+        /** Create Station */
+        post: operations["create_station_v1_stations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stations/{station_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Station */
+        delete: operations["delete_station_v1_stations__station_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Station */
+        patch: operations["update_station_v1_stations__station_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Coord
+         * @enum {string}
+         */
+        Coord: "wgs84" | "gcj02";
+        /** CreateStationRequest */
+        CreateStationRequest: {
+            /** Name */
+            name: string;
+            type: components["schemas"]["StationType"];
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /**
+             * Capacity
+             * @description kW
+             */
+            capacity: number;
+            /**
+             * @description 入参坐标系
+             * @default wgs84
+             */
+            coord: components["schemas"]["Coord"];
+            /** Tilt */
+            tilt?: number | null;
+            /** Azimuth */
+            azimuth?: number | null;
+            /** Hub Height */
+            hub_height?: number | null;
+        };
+        /** Envelope[LoginResponse] */
+        Envelope_LoginResponse_: {
+            data: components["schemas"]["LoginResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[StationListResponse] */
+        Envelope_StationListResponse_: {
+            data: components["schemas"]["StationListResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[StationSummary] */
+        Envelope_StationSummary_: {
+            data: components["schemas"]["StationSummary"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
         /** Health */
         Health: {
             /** Status */
             status: string;
             /** Server Time */
             server_time: string;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /** Code */
+            code: string;
+        };
+        /** LoginResponse */
+        LoginResponse: {
+            /** Token */
+            token: string;
+            /** Expires In */
+            expires_in: number;
+        };
+        /** Meta */
+        Meta: {
+            coord: components["schemas"]["Coord"];
+            /** Server Time */
+            server_time: string;
+        };
+        /** StationCounts */
+        StationCounts: {
+            /** All */
+            all: number;
+            /** Solar */
+            solar: number;
+            /** Wind */
+            wind: number;
+        };
+        /** StationListResponse */
+        StationListResponse: {
+            /** Stations */
+            stations: components["schemas"]["StationSummary"][];
+            counts: components["schemas"]["StationCounts"];
+        };
+        /**
+         * StationMetrics
+         * @description 运行指标。V1 无实测数据，由气象推算；推算前为 None，前端展示「—」。
+         *
+         *     字段不带默认值：契约要求缺失一律 null 而非省略（docs/06 §2.5），
+         *     带默认值会让 OpenAPI 把字段标成可选，前端类型就会多一层 undefined。
+         */
+        StationMetrics: {
+            /**
+             * Daily Generation
+             * @description kWh
+             */
+            daily_generation: number | null;
+            /**
+             * Current Power
+             * @description kW
+             */
+            current_power: number | null;
+            /**
+             * Total Generation
+             * @description kWh
+             */
+            total_generation: number | null;
+            /**
+             * Co2 Reduction
+             * @description kg
+             */
+            co2_reduction: number | null;
+        };
+        /**
+         * StationStatus
+         * @enum {string}
+         */
+        StationStatus: "normal" | "standby" | "fault";
+        /** StationSummary */
+        StationSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            type: components["schemas"]["StationType"];
+            status: components["schemas"]["StationStatus"];
+            /**
+             * Capacity
+             * @description kW，基础单位裸数值，前端负责进位
+             */
+            capacity: number;
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /** Address */
+            address: string | null;
+            /** Image */
+            image: string | null;
+            metrics: components["schemas"]["StationMetrics"];
+        };
+        /**
+         * StationType
+         * @enum {string}
+         */
+        StationType: "solar" | "wind";
+        /**
+         * UpdateStationRequest
+         * @description PATCH：全部可选。docs/06 §5.4
+         */
+        UpdateStationRequest: {
+            /** Name */
+            name?: string | null;
+            type?: components["schemas"]["StationType"] | null;
+            status?: components["schemas"]["StationStatus"] | null;
+            /** Latitude */
+            latitude?: number | null;
+            /** Longitude */
+            longitude?: number | null;
+            /** Capacity */
+            capacity?: number | null;
+            /** @default wgs84 */
+            coord: components["schemas"]["Coord"];
+            /** Tilt */
+            tilt?: number | null;
+            /** Azimuth */
+            azimuth?: number | null;
+            /** Hub Height */
+            hub_height?: number | null;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -57,6 +293,183 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    login_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_LoginResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_stations_v1_stations_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+                type?: components["schemas"]["StationType"] | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_StationListResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_station_v1_stations_post: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_StationSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_station_v1_stations__station_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                station_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_station_v1_stations__station_id__patch: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                station_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_StationSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

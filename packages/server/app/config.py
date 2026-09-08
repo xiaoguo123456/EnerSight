@@ -8,6 +8,19 @@ class Settings(BaseSettings):
 
     debug: bool = False
 
+    # 数据库。本地 SQLite 零依赖起步，线上换 PostgreSQL：
+    #   postgresql+asyncpg://user:pass@host/enersight
+    # 时间一律存 UTC，两端方言对时区的处理不同，不要依赖数据库时区
+    database_url: str = "sqlite+aiosqlite:///./enersight.db"
+
+    # JWT。生产必须通过环境变量覆盖，启动时会校验（见 main.py）
+    jwt_secret: str = "dev-only-secret-do-not-use-in-production-0000"
+    jwt_expires_seconds: int = 7 * 24 * 3600
+
+    # 微信登录。未配置时仅 debug 模式可用开发态登录
+    wx_appid: str = ""
+    wx_secret: str = ""
+
     # 上游数据源
     open_meteo_base: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_base: str = "https://archive-api.open-meteo.com/v1"

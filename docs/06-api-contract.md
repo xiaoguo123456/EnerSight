@@ -208,6 +208,11 @@ POST /v1/auth/login
 服务端用 `code` 调微信 `code2session` 换 `openid`，签发 JWT。
 **`openid` 与 `session_key` 不下发到前端。**
 
+**开发态**：`ENERSIGHT_DEBUG=true` 且未配置 `WX_APPID` 时，登录不调微信，
+直接签发固定开发用户的 token；且不带 token 的请求也按开发用户放行，
+省得每次联调先登录。真正的 `code2session` 依赖 AppID/AppSecret，
+那是合规那条线的事（09 §二），不让它卡住开发。
+
 
 ### 4.2 鉴权
 
@@ -262,6 +267,9 @@ interface StationMetrics {
 `counts` 单独返回，避免前端在分页数据上算总数。
 
 > 储能类型 V1 不实现，`type` 枚举只有 `solar` 与 `wind`。
+
+**已落地。** `metrics` 四项在指标服务（`/v1/home` 那一步）接入前恒为 `null`，
+前端展示「—」。`address` 在逆地理编码接入前为 `null`。
 
 
 ### 5.2 新增站点

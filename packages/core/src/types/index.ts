@@ -8,14 +8,20 @@
  * 生成命令 `make codegen`，已纳入 CI。契约见 docs/06-api-contract.md。
  *
  * 本文件只做便捷别名，把生成类型里冗长的路径映射成短名字。
- * 服务端路由尚未实现，别名暂时手写；对应 schema 落地后改为从 generated 取。
  */
+
+import type { components } from './generated'
 
 export type { components, paths } from './generated'
 
-export type Coord = 'wgs84' | 'gcj02'
-export type StationType = 'solar' | 'wind'
-export type StationStatus = 'normal' | 'standby' | 'fault'
+type S = components['schemas']
+
+// ── 已由接口引用，取自生成产物 ──
+export type Coord = S['Coord']
+export type StationType = S['CreateStationRequest']['type']
+export type StationStatus = S['StationSummary']['status']
+
+// ── 对应接口尚未落地，OpenAPI 里还没有，暂时手写。落地后改为 S['...'] ──
 export type LayerType = 'cloud' | 'wind' | 'temperature' | 'radiation'
 export type AlertLevel = 'minor' | 'moderate' | 'severe' | 'cleared'
 export type IndexLevel = 'excellent' | 'good' | 'fair' | 'poor'
@@ -25,6 +31,13 @@ export interface MetricWithDelta {
   value: number | null
   delta_percent: number | null
 }
+
+export type StationSummary = S['StationSummary']
+export type StationMetrics = S['StationMetrics']
+export type StationListResponse = S['StationListResponse']
+export type CreateStationRequest = S['CreateStationRequest']
+export type UpdateStationRequest = S['UpdateStationRequest']
+export type LoginResponse = S['LoginResponse']
 
 export interface ApiEnvelope<T> {
   data: T

@@ -139,6 +139,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 实现储能站相关功能 —— V1 不做，设计稿里有但已明确排除
 - ❌ 用户请求时同步调 AI —— 全部预生成 + 缓存，见 08 §三
 - ❌ 把 `src/mocks/` 的数据当真 —— 接口落地后必须删除该目录
+- ❌ Pydantic 响应字段给默认值 —— OpenAPI 会标成可选，前端类型多一层 undefined。可空字段写 `x: float | None = Field(...)` 不带 default，契约要求缺失一律 null 不省略
+- ❌ `core/` 里用 TS 构造器参数属性（`constructor(readonly x)`）—— Taro 的 babel 链路不认
 - ❌ 用 emoji 当图标 —— 用 `<Icon name="..."/>`，字形随系统变化不可控
 - ❌ 改完 UI 不看结果就交付 —— H5 跑 `make shot`，小程序跑 `devtools-shot.sh`，实际查看 PNG
 - ❌ 只在 H5 验证小程序样式 —— WXSS 与浏览器 CSS 差异大（选择器容错、`:root`、原生组件层级），必须在开发者工具里看

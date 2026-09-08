@@ -8,14 +8,27 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.errors import ApiError, api_error_handler
-from app.routers import health
+from app.errors import ApiError, api_error_handler, validation_error_handler
+from app.routers import auth, health, stations
+
+
+def _check_production_config() -> None:
+    """非 debug 模式下带着开发默认值启动是事故，直接拒绝。"""
+    if settings.debug:
+        return
+    if settings.jwt_secret.startswith("dev-only"):
+        raise RuntimeError("生产环境必须设置 ENERSIGHT_JWT_SECRET")
+    if settings.database_url.startswith("sqlite"):
+        raise RuntimeError("生产环境不要用 SQLite，设置 ENERSIGHT_DATABASE_URL")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _check_production_config()
     app.state.http = httpx.AsyncClient(timeout=10.0)
     try:
         yield
@@ -31,5 +44,17 @@ app = FastAPI(
     debug=settings.debug,
 )
 
+# 小程序不走 CORS（request 是原生的），这是给 H5 预览用的；生产按域名收紧
+if settings.debug:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:4173", "http://localhost:4173"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
+app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(stations.router)
