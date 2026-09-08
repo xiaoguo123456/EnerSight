@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     wind_shear_alpha: float = 0.18  # 按 ERA5 10 m / 100 m 风速在 5 个风电基地拟合，见 docs/07 §八
 
     # 指数分档阈值，上线前需按 docs/07 §八 校准
+    # 限流：每个 token / IP 每分钟请求数，0 关闭。小程序一页最多十几个请求
+    rate_limit_per_minute: int = 120
+    trust_forwarded_for: bool = False  # 仅在 ALB/反代前置且直连已被安全组挡住时开启
+    trend_7d_step_hours: int = 3  # 7 天趋势采样粒度，逐日还是逐 3 小时待产品确认
     index_excellent: float = 85.0
     index_good: float = 70.0
     index_fair: float = 55.0

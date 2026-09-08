@@ -674,8 +674,12 @@ Windy、Tomorrow.io 这类提供现成气象瓦片，但四条都不满足：
 | 类型生成 | `make codegen` | `openapi.json` → `core/types/` |
 
 `make codegen` 必须纳入 CI：生成结果与仓库不一致则构建失败。
+**已落地：** `.github/workflows/ci.yml` 跑 `make check` 并构建镜像（不推送）。
 
 BFF 需部署在**境内**并完成 ICP 备案，否则小程序无法配置为合法域名。
+
+生产部署方式（固定摘要镜像 + 单服务 Compose + 外部 PostgreSQL + ALB）、
+环境变量、升级回滚 SOP 见 [10-deployment.md](./10-deployment.md)，配置在 `deploy/`。
 
 
 ---

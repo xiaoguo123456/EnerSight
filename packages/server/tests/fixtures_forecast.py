@@ -1,4 +1,4 @@
-"""合成的 Open-Meteo 预报响应，形状与真实返回一致（72 点，昨日 00:00 起）。"""
+"""合成的 Open-Meteo 预报响应，形状与真实返回一致（192 点，昨日 00:00 起）。"""
 
 import math
 from datetime import datetime, timedelta
@@ -25,12 +25,13 @@ def make_forecast(
     temp_today: float = 28.0,
     code_now: int = 0,
     code_later: int = 2,
+    days: int = 8,
 ) -> dict:
-    """start_date 是「昨日 00:00」（naive，当地时间）。"""
+    """start_date 是「昨日 00:00」（naive，当地时间）。默认 昨日 + 7 天 = 192 点，与线上一致。"""
     times, t2m, app_t, rh, ws, wd, cc, code, swr, dr, dfr, dni, is_day = ([] for _ in range(13))
-    for i in range(72):
+    for i in range(days * 24):
         ts = start_date + timedelta(hours=i)
-        day = i // 24  # 0 昨日 1 今日 2 明日
+        day = i // 24  # 0 昨日 1 今日 2 明日 ...
         h = ts.hour
         times.append(ts.strftime("%Y-%m-%dT%H:%M"))
         peak = peak_yesterday if day == 0 else peak_today
@@ -69,8 +70,8 @@ def make_forecast(
             "wind_direction_10m": wd,
             "cloud_cover": cc,
             "cloud_cover_low": cc,
-            "cloud_cover_mid": [0.0] * 72,
-            "cloud_cover_high": [0.0] * 72,
+            "cloud_cover_mid": [0.0] * (days * 24),
+            "cloud_cover_high": [0.0] * (days * 24),
             "weather_code": code,
             "shortwave_radiation": swr,
             "direct_radiation": dr,

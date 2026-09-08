@@ -19,6 +19,7 @@
 | [07 指标计算规则 · Metrics](./07-metrics.md) | 新能源环境指数算法、发电估算、环比、短临外推、预警阈值、参数配置清单 |
 | [08 AI 分析设计 · AI Design](./08-ai-design.md) | AI 三类输出、模型选型与合规、调用时机与缓存、结构化输出、降级、成本估算 |
 | [09 小程序合规清单 · Compliance](./09-miniapp-compliance.md) | 主体类目、备案、隐私协议、位置权限、生成式 AI、内容安全、上线检查清单 |
+| [10-deployment.md](./10-deployment.md) | 部署 | 镜像、Compose、环境变量、升级回滚 SOP、上线清单 |
 
 ## 设计稿
 

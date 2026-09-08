@@ -12,6 +12,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import Station
 from app.schemas.common import Coord, EnergyIndex, IndexLevel, MetricWithDelta
 from app.schemas.home import (
@@ -78,11 +79,17 @@ def build_current_weather(fc: weather.Forecast) -> CurrentWeather | None:
     )
 
 
-def build_trend(fc: weather.Forecast, metric: TrendMetric) -> TrendSeries:
+def build_trend(
+    fc: weather.Forecast, metric: TrendMetric, range_: TrendRange = TrendRange.H24
+) -> TrendSeries:
+    """24h 逐小时 25 点；7d 逐 3 小时 56 点（粒度待产品确认，docs/06 §十五）。"""
     col, unit, y_max = _TREND_SPEC[metric]
-    df = fc.today_with_midnight()
+    if range_ == TrendRange.D7:
+        df = fc.next_days(7, settings.trend_7d_step_hours)
+    else:
+        df = fc.today_with_midnight()
     points = [TrendPoint(time=ts.isoformat(), value=_num(v)) for ts, v in df[col].items()]
-    return TrendSeries(metric=metric, unit=unit, range=TrendRange.H24, y_max=y_max, points=points)
+    return TrendSeries(metric=metric, unit=unit, range=range_, y_max=y_max, points=points)
 
 
 def build_index(snap: energy.EnergySnapshot, station_type: str) -> EnergyIndex:

@@ -22,6 +22,7 @@
 | [docs/07-metrics.md](docs/07-metrics.md) | 环境指数算法、发电估算、预警阈值 | 写计算前 |
 | [docs/08-ai-design.md](docs/08-ai-design.md) | AI 输出、模型选型、缓存、降级 | 碰 AI 前 |
 | [docs/09-miniapp-compliance.md](docs/09-miniapp-compliance.md) | 备案、类目、权限、内容安全 | 上线前，且要早读 |
+| [docs/10-deployment.md](docs/10-deployment.md) | 镜像、Compose、环境变量、升级回滚 | 部署前 |
 
 设计稿在 `packages/ui/`，6 张 PNG，对应 6 个页面。**实现页面前先看图。**
 
@@ -146,6 +147,7 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ Pydantic 响应字段给默认值 —— OpenAPI 会标成可选，前端类型多一层 undefined。可空字段写 `x: float | None = Field(...)` 不带 default，契约要求缺失一律 null 不省略
 - ❌ `core/` 里用 TS 构造器参数属性（`constructor(readonly x)`）—— Taro 的 babel 链路不认
 - ❌ 用 emoji 当图标 —— 用 `<Icon name="..."/>`，字形随系统变化不可控
+- ❌ 改了 pvlib 模型参数或分档断点不重跑 `scripts/calibrate.py` —— 校准结论要跟着更新到 07 §8.1
 - ❌ 改完 UI 不看结果就交付 —— H5 跑 `make shot`，小程序跑 `devtools-shot.sh`，实际查看 PNG
 - ❌ 只在 H5 验证小程序样式 —— WXSS 与浏览器 CSS 差异大（选择器容错、`:root`、原生组件层级），必须在开发者工具里看
 - ❌ 一页多个 Hero / 四宫格图标四种颜色 / 顶栏放品牌口号 —— 层级原则见 docs/02 §九
@@ -169,7 +171,9 @@ pnpm --filter @enersight/miniapp build:weapp
 
 # BFF
 uv run fastapi dev                   # 开发，含 /docs
-docker build packages/server         # 构建镜像
+docker build packages/server         # 构建镜像；部署见 deploy/ 与 docs/10
+uv run python scripts/calibrate.py   # 指数校准（07 §八），报告写到 docs/reports/
+uv run python scripts/replay_flow.py --lat .. --lon .. --start .. --end ..   # 光流回放评估
 
 # 类型同步（改了 Pydantic 模型必跑）
 make codegen                         # openapi.json → core/types/
@@ -223,6 +227,7 @@ make codegen                         # openapi.json → core/types/
 | --- | --- | --- |
 | auth / stations / home / trends / stations/{id} / map/overview | ✅ | 开发态免登录 |
 | alerts / alerts/current | ✅ | 预报规则 + 卫星短临两类来源，进程内按站点串行扫描 |
+| trends | ✅ | 24h 逐小时 25 点；7d 逐 3 小时 56 点（粒度待产品确认） |
 | reports | ✅ | 规则模板兜底；`ANTHROPIC_API_KEY` 配置后走 Claude |
 | geo/search / geo/reverse | ✅ | 无腾讯 key 时降级 |
 | map/layers | ✅ | 4° 块、0.5° 网格服务端渲染；云图层用 Himawari 实况 |
@@ -235,6 +240,9 @@ make codegen                         # openapi.json → core/types/
 - `server/app/ai`：Provider 抽象 + 数值一致性校验 + 规则降级
 - `core/api` client：401 重登、502 重试、坐标系注入；`core/format` 单位进位
 - 小程序 27 个组件、`TrendChart` Canvas 自绘、`useMapLayer` 贴图
+- 指数已按 07 §八校准（Perez 散射、α = 0.18、风电分档断点），报告在 `docs/reports/`
+- 定时任务：预警扫描 15 分钟、卫星归档 10 分钟、发电累积、报告预生成、地址回填
+- 限流 120 次/分钟/token（429 RATE_LIMITED）；Dockerfile + `deploy/` Compose + CI 工作流
 
 ### 下一步
 
@@ -247,8 +255,7 @@ make codegen                         # openapi.json → core/types/
 
 **上线前：**
 - 合规办理周期最长，见 [09 §九](docs/09-miniapp-compliance.md)；Himawari 商用授权要法务核实
-- 按 [07 §八](docs/07-metrics.md) 拉历史气象校准指数分档，与 PVGIS 对账
-- 光流外推精度用历史回放校准（现在只有合成云团测试）
+- 光流外推精度：归档任务已在攒帧，满一个月跑 `scripts/replay_flow.py`
 - 多实例部署时扫描锁改数据库行锁，缓存改 Redis（见 05）
 
 **V2：** 卫星源换 NOAA 开放数据 L1b（摆脱 JMA 网页接口无 SLA 的风险）、风场动画、

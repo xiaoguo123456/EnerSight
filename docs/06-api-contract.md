@@ -479,6 +479,9 @@ interface TrendPoint {
 `y_max`：辐射固定 1000，云量固定 100，风速为 `null` 自适应。
 由服务端下发而非前端硬编码，便于调整。
 
+**已落地。** `24h` 今日 00:00 至明日 00:00 逐小时 25 点；`7d` 今日 00:00 起 7 天逐 3 小时
+56 点（粒度待产品确认，服务端 `trend_7d_step_hours` 可调）。
+
 
 ---
 
@@ -699,7 +702,7 @@ interface MetricWithDelta {
 | 404 | `STATION_NOT_FOUND` | 站点不存在 |
 | 404 | `LAYER_NOT_FOUND` | 图层类型不支持 |
 | 202 | `REPORT_GENERATING` | 报告生成中，稍后重试 |
-| 429 | `RATE_LIMITED` | 请求过于频繁 |
+| 429 | `RATE_LIMITED` | 请求过于频繁。已落地：每 token / IP 每分钟 120 次，响应带 `Retry-After` |
 | 502 | `UPSTREAM_UNAVAILABLE` | 上游数据源不可用 |
 | 503 | `DATA_UNAVAILABLE` | 该区域暂无数据 |
 

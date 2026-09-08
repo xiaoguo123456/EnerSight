@@ -163,6 +163,18 @@ class TestCache:
         await client.get("/v1/trends", params={"station_id": sid, "metric": "cloud_cover"})
         assert open_meteo.call_count == 1
 
+    async def test_7天趋势逐3小时(self, client: AsyncClient, open_meteo):
+        sid = await _create(client, SUZHOU)
+        r = await client.get(
+            "/v1/trends", params={"station_id": sid, "metric": "wind_speed", "range": "7d"}
+        )
+        t = r.json()["data"]
+        assert t["range"] == "7d" and t["unit"] == "m/s" and t["y_max"] is None
+        assert len(t["points"]) == 7 * 8  # 今日 00:00 起 7 天，每 3 小时一点
+        assert t["points"][0]["time"].endswith("T00:00:00+08:00")
+        assert t["points"][1]["time"].endswith("T03:00:00+08:00")
+        assert t["points"][-1]["time"].endswith("T21:00:00+08:00")
+
     async def test_上游故障返回502(self, client: AsyncClient):
         sid = await _create(client, SUZHOU)
         with respx.mock:
