@@ -32,15 +32,10 @@ def render_png(grid: GridData, layer: str, hour_index: int) -> bytes:
     return buf.getvalue()
 
 
-# 真彩图亮度 → 云量强度。陆地/海面亮度约 30–100，云 150+；线性拉伸后清空区域透明
-CLOUD_GRAY_LO, CLOUD_GRAY_HI = 70.0, 230.0
-
-
-def render_cloud_png(gray: np.ndarray) -> bytes:
-    """Himawari 重投影灰度 → 云图层 PNG。透明度随强度变化，底图能透出来。"""
-    intensity = np.clip(
-        (gray.astype(float) - CLOUD_GRAY_LO) / (CLOUD_GRAY_HI - CLOUD_GRAY_LO), 0, 1
-    )
+def render_cloud_png(gray: np.ndarray, lo: float, hi: float) -> bytes:
+    """Himawari 重投影灰度 → 云图层 PNG。[lo, hi] 线性拉伸为强度，透明度随强度变化，
+    晴空处透明、底图能透出来。lo/hi 随波段不同，见 services/satellite.CLOUD_RAMP。"""
+    intensity = np.clip((gray.astype(float) - lo) / (hi - lo), 0, 1)
     rgba = SCALES["cloud"].rgba(intensity * 100)
     rgba[..., 3] = (intensity * 220).astype(np.uint8)
     buf = io.BytesIO()

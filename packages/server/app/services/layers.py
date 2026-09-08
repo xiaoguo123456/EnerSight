@@ -10,9 +10,10 @@ from app.render import grid as g
 from app.render import tiles
 from app.render.colormap import SCALES
 from app.satellite import himawari
-from app.satellite.reproject import is_daylit, reproject
+from app.satellite.reproject import reproject
 from app.schemas.common import Coord, LayerType
 from app.schemas.layer import Bounds, LatLng, LayerFrame, LayerImage, LayerResponse, Legend
+from app.services import satellite
 
 # 渲染上限：气象网格 0.25°，再放大没有信息量。docs/05 §6.5
 MAX_ZOOM = 8
@@ -55,23 +56,28 @@ async def _ensure_tile(
 async def _ensure_satellite_tile(
     http: httpx.AsyncClient, block: g.Block, base_url: str
 ) -> tuple[str, str] | None:
-    """云图层优先用 Himawari 实况；夜间或上游故障返回 None，退回预报云量。docs/04 §4.1"""
+    """云图层用 Himawari 实况：白天可见光、夜间红外。docs/04 §4.1
+
+    上游故障返回 None，调用方退回预报云量。
+    """
+    bbox = (block.lon0, block.lat0, block.lon1, block.lat1)
+    lat_c, lon_c = (block.lat0 + block.lat1) / 2, (block.lon0 + block.lon1) / 2
     try:
-        disk = await himawari.fetch_full_disk(http)
+        latest = await himawari.latest_time(http)
+        band = satellite.analysis_band(lat_c, lon_c, latest)
+        mosaic = await himawari.fetch_latest_mosaic(http, band, bbox)
     except Exception:  # noqa: BLE001
         return None
-    time_key = disk.observed_at.strftime("%Y%m%dT%H%M")
+    time_key = f"{mosaic.observed_at.strftime('%Y%m%dT%H%M')}_{band}"
     path = tiles.tile_path("cloud-sat", block.key, time_key)
     if not path.exists():
         loop = asyncio.get_running_loop()
-        bbox = (block.lon0, block.lat0, block.lon1, block.lat1)
-        rep = await loop.run_in_executor(None, reproject, disk.rgb, bbox, tiles.TILE_PX)
-        if not is_daylit(rep.gray):
-            return None
-        png = await loop.run_in_executor(None, tiles.render_cloud_png, rep.gray)
+        rep = await loop.run_in_executor(None, reproject, mosaic, bbox, tiles.TILE_PX)
+        lo, hi = satellite.CLOUD_RAMP[band]
+        png = await loop.run_in_executor(None, tiles.render_cloud_png, rep.gray, lo, hi)
         tiles.write_tile(path, png)
     rel = path.relative_to(tiles.tile_dir()).as_posix()
-    return f"{base_url}/tiles/{rel}", disk.observed_at.isoformat(timespec="minutes")
+    return f"{base_url}/tiles/{rel}", mosaic.observed_at.isoformat(timespec="minutes")
 
 
 async def build_layer(

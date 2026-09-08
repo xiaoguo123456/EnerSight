@@ -8,10 +8,11 @@ from httpx import AsyncClient, Response
 
 from app.render import tiles
 from app.satellite import himawari, motion
-from app.satellite.reproject import is_daylit, reproject
-from app.services import weather
+from app.satellite.himawari import lonlat_to_tile, tile_to_lonlat
+from app.satellite.reproject import reproject
+from app.services import satellite, weather
 from tests.fixtures_forecast import TZ, make_forecast
-from tests.fixtures_satellite import disk_px, make_disk, utc
+from tests.fixtures_satellite import FakeSky, utc
 
 SUZHOU = {
     "name": "苏州光伏站",
@@ -22,6 +23,13 @@ SUZHOU = {
 }
 LAT, LON = SUZHOU["latitude"], SUZHOU["longitude"]
 BBOX = (118.0, 28.5, 123.0, 33.5)
+DAY = utc(3, 0)  # 11:00 当地，太阳高度角够
+NIGHT = utc(16, 0)  # 00:00 当地
+
+
+def _yesterday_midnight() -> datetime:
+    now = datetime.now(ZoneInfo(TZ))
+    return (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
 
 
 @pytest.fixture(autouse=True)
@@ -33,11 +41,6 @@ def _fresh(tmp_path, monkeypatch):
     weather.clear_cache()
 
 
-def _yesterday_midnight() -> datetime:
-    now = datetime.now(ZoneInfo(TZ))
-    return (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-
-
 @pytest.fixture
 def open_meteo():
     with respx.mock(assert_all_called=False) as mock:
@@ -46,74 +49,57 @@ def open_meteo():
         )
 
 
-def _install_disks(monkeypatch, now, prev=None):
-    """替换全圆盘拉取：按时间返回合成帧"""
-    frames = {now.observed_at: now}
-    if prev is not None:
-        frames[prev.observed_at] = prev
+def _approaching(sky: FakeSky, now: datetime) -> FakeSky:
+    """东北方约 1.1° 处的云团，10 分钟内向站点移动约 0.08°"""
+    sky.add(now - timedelta(minutes=10), [(LON + 1.1, LAT + 1.1, 0.5)])
+    sky.add(now, [(LON + 1.02, LAT + 1.02, 0.5)])
+    return sky
 
-    async def _fetch(_http, when=None):
-        when = when or now.observed_at
-        if when not in frames:
-            raise himawari.UpstreamUnavailable("no frame")
-        return frames[when]
 
-    monkeypatch.setattr(himawari, "fetch_full_disk", _fetch)
+class TestTiles:
+    def test_瓦片坐标往返(self):
+        for lon, lat in ((120.62, 31.30), (-73.9, 40.7), (0.0, 0.0)):
+            x, y = lonlat_to_tile(lon, lat, 5)
+            lon2, lat2 = tile_to_lonlat(x, y, 5)
+            assert abs(lon2 - lon) < 1e-9 and abs(lat2 - lat) < 1e-9
+
+    def test_苏州所在瓦片(self):
+        x, y = lonlat_to_tile(LON, LAT, 5)
+        assert (int(x), int(y)) == (26, 13)
+
+    def test_昼夜按太阳高度角(self):
+        assert satellite.is_day(LAT, LON, DAY)
+        assert not satellite.is_day(LAT, LON, NIGHT)
 
 
 class TestReproject:
-    def test_站点落在圆盘对应像素(self):
-        """圆盘上站点位置涂白，重投影后站点像素应该是亮的，远处是暗的"""
-        disk = make_disk(utc(3, 0), [(LON, LAT, 0.08)])
-        rep = reproject(disk.rgb, BBOX, 256)
+    async def test_站点落在对应像素(self, monkeypatch):
+        FakeSky().add(DAY, [(LON, LAT, 0.08)]).install(monkeypatch)
+        mosaic = await himawari.fetch_mosaic(None, DAY, "visible", BBOX)
+        rep = reproject(mosaic, BBOX, 256)
         sx = int((LON - BBOX[0]) / 5 * 256)
         sy = int((BBOX[3] - LAT) / 5 * 256)
         assert rep.gray[sy, sx] > 150
         assert rep.gray[10, 10] < 60
         assert rep.rgb.shape == (256, 256, 3)
 
-    def test_圆盘像素与已验证坐标一致(self):
-        # 上海 → (753, 467)，海岸线人工核对过的值，投影参数改错这里先炸
-        x, y = disk_px(121.47, 31.23)
-        assert (round(x), round(y)) == (753, 467)
-
-    def test_夜间判定(self):
-        assert not is_daylit(np.zeros((8, 8), dtype=np.uint8))
-        assert is_daylit(np.full((8, 8), 60, dtype=np.uint8))
-
-
-class TestFetch:
-    async def test_最新帧不全时退回上一帧(self, monkeypatch):
-        """latest.json 可能先于瓦片更新；缺瓦片不能拿黑图当夜间"""
-        latest = utc(3, 0)
-        calls: list[str] = []
-
-        async def _latest(_http):
-            return latest
-
-        async def _at(_http, when):
-            calls.append(when.strftime("%H%M"))
-            if when == latest:
-                raise himawari.UpstreamUnavailable("not ready")
-            return make_disk(when)
-
-        monkeypatch.setattr(himawari, "latest_time", _latest)
-        monkeypatch.setattr(himawari, "_fetch_at", _at)
-        disk = await himawari.fetch_full_disk(None)
-        assert calls == ["0300", "0250"]
-        assert disk.observed_at == latest - timedelta(minutes=10)
+    async def test_最新帧瓦片未就绪退回上一帧(self, monkeypatch):
+        sky = FakeSky().add(DAY - timedelta(minutes=10)).add(DAY, missing=True).install(monkeypatch)
+        mosaic = await himawari.fetch_latest_mosaic(None, "visible", BBOX)
+        assert mosaic.observed_at == DAY - timedelta(minutes=10)
+        assert [t for t, _ in sky.calls][0] == DAY  # 先试了最新帧
 
 
 class TestMotion:
     @staticmethod
     def _frame(cx, cy, size=512, r=60):
+        from scipy.ndimage import shift as nd_shift
+
         rng = np.random.default_rng(0)
         yy, xx = np.mgrid[0:size, 0:size]
         tex = np.clip(
             0.75 + 0.25 * np.sin(xx / 6.0) * np.cos(yy / 7.0) + rng.random((size, size)) * 0.1, 0, 1
         )
-        from scipy.ndimage import shift as nd_shift
-
         blob = np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * r * r))
         t = nd_shift(tex, (cy - size / 2, cx - size / 2), order=1, mode="wrap")
         return (30 + np.clip(blob * t, 0, 1) * 200).astype(np.uint8)
@@ -123,15 +109,22 @@ class TestMotion:
 
     def test_东北方向云团向西南逼近(self):
         sx, sy = self._station_px()
-        prev = self._frame(sx + 110, sy - 110)
-        now = self._frame(sx + 102, sy - 102)
-        est = motion.estimate(prev, now, BBOX, LAT, LON)
+        est = motion.estimate(
+            self._frame(sx + 110, sy - 110), self._frame(sx + 102, sy - 102), BBOX, LAT, LON
+        )
         assert est is not None
         assert est.heading_text == "西南" and est.origin_text == "东北"
         # 8px 对角 ≈ 11.4 km / 10 min ≈ 68 km/h，光流略低估
         assert 50 < est.speed_kmh < 80
         assert est.distance_km is not None and 40 < est.distance_km < 100
         assert est.impact_minutes is not None and 30 < est.impact_minutes <= 120
+
+    def test_帧间隔20分钟速度减半(self):
+        sx, sy = self._station_px()
+        a, b = self._frame(sx + 110, sy - 110), self._frame(sx + 102, sy - 102)
+        v10 = motion.estimate(a, b, BBOX, LAT, LON).speed_kmh
+        v20 = motion.estimate(a, b, BBOX, LAT, LON, frame_minutes=20).speed_kmh
+        assert abs(v20 * 2 - v10) < 1e-6
 
     def test_远离不出影响(self):
         sx, sy = self._station_px()
@@ -157,6 +150,16 @@ class TestMotion:
         blank = np.full((512, 512), 30, dtype=np.uint8)
         assert motion.estimate(blank, blank, BBOX, LAT, LON) is None
 
+    def test_红外阈值更低(self):
+        """红外亮温图整体偏暗，同一张图按可见光阈值会漏掉云"""
+        sx, sy = self._station_px()
+        dim = (self._frame(sx, sy).astype(float) * 0.45).astype(np.uint8)  # 峰值约 100
+        assert motion.estimate(dim, dim, BBOX, LAT, LON) is None
+        est = motion.estimate(
+            dim, dim, BBOX, LAT, LON, cloud_threshold=satellite.CLOUD_THRESHOLD["infrared"]
+        )
+        assert est is not None and est.covered
+
     def test_16方位(self):
         degrees = (0, 45, 90, 135, 180, 225, 270, 315, 22.5, 359)
         expected = ["北", "东北", "东", "东南", "南", "西南", "西", "西北", "北北东", "北"]
@@ -169,15 +172,16 @@ class TestApi:
         assert res.status_code == 201, res.text
         return res.json()["data"]["id"]
 
-    async def test_白天返回云图(self, client: AsyncClient, open_meteo, monkeypatch, tmp_path):
+    async def test_白天返回真彩可见光(self, client: AsyncClient, open_meteo, monkeypatch, tmp_path):
         sid = await self._create(client)
-        _install_disks(monkeypatch, make_disk(utc(3, 0), [(LON + 1.0, LAT + 1.0, 0.4)]))
+        sky = FakeSky().add(DAY, [(LON + 1.0, LAT + 1.0, 0.4)]).install(monkeypatch)
         res = await client.get(f"/v1/satellite/cloud?station_id={sid}&coord=gcj02")
         assert res.status_code == 200, res.text
         d = res.json()["data"]
         assert d["band"] == "visible"
         assert d["observed_at"].endswith("+08:00")
         assert d["image"]["url"].startswith("http://test/tiles/satellite/")
+        assert d["image"]["url"].endswith("_truecolor.png")
         assert d["legend"]["labels"] == ["低", "高"]
         # bounds 与站点标记均已转 GCJ-02（偏移几百米），站点仍在 bounds 内
         b = d["image"]["bounds"]
@@ -186,13 +190,17 @@ class TestApi:
         assert abs(m["longitude"] - LON) > 0.001
         png = tmp_path / "tiles" / d["image"]["url"].split("/tiles/")[1]
         assert png.exists() and png.stat().st_size > 1000
+        assert {band for _, band in sky.calls} == {"visible", "truecolor"}
 
-    async def test_夜间503(self, client: AsyncClient, open_meteo, monkeypatch):
+    async def test_夜间返回红外(self, client: AsyncClient, open_meteo, monkeypatch):
         sid = await self._create(client)
-        _install_disks(monkeypatch, make_disk(utc(15, 0), night=True))
+        sky = FakeSky().add(NIGHT, [(LON + 1.0, LAT + 1.0, 0.4)], night=True).install(monkeypatch)
         res = await client.get(f"/v1/satellite/cloud?station_id={sid}")
-        assert res.status_code == 503
-        assert res.json()["error"]["code"] == "DATA_UNAVAILABLE"
+        assert res.status_code == 200, res.text
+        d = res.json()["data"]
+        assert d["band"] == "infrared"
+        assert d["image"]["url"].endswith("_infrared.png")
+        assert {band for _, band in sky.calls} == {"infrared"}
 
     async def test_上游故障502(self, client: AsyncClient, open_meteo):
         sid = await self._create(client)
@@ -201,15 +209,12 @@ class TestApi:
 
     async def test_当前预警带云图与外推(self, client: AsyncClient, open_meteo, monkeypatch):
         sid = await self._create(client)
-        now_t = utc(3, 0)
-        # 东北方约 1.1° 处的云团，10 分钟内向站点移动约 0.08°
-        prev = make_disk(now_t - timedelta(minutes=10), [(LON + 1.1, LAT + 1.1, 0.5)])
-        now = make_disk(now_t, [(LON + 1.02, LAT + 1.02, 0.5)])
-        _install_disks(monkeypatch, now, prev)
+        _approaching(FakeSky(), DAY).install(monkeypatch)
 
         res = await client.get(f"/v1/alerts/current?station_id={sid}")
         assert res.status_code == 200, res.text
         d = res.json()["data"]
+        assert d["satellite_status"] == "ok"
         assert d["satellite"] is not None and d["satellite"]["band"] == "visible"
         assert d["alert"] is not None and d["alert"]["source"] == "satellite"
         assert "云团逼近" in d["alert"]["title"]
@@ -225,6 +230,26 @@ class TestApi:
         lst = await client.get(f"/v1/alerts?station_id={sid}")
         assert any(a["source"] == "satellite" for a in lst.json()["data"]["alerts"])
 
+    async def test_夜间红外也能出短临预警(self, client: AsyncClient, open_meteo, monkeypatch):
+        sid = await self._create(client)
+        sky = _approaching(FakeSky(), NIGHT)
+        sky.night_times.update(sky.frames)
+        sky.install(monkeypatch)
+        d = (await client.get(f"/v1/alerts/current?station_id={sid}")).json()["data"]
+        assert d["satellite"]["band"] == "infrared"
+        assert d["alert"] is not None and d["alert"]["source"] == "satellite"
+        assert d["cloud_motion"] is not None
+
+    async def test_上一帧间隔过大不做外推(self, client: AsyncClient, open_meteo, monkeypatch):
+        sid = await self._create(client)
+        sky = FakeSky()
+        sky.add(DAY - timedelta(minutes=40), [(LON + 1.1, LAT + 1.1, 0.5)])
+        sky.add(DAY, [(LON + 1.02, LAT + 1.02, 0.5)])
+        sky.install(monkeypatch)
+        d = (await client.get(f"/v1/alerts/current?station_id={sid}")).json()["data"]
+        assert d["satellite"] is not None
+        assert d["cloud_motion"] is None
+
     async def test_卫星不可用时预报预警照常(self, client: AsyncClient, open_meteo):
         sid = await self._create(client)
         res = await client.get(f"/v1/alerts/current?station_id={sid}")
@@ -233,51 +258,49 @@ class TestApi:
         assert d["satellite"] is None and d["cloud_motion"] is None
         assert d["satellite_status"] == "unavailable"
 
-    async def test_卫星断供不清除卫星预警_夜间才清(
+    async def test_卫星断供不清除卫星预警_确认无云才清(
         self, client: AsyncClient, open_meteo, monkeypatch
     ):
-        """未知 ≠ 消失：上游故障时保留卫星预警；确定是夜间（无云图）才解除"""
+        """未知 ≠ 消失：上游故障时保留卫星预警；拿到云图确认云已散才解除"""
         sid = await self._create(client)
-        now_t = utc(3, 0)
-        prev = make_disk(now_t - timedelta(minutes=10), [(LON + 1.1, LAT + 1.1, 0.5)])
-        now = make_disk(now_t, [(LON + 1.02, LAT + 1.02, 0.5)])
-        _install_disks(monkeypatch, now, prev)
+        _approaching(FakeSky(), DAY).install(monkeypatch)
         d = (await client.get(f"/v1/alerts/current?station_id={sid}")).json()["data"]
         assert d["alert"]["source"] == "satellite" and d["satellite_status"] == "ok"
 
-        # 上游故障：预警保留，只是没有云图与外推
-        async def _boom(*_a, **_k):
-            raise himawari.UpstreamUnavailable("down")
-
-        monkeypatch.setattr(himawari, "fetch_full_disk", _boom)
+        FakeSky().install(monkeypatch)  # 没有任何可用时刻 → 上游故障
         d = (await client.get(f"/v1/alerts/current?station_id={sid}")).json()["data"]
         assert d["satellite_status"] == "unavailable"
         assert d["alert"] is not None and d["alert"]["source"] == "satellite"
         assert d["cloud_motion"] is None
 
-        # 夜间：确定无云图，解除
-        _install_disks(monkeypatch, make_disk(utc(15, 0), night=True))
+        FakeSky().add(DAY + timedelta(minutes=10)).install(monkeypatch)  # 晴空
         d = (await client.get(f"/v1/alerts/current?station_id={sid}")).json()["data"]
-        assert d["satellite_status"] == "night"
+        assert d["satellite_status"] == "ok"
         assert d["alert"] is None
         lst = (await client.get(f"/v1/alerts?station_id={sid}")).json()["data"]["alerts"]
         assert lst[0]["level"] == "cleared" and lst[0]["source"] == "satellite"
 
 
 class TestMapCloudLayer:
-    async def test_白天云图层用卫星(self, client: AsyncClient, monkeypatch, tmp_path):
-        _install_disks(monkeypatch, make_disk(utc(3, 0), [(LON, LAT, 0.5)]))
+    async def test_白天云图层用可见光(self, client: AsyncClient, monkeypatch):
+        FakeSky().add(DAY, [(LON, LAT, 0.5)]).install(monkeypatch)
         res = await client.get("/v1/map/layers/cloud?bbox=120,30,121,31&zoom=8")
         assert res.status_code == 200, res.text
         d = res.json()["data"]
-        assert "/tiles/cloud-sat/" in d["frames"][0]["images"][0]["url"]
-        assert d["observed_at"].startswith(utc(3, 0).strftime("%Y-%m-%dT03:00"))
+        url = d["frames"][0]["images"][0]["url"]
+        assert "/tiles/cloud-sat/" in url and url.endswith("_visible.png")
+        assert d["observed_at"].startswith(DAY.strftime("%Y-%m-%dT03:00"))
 
-    async def test_夜间退回预报云量(self, client: AsyncClient, monkeypatch):
+    async def test_夜间云图层用红外(self, client: AsyncClient, monkeypatch):
+        FakeSky().add(NIGHT, [(LON, LAT, 0.5)], night=True).install(monkeypatch)
+        res = await client.get("/v1/map/layers/cloud?bbox=120,30,121,31&zoom=8")
+        assert res.status_code == 200, res.text
+        assert res.json()["data"]["frames"][0]["images"][0]["url"].endswith("_infrared.png")
+
+    async def test_上游故障退回预报云量(self, client: AsyncClient):
         from app.render import grid
         from tests.test_layers import _grid_response
 
-        _install_disks(monkeypatch, make_disk(utc(15, 0), night=True))
         with respx.mock(assert_all_called=False) as mock:
             mock.get(url__regex=r".*open-meteo.*").mock(
                 return_value=Response(200, json=_grid_response(grid.N * grid.N))

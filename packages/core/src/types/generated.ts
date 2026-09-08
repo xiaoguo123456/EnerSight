@@ -381,14 +381,14 @@ export interface components {
             alert: components["schemas"]["AlertSummary"] | null;
             /** @description 仅卫星短临预警有；预报类为 null */
             cloud_motion: components["schemas"]["CloudMotion"] | null;
-            /** @description 夜间或上游不可用时为 null */
+            /** @description 上游不可用时为 null */
             satellite: components["schemas"]["SatelliteCloudResponse"] | null;
             /**
              * Satellite Status
-             * @description satellite 为 null 的原因：night 夜间无可见光；unavailable 数据源暂时拿不到
+             * @description unavailable 表示数据源暂时拿不到；夜间有红外，不再是空态
              * @enum {string}
              */
-            satellite_status: "ok" | "night" | "unavailable";
+            satellite_status: "ok" | "unavailable";
         };
         /** CurrentWeather */
         CurrentWeather: {
@@ -755,7 +755,7 @@ export interface components {
         SatelliteCloudResponse: {
             /**
              * Band
-             * @description 服务端按昼夜自动选择
+             * @description 服务端按太阳高度角自动选择：白天 visible（真彩展示），夜间 infrared
              * @enum {string}
              */
             band: "visible" | "infrared" | "vapor";

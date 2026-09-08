@@ -1,6 +1,7 @@
 """云团移动估计：相邻两帧光流 → 速度、方向、到站距离、影响时间。docs/07 §四
 
-输入是同一 bbox 重投影后的两张灰度图（间隔 10 分钟），亮度作为云量代理。
+输入是同一 bbox 重投影后的两张灰度图，亮度作为云量代理；云像素阈值随波段不同
+（可见光反照率 / 红外亮温），由调用方传入。
 Farneback 稠密光流在云图上够用；块匹配精度更差，深度模型 V1 不上。
 """
 
@@ -11,7 +12,7 @@ import cv2
 import numpy as np
 
 FRAME_MINUTES = 10
-CLOUD_GRAY = 120  # 真彩图亮度阈，高于此视为云
+CLOUD_GRAY = 100  # 默认云像素阈（可见光反照率）；红外由调用方传更低的阈值
 MIN_SPEED_KMH = 5.0  # 低于此视为静止，不做外推
 MAX_IMPACT_MINUTES = 120  # 外推时效上限
 CONE_DEG = 45.0  # 来向锥角：云团方向偏离站点超过 ±45° 不算逼近
@@ -63,18 +64,21 @@ def estimate(
     bbox: tuple[float, float, float, float],
     station_lat: float,
     station_lon: float,
+    *,
+    cloud_threshold: int = CLOUD_GRAY,
+    frame_minutes: float = FRAME_MINUTES,
 ) -> CloudMotionEstimate | None:
     """两帧尺寸需相同。云像素太少（无云）返回 None。"""
     size = now_gray.shape[0]
     kx, ky = _km_per_px(bbox, size, station_lat)
-    cloud_now = now_gray > CLOUD_GRAY
-    cloud_prev = prev_gray > CLOUD_GRAY
+    cloud_now = now_gray > cloud_threshold
+    cloud_prev = prev_gray > cloud_threshold
     if cloud_now.sum() < size * size * 0.005:
         return None
 
     flow = cv2.calcOpticalFlowFarneback(
         prev_gray, now_gray, None, 0.5, 3, 21, 3, 5, 1.2, 0
-    )  # (H, W, 2)，单位 px / 10min，x 向东为正，y 向南为正
+    )  # (H, W, 2)，单位 px / 帧间隔，x 向东为正，y 向南为正
     both = cloud_now & cloud_prev
     if both.sum() < 20:
         both = cloud_now
@@ -84,9 +88,9 @@ def estimate(
     weight = np.hypot(gx, gy) * both
     if weight.sum() < 1e-6:
         return None
-    vx = float((flow[..., 0] * weight).sum() / weight.sum()) * kx  # km / 10min
+    vx = float((flow[..., 0] * weight).sum() / weight.sum()) * kx  # km / 帧间隔
     vy = float((flow[..., 1] * weight).sum() / weight.sum()) * ky
-    speed = math.hypot(vx, vy) * (60 / FRAME_MINUTES)
+    speed = math.hypot(vx, vy) * (60 / frame_minutes)
     heading = math.degrees(math.atan2(vx, -vy)) % 360  # 图像 y 向下，取反得北向分量
 
     w, s, e, n = bbox

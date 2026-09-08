@@ -282,9 +282,12 @@ mp 后台「开发管理 → 服务器域名」配置：
 
 ### 数据授权
 
-- [ ] Himawari 云图数据的商用许可已核实（NICT 实时图像 / JAXA P-Tree 的使用条款）
-      —— 当前代码直接拉 NICT `himawari8.nict.go.jp` 公开真彩图，配置项 `ENERSIGHT_HIMAWARI_BASE`，
-      换源只改配置与 `app/satellite/himawari.py`
+- [ ] Himawari 云图数据的商用许可已核实
+      —— 当前用日本气象厅官网瓦片（`www.jma.go.jp/bosai/himawari`）。JMA 网站遵循日本
+      「公共データ利用規約」：注明出处可再利用含商用，加工后不得冒充官方发布；
+      **前端云图卡已标「Himawari-9 · 日本气象厅」，不能删**。该接口是网页自用、无 SLA。
+      兜底源 NOAA 开放数据 `s3://noaa-himawari9`（NOAA 声明可自由公开分发，请注明 JMA/NOAA）。
+      JAXA P-Tree 禁止再分发，不能用于向用户下发图片。
 - [ ] 腾讯位置服务的调用配额与商用授权已确认
 - [ ] Open-Meteo 的商用条款已确认
 

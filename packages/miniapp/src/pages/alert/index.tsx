@@ -77,10 +77,9 @@ export default function AlertCenter() {
         )}
 
         {cur.status === 'success' && (
-          /* 无预警时云图仍展示；夜间 satellite 为 null 走空态。docs/06 §9.2 */
+          /* 无预警时云图仍展示；夜间是红外，satellite 为 null 只有上游故障一种情况。docs/06 §9.2 */
           <SatelliteCloudCard
             satellite={cur.data.satellite}
-            status={cur.data.satellite_status}
             onFullscreen={cur.data.satellite ? openCloudMap : undefined}
           />
         )}

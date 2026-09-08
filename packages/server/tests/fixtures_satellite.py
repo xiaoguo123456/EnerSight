@@ -1,59 +1,79 @@
-"""合成 Himawari 圆盘：在指定经纬度处放一团有纹理的「云」。
+"""合成 JMA 瓦片：在指定经纬度处放一团有纹理的「云」。
 
-纹理定义在经纬度空间（云团随中心整体平移），再逆投影到圆盘像素，
-这样重投影回经纬度网格后就是干净的平移，光流能估出来。
+纹理定义在经纬度空间（云团随中心整体平移），按 Web Mercator 瓦片坐标逐像素求值，
+这样重投影回等经纬度网格后就是干净的平移，光流能估出来。
 """
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from functools import lru_cache
 
 import numpy as np
-from pyproj import Transformer
 
-from app.satellite.himawari import FullDisk
-from app.satellite.reproject import GEOS, HALF_M, _tf
+from app.satellite import himawari
+from app.satellite.himawari import TILE, tile_to_lonlat
 
-W = 2200  # 4d 全圆盘尺寸
-_inv = Transformer.from_crs(GEOS, "EPSG:4326", always_xy=True)
+Blob = tuple[float, float, float]  # lon, lat, radius_deg
 
 
-def disk_px(lon: float, lat: float) -> tuple[float, float]:
-    x, y = _tf.transform(lon, lat)
-    return (x + HALF_M) / (2 * HALF_M) * W, (HALF_M - y) / (2 * HALF_M) * W
+@dataclass
+class FakeSky:
+    """按时刻记录云团位置，night=True 时可见光/真彩瓦片全黑（红外照常）。"""
+
+    frames: dict[datetime, list[Blob]] = field(default_factory=dict)
+    night_times: set[datetime] = field(default_factory=set)
+    missing: set[datetime] = field(default_factory=set)  # 在列表里但瓦片还没出来
+    calls: list[tuple[datetime, str]] = field(default_factory=list)
+
+    def add(
+        self, when: datetime, blobs: list[Blob] = (), *, night: bool = False, missing: bool = False
+    ) -> "FakeSky":
+        when = when.astimezone(UTC)
+        self.frames[when] = list(blobs)
+        if night:
+            self.night_times.add(when)
+        if missing:
+            self.missing.add(when)
+        return self
+
+    def install(self, monkeypatch) -> "FakeSky":
+        sky = self
+
+        async def _times(_http):
+            if not sky.frames:
+                raise himawari.UpstreamUnavailable("no frames")
+            return sorted(sky.frames)
+
+        async def _tile(_http, when, band, x, y, _sem):
+            sky.calls.append((when, band))
+            if when not in sky.frames or when in sky.missing:
+                raise himawari.UpstreamUnavailable("not ready")
+            if band in ("visible", "truecolor") and when in sky.night_times:
+                return np.zeros((TILE, TILE, 3), dtype=np.uint8)
+            return render_tile(sky.frames[when], himawari.settings.himawari_zoom, x, y)
+
+        monkeypatch.setattr(himawari, "available_times", _times)
+        monkeypatch.setattr(himawari, "_fetch_tile", _tile)
+        himawari.clear_cache()
+        return sky
 
 
-@lru_cache(maxsize=1)
-def _disk_lonlat() -> tuple[np.ndarray, np.ndarray]:
-    """每个圆盘像素的经纬度；圆盘外为 inf"""
-    idx = (np.arange(W) + 0.5) / W
-    x = idx * 2 * HALF_M - HALF_M
-    y = HALF_M - idx * 2 * HALF_M
-    xg, yg = np.meshgrid(x, y)
-    lon, lat = _inv.transform(xg, yg)
-    return lon, lat
+def render_tile(blobs: list[Blob], zoom: int, x: int, y: int) -> np.ndarray:
+    px = (np.arange(TILE) + 0.5) / TILE
+    lons = np.array([tile_to_lonlat(x + p, y, zoom)[0] for p in px])
+    lats = np.array([tile_to_lonlat(x, y + p, zoom)[1] for p in px])
+    lon, lat = np.meshgrid(lons, lats)
+    img = np.full((TILE, TILE), 30.0)
+    for clon, clat, r in blobs:
+        dx, dy = lon - clon, lat - clat
+        env = np.exp(-(dx**2 + dy**2) / (2 * r * r))
+        tex = 0.7 + 0.15 * np.sin(dx * 40) * np.cos(dy * 50) + 0.15 * np.sin(dx * 13 + dy * 9)
+        img = np.maximum(img, 30 + np.clip(env * tex, 0, 1) * 200)
+    return np.repeat(img.astype(np.uint8)[..., None], 3, axis=2)
 
 
-def make_disk(
-    when: datetime, blobs: list[tuple[float, float, float]] = (), *, night: bool = False
-) -> FullDisk:
-    """blobs: (lon, lat, radius_deg)。night=True 全黑。"""
-    base = 0 if night else 45
-    img = np.full((W, W), float(base))
-    if blobs:
-        lon, lat = _disk_lonlat()
-        ok = np.isfinite(lon) & np.isfinite(lat)
-        lon = np.where(ok, lon, 0)
-        lat = np.where(ok, lat, 0)
-        for clon, clat, r in blobs:
-            dx, dy = lon - clon, lat - clat
-            env = np.exp(-(dx**2 + dy**2) / (2 * r * r))
-            # 多尺度纹理随云团中心平移
-            tex = 0.7 + 0.15 * np.sin(dx * 40) * np.cos(dy * 50) + 0.15 * np.sin(dx * 13 + dy * 9)
-            cloud = np.clip(env * tex, 0, 1) * 200 * ok
-            img = np.maximum(img, base + cloud)
-    rgb = np.repeat(img.astype(np.uint8)[..., None], 3, axis=2)
-    return FullDisk(observed_at=when.astimezone(UTC), rgb=rgb)
+def utc(h: int, m: int, *, days_ago: int = 0) -> datetime:
+    from datetime import timedelta
 
-
-def utc(h: int, m: int) -> datetime:
-    return datetime.now(UTC).replace(hour=h, minute=m, second=0, microsecond=0)
+    return datetime.now(UTC).replace(hour=h, minute=m, second=0, microsecond=0) - timedelta(
+        days=days_ago
+    )

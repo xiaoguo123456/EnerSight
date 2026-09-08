@@ -58,5 +58,5 @@ def _no_satellite(monkeypatch: pytest.MonkeyPatch) -> None:
         raise UpstreamUnavailable("test: satellite disabled")
 
     himawari.clear_cache()
-    # 只掐 latest.json：fetch_full_disk 保持真实实现，卫星用例可以整体替换或按时刻注入
-    monkeypatch.setattr(himawari, "latest_time", _unavailable)
+    # 只掐时刻列表：其余保持真实实现，卫星用例用 FakeSky 注入合成瓦片
+    monkeypatch.setattr(himawari, "available_times", _unavailable)

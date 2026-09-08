@@ -4,16 +4,16 @@ import { Icon } from '../Icon'
 import './index.scss'
 
 interface Props {
-  /** null 时按 status 区分空态文案：夜间无可见光 / 数据源暂时拿不到 */
+  /** null：数据源暂时拿不到（夜间有红外，不再是空态） */
   satellite: SatelliteCloudResponse | null
-  status?: 'ok' | 'night' | 'unavailable'
   onFullscreen?: () => void
 }
 
-const EMPTY_TEXT = {
-  night: { icon: 'moon', text: '夜间无可见光云图，天亮后自动恢复' },
-  unavailable: { icon: 'cloudOff', text: '云图数据源暂时不可用，稍后自动重试' },
-} as const
+const BAND_LABEL: Record<SatelliteCloudResponse['band'], string> = {
+  visible: '可见光',
+  infrared: '红外',
+  vapor: '水汽',
+}
 
 /** "2026-09-08T14:20+08:00" → "09-08 14:20" */
 function formatObserved(iso: string): string {
@@ -23,16 +23,15 @@ function formatObserved(iso: string): string {
 /**
  * 卫星云图卡。observed_at 必须展示 —— 它是数据观测时间，不等于当前时间。
  * 图片由服务端重投影成等经纬度，站点标记按 bounds 线性定位即可。
- * 图例来自接口，客户端不硬编码色阶。docs/04 §四、docs/06 §7.3
+ * 图例来自接口，客户端不硬编码色阶；波段由服务端按昼夜选择。docs/04 §四、docs/06 §7.3
  */
-export function SatelliteCloudCard({ satellite, status = 'night', onFullscreen }: Props) {
+export function SatelliteCloudCard({ satellite, onFullscreen }: Props) {
   if (!satellite) {
-    const empty = EMPTY_TEXT[status === 'unavailable' ? 'unavailable' : 'night']
     return (
       <View className="sat-card sat-card--empty">
         <View className="sat-card__canvas">
-          <Icon name={empty.icon} size={22} color="rgba(255,255,255,.55)" />
-          <Text className="sat-card__placeholder">{empty.text}</Text>
+          <Icon name="cloudOff" size={22} color="rgba(255,255,255,.55)" />
+          <Text className="sat-card__placeholder">云图数据源暂时不可用，稍后自动重试</Text>
         </View>
         <View className="sat-card__stamp">
           <Icon name="satellite" size={12} color="#ffffff" />
@@ -62,7 +61,7 @@ export function SatelliteCloudCard({ satellite, status = 'night', onFullscreen }
       <View className="sat-card__stamp">
         <Icon name="satellite" size={12} color="#ffffff" />
         <View className="sat-card__stamp-text">
-          <Text className="sat-card__stamp-title">卫星云图 · 可见光</Text>
+          <Text className="sat-card__stamp-title">卫星云图 · {BAND_LABEL[satellite.band]}</Text>
           <Text className="sat-card__stamp-time">观测 {formatObserved(satellite.observed_at)}</Text>
         </View>
       </View>
@@ -81,6 +80,9 @@ export function SatelliteCloudCard({ satellite, status = 'night', onFullscreen }
           <Text>{hi}</Text>
         </View>
       </View>
+
+      {/* 数据出处：JMA 利用规约要求注明来源，不能省 */}
+      <Text className="sat-card__credit">Himawari-9 · 日本气象厅</Text>
     </View>
   )
 }

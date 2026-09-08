@@ -35,7 +35,7 @@
 | 样式 | Sass + CSS 变量，尺寸用 `rpx` |
 | 跨端复用 | `packages/core` — 类型（codegen）、API client、格式化 |
 | BFF | Python 3.12 + FastAPI |
-| 科学计算 | pvlib（太阳位置/辐射/光伏）、OpenCV（光流）、numpy、Pillow |
+| 科学计算 | pvlib（太阳位置/辐射/光伏）、OpenCV（光流）、scipy、numpy、Pillow |
 | 依赖管理 | pnpm workspace（前端）、uv（Python） |
 
 
@@ -138,9 +138,11 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 客户端用自己请求的 bbox 贴图 —— 用服务端返回的对齐后 `bounds`
 - ❌ 实现储能站相关功能 —— V1 不做，设计稿里有但已明确排除
 - ❌ 用户请求时同步调 AI —— 全部预生成 + 缓存，见 08 §三
-- ❌ 把 `satellite` 为 null 当夜间 —— 看 `satellite_status`，上游拿不到也是 null
+- ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）
 - ❌ 卫星拿不到时清掉卫星预警 —— 未知 ≠ 消失，`apply_detections(satellite_known=False)`
-- ❌ 拿黑瓦片当夜间 —— NICT `latest.json` 先于瓦片更新，缺瓦片要退回上一帧
+- ❌ 拿黑瓦片当无云 —— JMA `targetTimes_fd.json` 先于瓦片更新，非 200 要退回上一帧
+- ❌ 删掉云图卡上的「日本气象厅」出处 —— JMA 利用规约要求注明来源
+- ❌ 可见光与红外用同一个云像素阈值 —— 红外亮温整体偏暗，阈值见 `CLOUD_THRESHOLD`
 - ❌ Pydantic 响应字段给默认值 —— OpenAPI 会标成可选，前端类型多一层 undefined。可空字段写 `x: float | None = Field(...)` 不带 default，契约要求缺失一律 null 不省略
 - ❌ `core/` 里用 TS 构造器参数属性（`constructor(readonly x)`）—— Taro 的 babel 链路不认
 - ❌ 用 emoji 当图标 —— 用 `<Icon name="..."/>`，字形随系统变化不可控
@@ -209,7 +211,7 @@ make codegen                         # openapi.json → core/types/
 | tabBar 图标只接受图片文件 | 不支持 data URI；用 `scripts/gen-tabbar-icons.mjs` 由 SVG 渲染 PNG |
 | 两端共用 `outputRoot` 会互相覆盖 | 已按 `dist/${TARO_ENV}` 分目录 |
 | Taro 组件 props 不兼容 `exactOptionalPropertyTypes` | miniapp 的 tsconfig 关掉该项，core 保留 |
-| 本机系统代理下并发出网偶发 TLS 拒连/超时 | 上游拉取一律带重试退避、限并发（Himawari 并发 3）；卫星拿不到不算「夜间」 |
+| 本机系统代理下并发出网偶发 TLS 拒连/超时 | 上游拉取一律带重试退避、限并发（Himawari 瓦片并发 4）；卫星拿不到按 `unavailable` 处理 |
 | H5 构建默认读 `.env.production`，连不上本机后端 | `make shot` / `make preview` 已注入 `API_BASE`（默认 127.0.0.1:8000） |
 
 ## 当前状态
@@ -223,13 +225,13 @@ make codegen                         # openapi.json → core/types/
 | alerts / alerts/current | ✅ | 预报规则 + 卫星短临两类来源，进程内按站点串行扫描 |
 | reports | ✅ | 规则模板兜底；`ANTHROPIC_API_KEY` 配置后走 Claude |
 | geo/search / geo/reverse | ✅ | 无腾讯 key 时降级 |
-| map/layers | ✅ | 4° 块、0.5° 网格服务端渲染；云图层白天用 Himawari |
-| satellite/cloud | ✅ | NICT 真彩重投影，夜间 503；光流外推见 07 §四 |
+| map/layers | ✅ | 4° 块、0.5° 网格服务端渲染；云图层用 Himawari 实况 |
+| satellite/cloud | ✅ | JMA 瓦片，白天可见光/真彩、夜间红外；光流外推见 07 §四 |
 
 已落地的关键实现：
 - `server/app/metrics`：pvlib 出力模型与环境指数
-- `server/app/satellite`：Himawari 拉取（缺帧退回上一帧）、geos 重投影（pyproj）、
-  Farneback 光流云团外推
+- `server/app/satellite`：JMA Himawari 瓦片拉取（缺帧退回上一帧）、Mercator → 等经纬度
+  重采样、按太阳高度角切可见光/红外、Farneback 光流云团外推
 - `server/app/ai`：Provider 抽象 + 数值一致性校验 + 规则降级
 - `core/api` client：401 重登、502 重试、坐标系注入；`core/format` 单位进位
 - 小程序 27 个组件、`TrendChart` Canvas 自绘、`useMapLayer` 贴图
@@ -249,7 +251,8 @@ make codegen                         # openapi.json → core/types/
 - 光流外推精度用历史回放校准（现在只有合成云团测试）
 - 多实例部署时扫描锁改数据库行锁，缓存改 Redis（见 05）
 
-**V2：** 红外云图（JAXA P-Tree）、风场动画、7 天趋势粒度（待产品确认）。
+**V2：** 卫星源换 NOAA 开放数据 L1b（摆脱 JMA 网页接口无 SLA 的风险）、风场动画、
+7 天趋势粒度（待产品确认）。
 
 ### 环境指数：物理出力比，不是加权评分
 

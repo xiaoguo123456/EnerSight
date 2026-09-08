@@ -1,7 +1,7 @@
-"""卫星云图：拉全圆盘 → 站点周边重投影 → 落盘 → URL；两帧光流出云团外推。docs/05 §6.3、docs/07 §四
+"""卫星云图：JMA 瓦片 → 站点周边重投影 → 落盘 → URL；两帧光流出云团外推。docs/05 §6.7、docs/07 §四
 
-夜间真彩图全黑，NICT 公开源没有红外产品，此时接口返回 503 DATA_UNAVAILABLE，
-预警页显示空态；地图云图层退回预报云量。红外接入 JAXA P-Tree 是 V2 的事。
+白天：分析用可见光反照率（B03），展示用真彩（REP）；夜间两者都用红外（B13）。
+红外看不到低暖云，夜间的云量与短临预警偏保守，这是物理限制。
 """
 
 import asyncio
@@ -13,13 +13,14 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import numpy as np
+import pandas as pd
 
-from app.errors import ApiError
 from app.geo import wgs84_to_gcj02
+from app.metrics import solar
 from app.models import Station
 from app.render import tiles
 from app.satellite import himawari, motion
-from app.satellite.reproject import Reprojected, is_daylit, reproject, to_png
+from app.satellite.reproject import Reprojected, reproject, to_png
 from app.schemas.alert import CloudMotion
 from app.schemas.common import Coord
 from app.schemas.layer import Bounds, LatLng, LayerImage, Legend
@@ -29,6 +30,13 @@ log = logging.getLogger(__name__)
 
 HALF_SPAN_DEG = 2.5  # 站点周边 ±2.5°，约 500 km 见方，够看 2 小时外推
 SIZE = 512
+DAY_ELEVATION_DEG = 5.0  # 太阳高度角高于此算白天，可见光才有信号
+MAX_FRAME_GAP = timedelta(minutes=25)  # 上一帧间隔超过此不做光流（JMA 偶有缺帧）
+
+Band = Literal["visible", "infrared"]
+# 云像素阈值（motion）与云图层透明度拉伸区间，按波段实测标定，见 docs/07 §四
+CLOUD_THRESHOLD: dict[str, int] = {"visible": 100, "infrared": 48}
+CLOUD_RAMP: dict[str, tuple[float, float]] = {"visible": (45.0, 200.0), "infrared": (35.0, 95.0)}
 LEGEND = Legend(
     title="云量强度",
     type="gradient",
@@ -36,16 +44,17 @@ LEGEND = Legend(
     labels=["低", "高"],
     colors=["#1f2937", "#6b7280", "#ffffff"],
 )
-
-
-SceneStatus = Literal["ok", "night", "unavailable"]
+SceneStatus = Literal["ok", "unavailable"]
 
 
 @dataclass(frozen=True)
 class CloudScene:
     observed_at: datetime  # UTC
-    now: Reprojected
-    prev: Reprojected | None
+    band: Band  # 分析波段，也是响应里的 band
+    now: Reprojected  # 分析波段当前帧
+    prev: Reprojected | None  # 分析波段上一帧
+    frame_minutes: float  # now 与 prev 的间隔
+    image: Reprojected  # 展示帧（白天真彩，夜间红外）
     url: str
 
 
@@ -61,33 +70,63 @@ def _bbox_key(bbox: tuple[float, float, float, float]) -> str:
     return f"{s:+06.1f}_{w:+07.1f}"
 
 
-async def _reproject(disk: himawari.FullDisk, bbox) -> Reprojected:
+def is_day(lat: float, lon: float, when: datetime) -> bool:
+    """按太阳高度角判昼夜，不看图像亮度（缺帧的黑图会误判）。"""
+    pos = solar.solar_position(lat, lon, "UTC", pd.DatetimeIndex([when]))
+    return float(pos["apparent_elevation"].iloc[0]) > DAY_ELEVATION_DEG
+
+
+def analysis_band(lat: float, lon: float, when: datetime) -> Band:
+    return "visible" if is_day(lat, lon, when) else "infrared"
+
+
+async def _reproject(mosaic: himawari.Mosaic, bbox, size: int = SIZE) -> Reprojected:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, reproject, disk.rgb, bbox, SIZE)
+    return await loop.run_in_executor(None, reproject, mosaic, bbox, size)
 
 
 async def load_scene(
     http: httpx.AsyncClient, lat: float, lon: float, base_url: str, *, need_prev: bool
-) -> CloudScene | None:
-    """站点周边当前帧（及上一帧）。夜间返回 None。"""
+) -> CloudScene:
+    """站点周边当前帧（及上一帧）。上游拿不到抛 UpstreamUnavailable。"""
     bbox = station_bbox(lat, lon)
-    disk = await himawari.fetch_full_disk(http)
-    now = await _reproject(disk, bbox)
-    if not is_daylit(now.gray):
-        return None
+    latest = await himawari.latest_time(http)
+    band: Band = analysis_band(lat, lon, latest)
+    now_m = await himawari.fetch_latest_mosaic(http, band, bbox)
+    observed = now_m.observed_at
+    display = "truecolor" if band == "visible" else "infrared"
+    display_m = (
+        now_m if display == band else await himawari.fetch_mosaic(http, observed, display, bbox)
+    )
+    now = await _reproject(now_m, bbox)
+    image = now if display_m is now_m else await _reproject(display_m, bbox)
+    if display == "infrared":
+        image = stretch_infrared(image)
 
-    time_key = disk.observed_at.strftime("%Y%m%dT%H%M")
+    time_key = f"{observed.strftime('%Y%m%dT%H%M')}_{display}"
     path = tiles.tile_path("satellite", _bbox_key(bbox), time_key)
     if not path.exists():
-        tiles.write_tile(path, to_png(now.rgb))
+        tiles.write_tile(path, to_png(image.rgb))
     rel = path.relative_to(tiles.tile_dir()).as_posix()
 
-    prev = None
+    prev: Reprojected | None = None
+    gap = motion.FRAME_MINUTES
     if need_prev:
-        prev_disk = await himawari.fetch_previous(http, disk.observed_at)
-        if prev_disk is not None:
-            prev = await _reproject(prev_disk, bbox)
-    return CloudScene(disk.observed_at, now, prev, f"{base_url}/tiles/{rel}")
+        t_prev = await himawari.previous_time(http, observed)
+        if t_prev is not None and observed - t_prev <= MAX_FRAME_GAP:
+            try:
+                prev = await _reproject(await himawari.fetch_mosaic(http, t_prev, band, bbox), bbox)
+                gap = (observed - t_prev).total_seconds() / 60
+            except himawari.UpstreamUnavailable:
+                prev = None
+    return CloudScene(observed, band, now, prev, gap, image, f"{base_url}/tiles/{rel}")
+
+
+def stretch_infrared(rep: Reprojected) -> Reprojected:
+    """JMA 红外亮温图对比度很低（晴空 ~40、云 ~120），展示前按 CLOUD_RAMP 拉伸成灰度图。"""
+    lo, hi = CLOUD_RAMP["infrared"]
+    g = (np.clip((rep.gray.astype(float) - lo) / (hi - lo), 0, 1) * 255).astype(np.uint8)
+    return Reprojected(rgb=np.repeat(g[..., None], 3, axis=2), gray=rep.gray, bbox=rep.bbox)
 
 
 def _latlng(lat: float, lon: float, coord: Coord) -> LatLng:
@@ -102,7 +141,7 @@ def to_response(
     w, s, e, n = scene.now.bbox
     observed = scene.observed_at.astimezone(ZoneInfo(tz)).isoformat(timespec="minutes")
     return SatelliteCloudResponse(
-        band="visible",
+        band=scene.band,
         observed_at=observed,
         image=LayerImage(
             url=scene.url, bounds=Bounds(sw=_latlng(s, w, coord), ne=_latlng(n, e, coord))
@@ -116,7 +155,13 @@ def estimate_motion(scene: CloudScene, station: Station) -> motion.CloudMotionEs
     if scene.prev is None:
         return None
     return motion.estimate(
-        scene.prev.gray, scene.now.gray, scene.now.bbox, station.latitude, station.longitude
+        scene.prev.gray,
+        scene.now.gray,
+        scene.now.bbox,
+        station.latitude,
+        station.longitude,
+        cloud_threshold=CLOUD_THRESHOLD[scene.band],
+        frame_minutes=scene.frame_minutes,
     )
 
 
@@ -148,14 +193,14 @@ class SceneResult:
 
     @property
     def known(self) -> bool:
-        """是否拿到了确定的观测结论（有云图，或确定是夜间）"""
-        return self.status != "unavailable"
+        """是否拿到了确定的观测结论"""
+        return self.status == "ok"
 
 
 async def load_scene_safely(
     http: httpx.AsyncClient, station: Station, base_url: str
 ) -> SceneResult:
-    """卫星是增强项：夜间、上游故障都不让预报类预警跟着挂。"""
+    """卫星是增强项：上游故障不让预报类预警跟着挂。"""
     try:
         scene = await load_scene(
             http, station.latitude, station.longitude, base_url, need_prev=True
@@ -163,13 +208,11 @@ async def load_scene_safely(
     except Exception:  # noqa: BLE001
         log.warning("satellite scene unavailable: station=%s", station.id, exc_info=True)
         return SceneResult(None, "unavailable")
-    return SceneResult(scene, "ok" if scene else "night")
+    return SceneResult(scene, "ok")
 
 
 async def get_cloud(
     http: httpx.AsyncClient, station: Station, tz: str, coord: Coord, base_url: str
 ) -> SatelliteCloudResponse:
     scene = await load_scene(http, station.latitude, station.longitude, base_url, need_prev=False)
-    if scene is None:
-        raise ApiError("DATA_UNAVAILABLE", "夜间无可见光云图", 503)
     return to_response(scene, station, tz, coord)

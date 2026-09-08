@@ -440,10 +440,11 @@ interface SatelliteCloudResponse {
 }
 ```
 
-**已落地。** V1 只有 `visible`（NICT 无红外产品，见 [04](./04-data-specification.md)）：
+**已落地。** 服务端按站点太阳高度角选波段：白天 `visible`（展示图是真彩合成），
+夜间 `infrared`（红外亮温拉伸后的灰度图）；`vapor` V1 不用。
 站点周边 ±2.5°（按 0.5° 对齐，相邻站点共图）重投影为 512px 等经纬度 PNG，
 `bounds` 与 `station_marker` 均已按 `coord` 转换，客户端按 bounds 线性定位标记即可。
-夜间返回 `503 DATA_UNAVAILABLE`，上游拿不到返回 `502`。
+上游拿不到返回 `502`。数据出处是日本气象厅，**客户端展示时必须注明来源**（JMA 利用规约）。
 
 
 ---
@@ -524,7 +525,7 @@ interface CurrentAlertResponse {
   alert: AlertSummary | null
   cloud_motion: CloudMotion | null      // 仅卫星短临预警有
   satellite: SatelliteCloudResponse | null
-  satellite_status: "ok" | "night" | "unavailable"   // satellite 为 null 的原因
+  satellite_status: "ok" | "unavailable"   // satellite 为 null 只有上游拿不到一种情况
 }
 
 interface CloudMotion {
@@ -539,10 +540,9 @@ interface CloudMotion {
 
 无预警时 `alert` 为 `null`，`satellite` 仍返回（预警页始终展示云图）。
 
-**已落地。** `satellite_status` 区分「夜间无可见光」与「数据源暂时拿不到」，
-前端空态文案不同；两种情况 `satellite` 都是 `null`，不要只看 null 判夜间。
-卫星拿不到时（`unavailable`）已生效的卫星预警**不会被解除**，最多保留 2 小时
-（外推时效上限）；确定是夜间才解除。`cloud_motion` 的 `direction` 是云团**去向**，
+**已落地。** 夜间有红外，云图全天可用；`satellite` 为 `null` 仅在上游拿不到时
+（`satellite_status = "unavailable"`），此时已生效的卫星预警**不会被解除**，最多保留 2 小时
+（外推时效上限）；拿到云图确认云已散才解除。`cloud_motion` 的 `direction` 是云团**去向**，
 `direction_detail` 说明来向与速度，如「自东北方向移来，约 32 km/h」。
 
 

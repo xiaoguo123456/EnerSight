@@ -27,10 +27,10 @@ class Settings(BaseSettings):
     tencent_lbs_key: str = ""
     tencent_lbs_base: str = "https://apis.map.qq.com/ws"
 
-    # Himawari（NICT 实时真彩图）。商用授权待法务核实，见 docs/09
-    himawari_base: str = "https://himawari8.nict.go.jp/img/D531106"
-    himawari_latest: str = "https://himawari8-dl.nict.go.jp/himawari8/img/D531106/latest.json"
-    himawari_level: int = 4  # 4d = 2200px 全圆盘，约 5km/px
+    # Himawari-9 瓦片：日本气象厅官网的 Web Mercator 瓦片，红外/可见光/真彩都有。
+    # 注明出处可商用（公共データ利用規約），但是网页自用接口无 SLA。见 docs/04、docs/09
+    himawari_base: str = "https://www.jma.go.jp/bosai/himawari/data/satimg"
+    himawari_zoom: int = 5  # 最高级别，256px/瓦片，约 4–5 km/px
 
     # 上游数据源
     open_meteo_base: str = "https://api.open-meteo.com/v1"

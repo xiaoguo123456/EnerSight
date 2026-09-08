@@ -219,7 +219,7 @@ async def apply_detections(
     """把检测结果落库：新预警 / 更新已有 / 解除消失的。docs/07 §5.3、§5.4
 
     satellite_known=False 表示这次没拿到卫星结论（上游故障），
-    卫星类预警「未知」不等于「消失」，保留到自然过期。
+    卫星类预警「未知」不等于「消失」，保留到自然过期（SATELLITE_ALERT_TTL）。
     """
     active = await _active_by_kind(db, station.id)
     now = utcnow()

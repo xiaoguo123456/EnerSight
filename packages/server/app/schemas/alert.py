@@ -27,7 +27,7 @@ class CloudMotion(BaseModel):
 class CurrentAlertResponse(BaseModel):
     alert: AlertSummary | None
     cloud_motion: CloudMotion | None = Field(description="仅卫星短临预警有；预报类为 null")
-    satellite: SatelliteCloudResponse | None = Field(description="夜间或上游不可用时为 null")
-    satellite_status: Literal["ok", "night", "unavailable"] = Field(
-        description="satellite 为 null 的原因：night 夜间无可见光；unavailable 数据源暂时拿不到"
+    satellite: SatelliteCloudResponse | None = Field(description="上游不可用时为 null")
+    satellite_status: Literal["ok", "unavailable"] = Field(
+        description="unavailable 表示数据源暂时拿不到；夜间有红外，不再是空态"
     )
