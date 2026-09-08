@@ -3,7 +3,7 @@
 微信小程序（V1）→ App（V2）。基于气象、卫星遥感、地理空间数据与 AI 分析的
 新能源电站环境分析平台。
 
-**当前阶段：文档完成，代码未开始。** 详见本文末尾「当前状态」。
+**当前阶段：V1 功能全部落地，待真机验证与合规。** 详见本文末尾「当前状态」。
 
 
 ## 文档
@@ -138,7 +138,9 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 客户端用自己请求的 bbox 贴图 —— 用服务端返回的对齐后 `bounds`
 - ❌ 实现储能站相关功能 —— V1 不做，设计稿里有但已明确排除
 - ❌ 用户请求时同步调 AI —— 全部预生成 + 缓存，见 08 §三
-- ❌ 把 `src/mocks/` 的数据当真 —— 接口落地后必须删除该目录
+- ❌ 把 `satellite` 为 null 当夜间 —— 看 `satellite_status`，上游拿不到也是 null
+- ❌ 卫星拿不到时清掉卫星预警 —— 未知 ≠ 消失，`apply_detections(satellite_known=False)`
+- ❌ 拿黑瓦片当夜间 —— NICT `latest.json` 先于瓦片更新，缺瓦片要退回上一帧
 - ❌ Pydantic 响应字段给默认值 —— OpenAPI 会标成可选，前端类型多一层 undefined。可空字段写 `x: float | None = Field(...)` 不带 default，契约要求缺失一律 null 不省略
 - ❌ `core/` 里用 TS 构造器参数属性（`constructor(readonly x)`）—— Taro 的 babel 链路不认
 - ❌ 用 emoji 当图标 —— 用 `<Icon name="..."/>`，字形随系统变化不可控
@@ -207,38 +209,47 @@ make codegen                         # openapi.json → core/types/
 | tabBar 图标只接受图片文件 | 不支持 data URI；用 `scripts/gen-tabbar-icons.mjs` 由 SVG 渲染 PNG |
 | 两端共用 `outputRoot` 会互相覆盖 | 已按 `dist/${TARO_ENV}` 分目录 |
 | Taro 组件 props 不兼容 `exactOptionalPropertyTypes` | miniapp 的 tsconfig 关掉该项，core 保留 |
+| 本机系统代理下并发出网偶发 TLS 拒连/超时 | 上游拉取一律带重试退避、限并发（Himawari 并发 3）；卫星拿不到不算「夜间」 |
+| H5 构建默认读 `.env.production`，连不上本机后端 | `make shot` / `make preview` 已注入 `API_BASE`（默认 127.0.0.1:8000） |
 
 ## 当前状态
 
-**脚手架已跑通，`make check` 全绿。**
+**前后端全部打通，16 个接口全部落地，`make check` 全绿（130+ 测试）。**
+`src/mocks/` 已删除，7 个页面全部跑真数据。
 
-已完成：
-- monorepo（pnpm workspace + uv），`make` 任务入口
-- `core/format` 单位进位与千分位，19 个测试
-- `core/api` client：401 重登重试、502 与网络错误重试、坐标系参数注入
-- 小程序：7 个页面骨架、设计 token、Taro API adapter、两个 Zustand store
-- **7 个页面全部实现**（mock 数据）：首页 / 地图 / 预警 / 站点 / 站点详情 /
-  AI报告 / 我的
-- **27 个组件**，全部按 docs/02、docs/03 落地，只用设计 token
-- `TrendChart` Canvas 2D 自绘：折线 + 面积渐变、空心数据点、
-  选中态纵向虚线与悬浮气泡、缺测断线不补 0
-- 两端构建产物正常：`dist/weapp/`（开发者工具导入）与 `dist/h5/`（浏览器预览）
-- BFF：FastAPI + Open-Meteo provider + 错误码体系
-- `server/app/metrics`：pvlib 出力模型与环境指数，19 个测试
-- codegen 链路：Pydantic → openapi.json → `core/types/generated.ts`，已接入 `make check`
+| 接口 | 状态 | 备注 |
+| --- | --- | --- |
+| auth / stations / home / trends / stations/{id} / map/overview | ✅ | 开发态免登录 |
+| alerts / alerts/current | ✅ | 预报规则 + 卫星短临两类来源，进程内按站点串行扫描 |
+| reports | ✅ | 规则模板兜底；`ANTHROPIC_API_KEY` 配置后走 Claude |
+| geo/search / geo/reverse | ✅ | 无腾讯 key 时降级 |
+| map/layers | ✅ | 4° 块、0.5° 网格服务端渲染；云图层白天用 Himawari |
+| satellite/cloud | ✅ | NICT 真彩重投影，夜间 503；光流外推见 07 §四 |
+
+已落地的关键实现：
+- `server/app/metrics`：pvlib 出力模型与环境指数
+- `server/app/satellite`：Himawari 拉取（缺帧退回上一帧）、geos 重投影（pyproj）、
+  Farneback 光流云团外推
+- `server/app/ai`：Provider 抽象 + 数值一致性校验 + 规则降级
+- `core/api` client：401 重登、502 重试、坐标系注入；`core/format` 单位进位
+- 小程序 27 个组件、`TrendChart` Canvas 自绘、`useMapLayer` 贴图
 
 ### 下一步
 
-**阻塞项：地图 spike 未做。** [05 §6.7](docs/05-architecture.md) 列了 7 项验证，
-整套地图方案建立在其上。第 6 项（Himawari 数据通道）决定卫星云图功能是否成立，
-应第一天确认。spike 结论前不要写地图页业务代码。
+**真机验证（阻塞地图与云图的最终确认）：** 开发者工具模拟器不渲染
+`ground-overlay`，贴图精度、GCJ-02 对齐、`downloadFile` 域名都只能真机看。
+方法见 [05 §6.7](docs/05-architecture.md) 末尾。
 
-**前置项：合规办理周期最长**，见 [09 §九](docs/09-miniapp-compliance.md)。
+**需要凭证才能通的：** 微信 AppID/AppSecret（真 `code2session`）、腾讯位置服务 key、
+`ANTHROPIC_API_KEY`。都有降级，不阻塞开发。
 
-不依赖以上、可以直接做的：
-- `docs/06` 的接口逐个落地（先 stations 与 home）
-- `docs/03` 的非地图组件（Badge、MetricCard、SegmentedTabs 等）
-- 按 [07 §八](docs/07-metrics.md) 拉历史气象校准指数分档
+**上线前：**
+- 合规办理周期最长，见 [09 §九](docs/09-miniapp-compliance.md)；Himawari 商用授权要法务核实
+- 按 [07 §八](docs/07-metrics.md) 拉历史气象校准指数分档，与 PVGIS 对账
+- 光流外推精度用历史回放校准（现在只有合成云团测试）
+- 多实例部署时扫描锁改数据库行锁，缓存改 Redis（见 05）
+
+**V2：** 红外云图（JAXA P-Tree）、风场动画、7 天趋势粒度（待产品确认）。
 
 ### 环境指数：物理出力比，不是加权评分
 

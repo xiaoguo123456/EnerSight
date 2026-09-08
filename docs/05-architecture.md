@@ -563,7 +563,7 @@ Windy、Tomorrow.io 这类提供现成气象瓦片，但四条都不满足：
 | 3 | 参数为 `id` / `src` / `bounds{southwest,northeast}` / `visible` / `zIndex` / `opacity` | 官方文档 |
 | 4 | `src` 支持网络图片 | 官方文档 + 社区实例 |
 | 5 | `cover-view` 可覆盖在 map 上，且 `controls` 属性已废弃、官方推荐改用 cover-view | 官方文档 |
-| 6 | Himawari 云图可用：NICT 瓦片 10 分钟更新，`latest.json` 给最新时间戳 | 实测 HTTP 200 |
+| 6 | Himawari 云图可用：NICT 瓦片 10 分钟更新，`latest.json` 给最新时间戳 | 实测 HTTP 200；**已落地** `app/satellite/`，投影参数用海岸线核对过 |
 
 #### 已确认不可行 —— 服务端渲染贴图是唯一路线
 
@@ -578,7 +578,10 @@ Windy、Tomorrow.io 这类提供现成气象瓦片，但四条都不满足：
 | # | 事项 | 处理 |
 | --- | --- | --- |
 | 10 | 存在 `addVisualLayer` / `executeVisualLayerCommand`（腾讯位置服务的数据可视化图层，如热力图） | **不采用**：需在腾讯后台配置图层 ID 并上传数据，不适合高频更新的气象场。且已知 `addVisualLayer` 会被 `addGroundOverlay` 覆盖，需注意调用顺序 |
-| 11 | **NICT 云图是静止轨道投影（geos），不是 Web Mercator** | 必须重投影后才能贴图。这是 `server/app/satellite/` 的实际工作量，用 pyproj/rasterio 完成。此前文档低估了这一步 |
+| 11 | **NICT 云图是静止轨道投影（geos），不是 Web Mercator** | 已用 pyproj 重投影（`+proj=geos +lon_0=140.7 +h=35785863 +sweep=y`，全圆盘半宽 5,500,000 m），目标网格每像素反算圆盘坐标后双线性采样，5°×5° → 512px 约 0.08 s |
+| 11a | NICT 只有真彩可见光，**无红外产品**（`INFRARED_FULL` 等路径 404） | 夜间无云图，退回预报云量；红外接 JAXA P-Tree 是 V2 的事 |
+| 11b | `latest.json` 可能先于瓦片更新，缺瓦片时不能拿黑图当夜间 | 任一瓦片非 200 视为该帧未就绪，退回上一帧（10 分钟前） |
+| 11c | 经本机代理并发拉 16 张瓦片会偶发 TLS 拒连/超时 | 并发限 3、重试 3 次退避；卫星拿不到时**不清除**已有卫星预警（未知 ≠ 消失），最多保留 2 小时 |
 | 12 | **数据授权待确认** | NICT 实时网页图像面向浏览用途，商业再分发需确认许可；JAXA P-Tree 免费但限科研教育。**商业发布前必须核实**，见 09 文档 |
 | 13 | 原生组件层级：普通 View 盖不住 map | 浮层一律用 `cover-view`；底部面板改为**不与地图重叠**。设计稿的轻微重叠需 Skyline 同层渲染，V1 不做 |
 | 14 | `cover-view` 样式支持有限 | 不支持 gap、伪元素、复杂选择器；只用 width/height/padding/margin/background/border-radius/color/font-size |

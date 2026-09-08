@@ -283,6 +283,8 @@ mp 后台「开发管理 → 服务器域名」配置：
 ### 数据授权
 
 - [ ] Himawari 云图数据的商用许可已核实（NICT 实时图像 / JAXA P-Tree 的使用条款）
+      —— 当前代码直接拉 NICT `himawari8.nict.go.jp` 公开真彩图，配置项 `ENERSIGHT_HIMAWARI_BASE`，
+      换源只改配置与 `app/satellite/himawari.py`
 - [ ] 腾讯位置服务的调用配额与商用授权已确认
 - [ ] Open-Meteo 的商用条款已确认
 

@@ -32,6 +32,22 @@ def render_png(grid: GridData, layer: str, hour_index: int) -> bytes:
     return buf.getvalue()
 
 
+# 真彩图亮度 → 云量强度。陆地/海面亮度约 30–100，云 150+；线性拉伸后清空区域透明
+CLOUD_GRAY_LO, CLOUD_GRAY_HI = 70.0, 230.0
+
+
+def render_cloud_png(gray: np.ndarray) -> bytes:
+    """Himawari 重投影灰度 → 云图层 PNG。透明度随强度变化，底图能透出来。"""
+    intensity = np.clip(
+        (gray.astype(float) - CLOUD_GRAY_LO) / (CLOUD_GRAY_HI - CLOUD_GRAY_LO), 0, 1
+    )
+    rgba = SCALES["cloud"].rgba(intensity * 100)
+    rgba[..., 3] = (intensity * 220).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(rgba, "RGBA").save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def tile_path(layer: str, block_key: str, time_key: str) -> Path:
     return _TILE_DIR / layer / block_key / f"{time_key}.png"
 

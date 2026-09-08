@@ -47,6 +47,7 @@ export type LayerType = S['LayerType']
 export type LayerResponse = S['LayerResponse']
 export type LayerImage = S['LayerImage']
 export type Legend = S['Legend']
+export type SatelliteCloudResponse = S['SatelliteCloudResponse']
 
 export type StationSummary = S['StationSummary']
 export type StationMetrics = S['StationMetrics']

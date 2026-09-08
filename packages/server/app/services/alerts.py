@@ -1,9 +1,10 @@
 """预警：规则、扫描、查询。docs/07 §五、docs/06 §九
 
-V1 全部基于气象预报。卫星短临（云团外推）依赖 Himawari 处理，接入后
-作为另一个 source 写入同一张表。
+两类来源写同一张表：`forecast` 来自气象预报规则，`satellite` 来自
+Himawari 两帧光流的云团外推（services/satellite）。
 """
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -18,10 +19,12 @@ from app.metrics import solar
 from app.models import Alert, Station
 from app.schemas.common import AlertLevel
 from app.schemas.home import AlertSummary
+from app.services import satellite
 from app.services.weather import Forecast
 
 # ── 规则参数（docs/07 §七 预警）──
 DEDUP_WINDOW = timedelta(hours=2)
+SATELLITE_ALERT_TTL = timedelta(hours=2)  # 外推时效上限，卫星断供时预警最多保留这么久
 LOOKAHEAD_HOURS = 6  # 云层下降只看未来 6 小时
 MIN_DROP = 10.0  # 降幅低于此不触发
 MODERATE_DROP = settings.alert_drop_moderate
@@ -38,6 +41,7 @@ class Detected:
     level: str
     title: str
     description: str
+    source: str = "forecast"
 
 
 # ────────────────────────────── 规则 ──────────────────────────────
@@ -150,12 +154,49 @@ def detect_weather(fc: Forecast) -> list[Detected]:
     return out
 
 
-def detect_all(fc: Forecast, station: Station) -> list[Detected]:
+def detect_cloud_motion(scene: satellite.CloudScene, station: Station, tz: str) -> Detected | None:
+    """卫星短临：来向锥内云团 2 小时内到站。docs/07 §4.1、§4.2"""
+    est = satellite.estimate_motion(scene, station)
+    if est is None or est.impact_minutes is None or est.distance_km is None:
+        return None
+    if est.covered:
+        return Detected(
+            kind="cloud_motion",
+            level="moderate",
+            title="云团正在过境，辐射受影响",
+            description=(
+                f"卫星云图显示站点上空有云，云团向{est.heading_text}方向移动，"
+                f"速度约 {est.speed_kmh:.0f} km/h。"
+            ),
+            source="satellite",
+        )
+    m = est.impact_minutes
+    level = "severe" if m <= 30 else "moderate" if m <= 60 else "minor"
+    at = satellite.local_time(scene.observed_at, m, tz)
+    return Detected(
+        kind="cloud_motion",
+        level=level,
+        title=f"云团逼近，预计 {at} 前后影响",
+        description=(
+            f"卫星云图显示{est.origin_text}方向约 {est.distance_km:.0f} km 处有云团，"
+            f"以约 {est.speed_kmh:.0f} km/h 向{est.heading_text}移动，预计 {m} 分钟后到达站点。"
+        ),
+        source="satellite",
+    )
+
+
+def detect_all(
+    fc: Forecast, station: Station, scene: satellite.CloudScene | None = None
+) -> list[Detected]:
     found: list[Detected] = []
     if station.type == "solar":
         c = detect_cloud_drop(fc, station.latitude, station.longitude)
         if c:
             found.append(c)
+        if scene is not None:
+            m = detect_cloud_motion(scene, station, fc.tz)
+            if m:
+                found.append(m)
     found.extend(detect_weather(fc))
     return found
 
@@ -172,8 +213,14 @@ async def _active_by_kind(db: AsyncSession, station_id: str) -> dict[str, Alert]
     return {a.kind: a for a in rows}
 
 
-async def apply_detections(db: AsyncSession, station: Station, found: list[Detected]) -> None:
-    """把检测结果落库：新预警 / 更新已有 / 解除消失的。docs/07 §5.3、§5.4"""
+async def apply_detections(
+    db: AsyncSession, station: Station, found: list[Detected], *, satellite_known: bool = True
+) -> None:
+    """把检测结果落库：新预警 / 更新已有 / 解除消失的。docs/07 §5.3、§5.4
+
+    satellite_known=False 表示这次没拿到卫星结论（上游故障），
+    卫星类预警「未知」不等于「消失」，保留到自然过期。
+    """
     active = await _active_by_kind(db, station.id)
     now = utcnow()
     seen: set[str] = set()
@@ -192,7 +239,7 @@ async def apply_detections(db: AsyncSession, station: Station, found: list[Detec
                 station_id=station.id,
                 kind=d.kind,
                 level=d.level,
-                source="forecast",
+                source=d.source,
                 title=d.title,
                 description=d.description,
                 published_at=now,
@@ -203,13 +250,19 @@ async def apply_detections(db: AsyncSession, station: Station, found: list[Detec
     for kind, cur in active.items():
         if kind in seen or cur.level == "cleared":
             continue
+        if (
+            cur.source == "satellite"
+            and not satellite_known
+            and now - cur.published_at < SATELLITE_ALERT_TTL
+        ):
+            continue
         cur.active = False
         db.add(
             Alert(
                 station_id=station.id,
                 kind=kind,
                 level="cleared",
-                source="forecast",
+                source=cur.source,
                 title=_cleared_title(kind),
                 description="影响因素已消退，发电条件逐步恢复。",
                 published_at=now,
@@ -221,6 +274,7 @@ async def apply_detections(db: AsyncSession, station: Station, found: list[Detec
 def _cleared_title(kind: str) -> str:
     return {
         "cloud": "云系逐渐远离，辐射将恢复",
+        "cloud_motion": "云团已过境，辐射逐步恢复",
         "wind": "强风减弱，风险解除",
         "rain": "降水结束，风险解除",
         "heat": "高温缓解，风险解除",
@@ -228,10 +282,21 @@ def _cleared_title(kind: str) -> str:
     }.get(kind, "风险解除")
 
 
-async def scan_station(db: AsyncSession, station: Station, fc: Forecast) -> int:
-    found = detect_all(fc, station)
-    await apply_detections(db, station, found)
-    return len(found)
+# 读请求顺手扫描与定时扫描可能同时跑同一站点，各自看不到对方未提交的插入 → 重复预警。
+# 进程内按站点串行；多实例部署时换成数据库行锁。
+_scan_locks: dict[str, asyncio.Lock] = {}
+
+
+async def scan_station(
+    db: AsyncSession, station: Station, fc: Forecast, sat: satellite.SceneResult | None = None
+) -> int:
+    lock = _scan_locks.setdefault(station.id, asyncio.Lock())
+    async with lock:
+        scene = sat.scene if sat else None
+        found = detect_all(fc, station, scene)
+        await apply_detections(db, station, found, satellite_known=sat.known if sat else False)
+        await db.commit()
+        return len(found)
 
 
 # ────────────────────────────── 查询 ──────────────────────────────

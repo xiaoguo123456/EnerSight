@@ -244,6 +244,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/satellite/cloud": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Satellite Cloud */
+        get: operations["satellite_cloud_v1_satellite_cloud_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -364,6 +381,14 @@ export interface components {
             alert: components["schemas"]["AlertSummary"] | null;
             /** @description 仅卫星短临预警有；预报类为 null */
             cloud_motion: components["schemas"]["CloudMotion"] | null;
+            /** @description 夜间或上游不可用时为 null */
+            satellite: components["schemas"]["SatelliteCloudResponse"] | null;
+            /**
+             * Satellite Status
+             * @description satellite 为 null 的原因：night 夜间无可见光；unavailable 数据源暂时拿不到
+             * @enum {string}
+             */
+            satellite_status: "ok" | "night" | "unavailable";
         };
         /** CurrentWeather */
         CurrentWeather: {
@@ -463,6 +488,11 @@ export interface components {
         /** Envelope[MapOverviewResponse] */
         Envelope_MapOverviewResponse_: {
             data: components["schemas"]["MapOverviewResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[SatelliteCloudResponse] */
+        Envelope_SatelliteCloudResponse_: {
+            data: components["schemas"]["SatelliteCloudResponse"];
             meta: components["schemas"]["Meta"];
         };
         /** Envelope[StationDetailResponse] */
@@ -720,6 +750,24 @@ export interface components {
             co2_reduction: components["schemas"]["MetricWithDelta"];
             /** @description 元 */
             estimated_revenue: components["schemas"]["MetricWithDelta"];
+        };
+        /** SatelliteCloudResponse */
+        SatelliteCloudResponse: {
+            /**
+             * Band
+             * @description 服务端按昼夜自动选择
+             * @enum {string}
+             */
+            band: "visible" | "infrared" | "vapor";
+            /**
+             * Observed At
+             * @description 卫星观测时间，不是请求时间
+             */
+            observed_at: string;
+            image: components["schemas"]["LayerImage"];
+            legend: components["schemas"]["Legend"];
+            /** @description 已按 coord 转换 */
+            station_marker: components["schemas"]["LatLng"];
         };
         /** StationCounts */
         StationCounts: {
@@ -1440,6 +1488,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_LayerResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    satellite_cloud_v1_satellite_cloud_get: {
+        parameters: {
+            query?: {
+                station_id?: string | null;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_SatelliteCloudResponse_"];
                 };
             };
             /** @description Validation Error */

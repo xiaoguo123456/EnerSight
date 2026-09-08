@@ -46,3 +46,17 @@ def _debug_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "debug", True)
     monkeypatch.setattr(settings, "wx_appid", "")
     monkeypatch.setattr(settings, "enable_scheduler", False)
+
+
+@pytest.fixture(autouse=True)
+def _no_satellite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认不出网拉 Himawari；卫星用例自行注入合成圆盘。"""
+    from app.errors import UpstreamUnavailable
+    from app.satellite import himawari
+
+    async def _unavailable(*_args, **_kwargs):
+        raise UpstreamUnavailable("test: satellite disabled")
+
+    himawari.clear_cache()
+    # 只掐 latest.json：fetch_full_disk 保持真实实现，卫星用例可以整体替换或按时刻注入
+    monkeypatch.setattr(himawari, "latest_time", _unavailable)

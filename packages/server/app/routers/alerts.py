@@ -13,7 +13,7 @@ from app.schemas.alert import AlertListResponse, CurrentAlertResponse
 from app.schemas.common import Coord
 from app.schemas.envelope import CoordQuery, Envelope, envelope
 from app.services import alerts as svc
-from app.services import weather
+from app.services import satellite, weather
 from app.services.home import default_station
 from app.services.station import get_station
 
@@ -67,9 +67,27 @@ async def current_alert(
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[CurrentAlertResponse]:
     station = await _resolve(db, user.id, station_id)
-    fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
+    http = request.app.state.http
+    fc = await weather.get_forecast(http, station.latitude, station.longitude)
+    base = str(request.base_url).rstrip("/")
+    # 卫星拿不到（夜间、上游故障）不影响预报类预警，云图置 null
+    sat = await satellite.load_scene_safely(http, station, base)
+    scene = sat.scene
     # 读请求顺手扫一次，保证首次访问就有结果；定时任务负责常态刷新
-    await svc.scan_station(db, station, fc)
+    await svc.scan_station(db, station, fc, sat)
     await db.commit()
     alert = await svc.current_alert(db, station.id, fc.tz)
-    return envelope(CurrentAlertResponse(alert=alert, cloud_motion=None), coord)
+    cloud_motion = None
+    if scene and alert and alert.source == "satellite":
+        est = satellite.estimate_motion(scene, station)
+        if est:
+            cloud_motion = satellite.to_cloud_motion(est, station, scene.observed_at, fc.tz)
+    return envelope(
+        CurrentAlertResponse(
+            alert=alert,
+            cloud_motion=cloud_motion,
+            satellite=satellite.to_response(scene, station, fc.tz, coord) if scene else None,
+            satellite_status=sat.status,
+        ),
+        coord,
+    )

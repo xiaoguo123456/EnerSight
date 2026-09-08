@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     tencent_lbs_key: str = ""
     tencent_lbs_base: str = "https://apis.map.qq.com/ws"
 
+    # Himawari（NICT 实时真彩图）。商用授权待法务核实，见 docs/09
+    himawari_base: str = "https://himawari8.nict.go.jp/img/D531106"
+    himawari_latest: str = "https://himawari8-dl.nict.go.jp/himawari8/img/D531106/latest.json"
+    himawari_level: int = 4  # 4d = 2200px 全圆盘，约 5km/px
+
     # 上游数据源
     open_meteo_base: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_base: str = "https://archive-api.open-meteo.com/v1"

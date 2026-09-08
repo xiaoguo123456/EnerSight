@@ -18,7 +18,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Station
-from app.services import accumulate, alerts, geo, reports, weather
+from app.services import accumulate, alerts, geo, reports, satellite, weather
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,9 @@ def _make_scan_alerts(app: FastAPI):
             for s in stations:
                 try:
                     fc = await weather.get_forecast(app.state.http, s.latitude, s.longitude)
-                    n += await alerts.scan_station(db, s, fc)
+                    # 扫描只用云图内容，URL 前缀由读接口按请求补
+                    sat = await satellite.load_scene_safely(app.state.http, s, "")
+                    n += await alerts.scan_station(db, s, fc, sat)
                 except Exception:  # noqa: BLE001
                     log.exception("scan_alerts failed: station=%s", s.id)
             await db.commit()
@@ -99,7 +101,7 @@ def start(app: FastAPI) -> AsyncIOScheduler:
     )
     sched.add_job(
         _make_scan_alerts(app),
-        CronTrigger(minute="10,40"),
+        CronTrigger(minute="5,20,35,50"),  # 卫星 10 分钟一帧，短临外推要跟得上
         id="scan_alerts",
         max_instances=1,
         coalesce=True,

@@ -1,8 +1,11 @@
 """预警接口。docs/06 §九"""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.schemas.home import AlertSummary
+from app.schemas.satellite import SatelliteCloudResponse
 
 
 class AlertListResponse(BaseModel):
@@ -24,4 +27,7 @@ class CloudMotion(BaseModel):
 class CurrentAlertResponse(BaseModel):
     alert: AlertSummary | None
     cloud_motion: CloudMotion | None = Field(description="仅卫星短临预警有；预报类为 null")
-    # satellite 字段等云图接口落地后加入
+    satellite: SatelliteCloudResponse | None = Field(description="夜间或上游不可用时为 null")
+    satellite_status: Literal["ok", "night", "unavailable"] = Field(
+        description="satellite 为 null 的原因：night 夜间无可见光；unavailable 数据源暂时拿不到"
+    )

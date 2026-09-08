@@ -30,8 +30,10 @@ SHOT_PORT    ?= 4174
 # 用法：make shot PAGE=home
 # 独立端口，不会干掉 make preview 起的常驻服务
 PAGE ?= home
+# 预览/截图都连本机后端；要看线上换 API_BASE=https://...
+API_BASE ?= http://127.0.0.1:8000
 shot:
-	pnpm --filter @enersight/miniapp build:h5
+	TARO_APP_API_BASE=$(API_BASE) pnpm --filter @enersight/miniapp build:h5
 	@(cd packages/miniapp/dist/h5 && python3 -m http.server $(SHOT_PORT) >/dev/null 2>&1 &) ; sleep 2
 	@node packages/miniapp/scripts/screenshot.mjs \
 		"http://127.0.0.1:$(SHOT_PORT)/#/pages/$(PAGE)/index" \
@@ -42,7 +44,7 @@ shot:
 # 浏览器预览：不需要微信开发者工具，也不需要 AppID
 # 前台运行，Ctrl+C 停止
 preview:
-	pnpm --filter @enersight/miniapp build:h5
+	TARO_APP_API_BASE=$(API_BASE) pnpm --filter @enersight/miniapp build:h5
 	@echo ""
 	@echo "→ http://127.0.0.1:$(PREVIEW_PORT)   （Chrome 设备模拟切 iPhone 尺寸）"
 	@echo ""
@@ -50,7 +52,7 @@ preview:
 
 # 后台常驻预览，不占终端。停止：make preview-stop
 preview-bg:
-	pnpm --filter @enersight/miniapp build:h5
+	TARO_APP_API_BASE=$(API_BASE) pnpm --filter @enersight/miniapp build:h5
 	@pkill -f "http.server $(PREVIEW_PORT)" 2>/dev/null || true
 	@(cd packages/miniapp/dist/h5 && nohup python3 -m http.server $(PREVIEW_PORT) --bind 127.0.0.1 \
 		> /tmp/enersight-preview.log 2>&1 &) ; sleep 2

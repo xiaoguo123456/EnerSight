@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
 from app.jobs import scheduler
-from app.routers import alerts, auth, geo, health, home, layers, reports, stations
+from app.routers import alerts, auth, geo, health, home, layers, reports, satellite, stations
 
 
 def _check_production_config() -> None:
@@ -57,7 +57,8 @@ app = FastAPI(
 if settings.debug:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:4173", "http://localhost:4173"],
+        # 本机任意端口：make preview 与 make shot 用不同端口
+        allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+",
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -72,6 +73,7 @@ app.include_router(alerts.router)
 app.include_router(reports.router)
 app.include_router(geo.router)
 app.include_router(layers.router)
+app.include_router(satellite.router)
 if settings.debug:
     from app.routers import debug as debug_router
 

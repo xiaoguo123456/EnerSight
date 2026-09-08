@@ -9,6 +9,8 @@ from app.geo import wgs84_to_gcj02
 from app.render import grid as g
 from app.render import tiles
 from app.render.colormap import SCALES
+from app.satellite import himawari
+from app.satellite.reproject import is_daylit, reproject
 from app.schemas.common import Coord, LayerType
 from app.schemas.layer import Bounds, LatLng, LayerFrame, LayerImage, LayerResponse, Legend
 
@@ -50,6 +52,28 @@ async def _ensure_tile(
     return f"{base_url}/tiles/{rel}", data.times[hi] + "+00:00"
 
 
+async def _ensure_satellite_tile(
+    http: httpx.AsyncClient, block: g.Block, base_url: str
+) -> tuple[str, str] | None:
+    """云图层优先用 Himawari 实况；夜间或上游故障返回 None，退回预报云量。docs/04 §4.1"""
+    try:
+        disk = await himawari.fetch_full_disk(http)
+    except Exception:  # noqa: BLE001
+        return None
+    time_key = disk.observed_at.strftime("%Y%m%dT%H%M")
+    path = tiles.tile_path("cloud-sat", block.key, time_key)
+    if not path.exists():
+        loop = asyncio.get_running_loop()
+        bbox = (block.lon0, block.lat0, block.lon1, block.lat1)
+        rep = await loop.run_in_executor(None, reproject, disk.rgb, bbox, tiles.TILE_PX)
+        if not is_daylit(rep.gray):
+            return None
+        png = await loop.run_in_executor(None, tiles.render_cloud_png, rep.gray)
+        tiles.write_tile(path, png)
+    rel = path.relative_to(tiles.tile_dir()).as_posix()
+    return f"{base_url}/tiles/{rel}", disk.observed_at.isoformat(timespec="minutes")
+
+
 async def build_layer(
     http: httpx.AsyncClient,
     layer: LayerType,
@@ -60,7 +84,10 @@ async def build_layer(
     w, s, e, n = bbox
     blocks = g.blocks_for_bbox(w, s, e, n)[:6]  # 一屏最多几块，防止恶意 bbox 拉爆
     # 串行拉块：并发多块会触发 Open-Meteo 限流；块级缓存后只有冷块才真的回源
-    results = [await _ensure_tile(http, layer.value, b, base_url) for b in blocks]
+    results = []
+    for b in blocks:
+        sat = await _ensure_satellite_tile(http, b, base_url) if layer == LayerType.CLOUD else None
+        results.append(sat or await _ensure_tile(http, layer.value, b, base_url))
 
     images = [
         LayerImage(url=url, bounds=_bounds(b, coord))

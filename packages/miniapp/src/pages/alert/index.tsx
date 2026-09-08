@@ -1,5 +1,6 @@
 import { View } from '@tarojs/components'
 import { useState } from 'react'
+import Taro from '@tarojs/taro'
 import type { AlertLevel } from '@enersight/core/types'
 import { alertsApi } from '@/api/alerts'
 import {
@@ -7,7 +8,7 @@ import {
   SatelliteCloudCard, SectionHeader, SegmentedTabs, Skeleton,
 } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
-import { useStationStore } from '@/store'
+import { useMapStore, useStationStore } from '@/store'
 import './index.scss'
 
 type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
@@ -25,6 +26,13 @@ export default function AlertCenter() {
   const list = useRequest(() => alertsApi.list(currentId ?? undefined, filter), [currentId, filter])
 
   const noStation = cur.status === 'error' && cur.error.status === 404
+  const setActiveLayer = useMapStore((s) => s.setActiveLayer)
+
+  /** 全屏 = 去地图页看云图层，地图页会自动定位到当前站点 */
+  const openCloudMap = () => {
+    setActiveLayer('cloud')
+    Taro.switchTab({ url: '/pages/map/index' })
+  }
 
   return (
     <View className="alerts">
@@ -68,9 +76,13 @@ export default function AlertCenter() {
           )
         )}
 
-        {!noStation && (
-          /* 卫星云图接口未落地，暂用观测时间占位；接入后替换 */
-          <SatelliteCloudCard observedAt="待接入" />
+        {cur.status === 'success' && (
+          /* 无预警时云图仍展示；夜间 satellite 为 null 走空态。docs/06 §9.2 */
+          <SatelliteCloudCard
+            satellite={cur.data.satellite}
+            status={cur.data.satellite_status}
+            onFullscreen={cur.data.satellite ? openCloudMap : undefined}
+          />
         )}
 
         {!noStation && (
