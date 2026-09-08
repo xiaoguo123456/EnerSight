@@ -185,7 +185,6 @@ make codegen                         # openapi.json → core/types/
 | --- | --- |
 | Taro 插件与 babel preset 用 require 解析未声明的同级依赖 | `.npmrc` 设 `node-linker=hoisted`；`babel-preset-taro` 还需手动装 `@babel/plugin-proposal-class-properties` |
 | Taro 4.0.9 的 peer 是 vite@4 / @vitejs/plugin-react@4 / @babel/core@7 | 版本已 pin，升级前先确认 Taro 的 peer |
-| 小程序没有 `:root` | CSS 变量挂在 `page` 选择器上 |
 | `sass.resource` 会注入到每个 scss | 只放 mixin（无 CSS 输出）；token 由 `global.scss` 引入一次进 app.wxss |
 | hoisted 布局把所有 `@types` 拉进隐式作用域 | 两个 tsconfig 都显式写了 `types` |
 | `designWidth` 决定 px→rpx 比例 | 取 375（02 的字号是 375pt 基准标注）；换基准改 config，不要改 token 数值 |
