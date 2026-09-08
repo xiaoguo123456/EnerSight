@@ -61,6 +61,8 @@
     background: var(--color-surface);
     box-shadow: var(--shadow-float);
     display: flex; align-items: center; justify-content: center;
+
+    &--on { background: var(--color-primary); }
   }
 
   // ── 底部面板：叠在地图上 ──

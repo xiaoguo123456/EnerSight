@@ -20,7 +20,7 @@ export function StationSelector({
   return (
     <View className="station-selector" onClick={onTap}>
       <View className="station-selector__thumb">
-        <Icon name="sun" size={22} color="#ffffff" />
+        <Icon name="sun" size={22} color="#ffffff" fill="rgba(255,255,255,0.35)" strokeWidth={2.4} />
       </View>
       <View className="station-selector__body">
         <View className="station-selector__row">

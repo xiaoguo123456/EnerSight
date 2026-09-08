@@ -54,7 +54,7 @@ export default function Home() {
             caption={weather.weather_text}
           />
           <MetricCard
-            icon="wind" iconColor="#1677ff" label="风速"
+            icon="wind" iconColor="#1677ff" iconFill={false} label="风速"
             metric={formatWindSpeed(weather.wind_speed.value)}
             deltaPercent={weather.wind_speed.delta_percent}
           />

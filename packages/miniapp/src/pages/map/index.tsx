@@ -42,6 +42,8 @@ const SHEET_HEIGHT = 172
 
 export default function MapPage() {
   const [layer, setLayer] = useState<MapLayer>('cloud')
+  // 卫星影像底图。docs/01 §四：全球地图 / 行政地图 / 卫星影像底图
+  const [satellite, setSatellite] = useState(false)
   const { station, index, weather } = mockHome
   const safe = getSafeArea()
 
@@ -77,6 +79,8 @@ export default function MapPage() {
           longitude={station.longitude}
           scale={9}
           showLocation
+          showScale
+          enableSatellite={satellite}
           markers={[{
             id: 1,
             latitude: station.latitude,
@@ -108,6 +112,17 @@ export default function MapPage() {
         </View>
 
         <View className="map-page__tools" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
+          <View
+            className={`map-page__tool ${satellite ? 'map-page__tool--on' : ''}`}
+            onClick={() => setSatellite((v) => !v)}
+          >
+            <Icon
+              name="globe"
+              size={17}
+              color={satellite ? '#ffffff' : '#1f2937'}
+              fill={satellite ? 'rgba(255,255,255,0.3)' : false}
+            />
+          </View>
           <View className="map-page__tool">
             <Icon name="crosshair" size={17} color="#1f2937" />
           </View>
@@ -139,7 +154,7 @@ export default function MapPage() {
             <MetricCard icon="cloudSun" iconColor="#f59e0b" label="天气"
               metric={formatTemperature(weather.temperature.value)}
               caption={weather.weather_text} />
-            <MetricCard icon="wind" iconColor="#1677ff" label="风速"
+            <MetricCard icon="wind" iconColor="#1677ff" iconFill={false} label="风速"
               metric={formatWindSpeed(weather.wind_speed.value)}
               deltaPercent={weather.wind_speed.delta_percent} />
             <MetricCard icon="sun" iconColor="#f97316" label="辐射"

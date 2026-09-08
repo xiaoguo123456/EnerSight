@@ -17,7 +17,9 @@ const page = await browser.newPage({ viewport: { width: 81, height: 81 }, device
 
 for (const [name, d] of Object.entries(P)) {
   for (const [state, color] of [['', '#9CA3AF'], ['-active', '#1677FF']]) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="81" height="81" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
+    // 激活态加半透明填充，与页面内 Icon 组件的双色风格一致
+    const fill = state ? `fill="${color}" fill-opacity="0.2"` : 'fill="none"'
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="81" height="81" viewBox="0 0 24 24" ${fill} stroke="${color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
     await page.setContent(
       `<body style="margin:0;background:transparent">${svg}</body>`)
     const buf = await page.screenshot({ omitBackground: true })

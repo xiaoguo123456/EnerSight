@@ -25,7 +25,7 @@ export function DataSummaryGrid({ cells }: { cells: SummaryCell[] }) {
       {cells.map((c) => (
         <View className="summary-grid__cell" key={c.label}>
           <View className={`summary-grid__icon summary-grid__icon--${c.tone}`}>
-            <Icon name={c.icon} size={14} color={TONE_COLOR[c.tone]} />
+            <Icon name={c.icon} size={15} color={TONE_COLOR[c.tone]} fill strokeWidth={2.4} />
           </View>
           <Text className="summary-grid__label">{c.label}</Text>
           <View className="summary-grid__value">

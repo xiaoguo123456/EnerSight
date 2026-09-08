@@ -23,7 +23,7 @@ export function AppHeader({ title, subtitle, slogan }: Props) {
       }}
     >
       <View className="app-header__brand">
-        <Icon name="leaf" size={26} color="#16a34a" strokeWidth={1.8} />
+        <Icon name="leaf" size={26} color="#16a34a" fill strokeWidth={2} />
         <View className="app-header__text">
           <Text className="app-header__title">{title}</Text>
           {subtitle && <Text className="app-header__subtitle">{subtitle}</Text>}

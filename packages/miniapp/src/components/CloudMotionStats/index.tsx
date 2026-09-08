@@ -30,7 +30,7 @@ export function CloudMotionStats({
       {cells.map((c) => (
         <View className="cloud-motion__cell" key={c.label}>
           <View className="cloud-motion__icon">
-            <Icon name={c.icon} size={15} color={c.tone} />
+            <Icon name={c.icon} size={16} color={c.tone} fill strokeWidth={2.4} />
           </View>
           <Text className="cloud-motion__label">{c.label}</Text>
           <View className="cloud-motion__value">

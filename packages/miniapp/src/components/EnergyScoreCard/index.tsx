@@ -21,7 +21,7 @@ export function EnergyScoreCard({ score, level, summary, onExplain }: Props) {
       </View>
       <View className="score-card__main">
         <View className="score-card__ring">
-          <Icon name="leaf" size={30} color="#16a34a" strokeWidth={1.8} />
+          <Icon name="leaf" size={32} color="#16a34a" fill strokeWidth={2} />
         </View>
         <View className="score-card__body">
           <View className="score-card__head" onClick={onExplain}>

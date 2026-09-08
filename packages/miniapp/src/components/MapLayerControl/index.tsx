@@ -4,12 +4,13 @@ import './index.scss'
 
 export type MapLayer = 'cloud' | 'wind' | 'temperature' | 'radiation' | 'station'
 
-const LAYERS: { value: MapLayer; label: string; icon: IconName }[] = [
-  { value: 'cloud', label: '云图', icon: 'cloud' },
-  { value: 'wind', label: '风场', icon: 'wind' },
-  { value: 'temperature', label: '温度', icon: 'thermometer' },
-  { value: 'radiation', label: '辐射', icon: 'sun' },
-  { value: 'station', label: '站点', icon: 'mapPin' },
+// fill: 闭合形状可填充；wind 是三条开放线，填充无意义
+const LAYERS: { value: MapLayer; label: string; icon: IconName; fill: boolean }[] = [
+  { value: 'cloud', label: '云图', icon: 'cloud', fill: true },
+  { value: 'wind', label: '风场', icon: 'wind', fill: false },
+  { value: 'temperature', label: '温度', icon: 'thermometer', fill: true },
+  { value: 'radiation', label: '辐射', icon: 'sun', fill: true },
+  { value: 'station', label: '站点', icon: 'mapPin', fill: true },
 ]
 
 /**
@@ -32,7 +33,13 @@ export function MapLayerControl({
             className={`layer-ctrl__item ${active ? 'layer-ctrl__item--active' : ''}`}
             onClick={() => onChange(l.value)}
           >
-            <Icon name={l.icon} size={18} color={active ? '#ffffff' : '#1677ff'} />
+            <Icon
+              name={l.icon}
+              size={20}
+              color={active ? '#ffffff' : '#1677ff'}
+              fill={l.fill && (active ? 'rgba(255,255,255,0.35)' : true)}
+              strokeWidth={2.4}
+            />
             <Text className="layer-ctrl__label">{l.label}</Text>
           </View>
         )

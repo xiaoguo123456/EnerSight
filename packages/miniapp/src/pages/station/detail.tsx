@@ -77,7 +77,7 @@ export default function StationDetail() {
             <MetricCard icon="cloudSun" iconColor="#f59e0b" label="气温"
               metric={formatTemperature(weather.temperature.value)}
               caption={weather.weather_text} />
-            <MetricCard icon="wind" iconColor="#1677ff" label="风速"
+            <MetricCard icon="wind" iconColor="#1677ff" iconFill={false} label="风速"
               metric={formatWindSpeed(weather.wind_speed.value)}
               deltaPercent={weather.wind_speed.delta_percent} />
             <MetricCard icon="cloud" iconColor="#60a5fa" label="云量"
