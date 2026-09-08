@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
 from app.jobs import scheduler
-from app.routers import alerts, auth, geo, health, home, reports, stations
+from app.routers import alerts, auth, geo, health, home, layers, reports, stations
 
 
 def _check_production_config() -> None:
@@ -71,3 +71,15 @@ app.include_router(home.router)
 app.include_router(alerts.router)
 app.include_router(reports.router)
 app.include_router(geo.router)
+app.include_router(layers.router)
+if settings.debug:
+    from app.routers import debug as debug_router
+
+    app.include_router(debug_router.router)
+
+# 渲染好的图层图片。生产环境换成对象存储 + CDN，这里本地磁盘直出
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+from app.render.tiles import tile_dir  # noqa: E402
+
+app.mount("/tiles", StaticFiles(directory=str(tile_dir())), name="tiles")

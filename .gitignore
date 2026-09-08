@@ -43,3 +43,4 @@ __pycache__/
 dist/
 packages/server/enersight.db
 packages/server/.env
+packages/server/data/

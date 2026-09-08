@@ -43,8 +43,10 @@ export type GeoPlace = S['GeoPlace']
 export type GeoSearchResponse = S['GeoSearchResponse']
 export type GeoReverseResponse = S['GeoReverseResponse']
 
-// ── 对应接口尚未落地，OpenAPI 里还没有，暂时手写。落地后改为 S['...'] ──
-export type LayerType = 'cloud' | 'wind' | 'temperature' | 'radiation'
+export type LayerType = S['LayerType']
+export type LayerResponse = S['LayerResponse']
+export type LayerImage = S['LayerImage']
+export type Legend = S['Legend']
 
 export type StationSummary = S['StationSummary']
 export type StationMetrics = S['StationMetrics']

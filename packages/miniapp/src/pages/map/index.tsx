@@ -5,37 +5,13 @@ import { formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/
 import {
   EmptyState, Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, Skeleton, StatusBadge,
 } from '@/components'
-import type { LegendSpec, MapLayer } from '@/components'
+import type { MapLayer } from '@/components'
 import { homeApi } from '@/api/home'
+import { useMapLayer } from '@/hooks/useMapLayer'
 import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
 import './index.scss'
-
-// 图例由接口下发，此处为接口落地前的占位。docs/06 §7.2
-const LEGENDS: Record<MapLayer, LegendSpec> = {
-  radiation: {
-    title: '辐射强度（W/m²）',
-    colors: ['#3b5bdb', '#22b8cf', '#51cf66', '#fcc419', '#ff922b', '#f03e3e'],
-    stops: [0, 200, 400, 600, 800, 1000],
-  },
-  temperature: {
-    title: '温度（℃）',
-    colors: ['#4c6ef5', '#22b8cf', '#51cf66', '#fcc419', '#f76707'],
-    stops: [-20, -10, 0, 10, 20, 30, 40],
-  },
-  wind: {
-    title: '风速（m/s）',
-    colors: ['#e7f5ff', '#74c0fc', '#4c6ef5', '#7048e8', '#f03e3e'],
-    stops: [0, 5, 10, 15, 20],
-  },
-  cloud: {
-    title: '云量强度',
-    colors: ['#1f2937', '#6b7280', '#ffffff'],
-    labels: ['低', '高'],
-  },
-  station: { title: '站点状态', colors: ['#16a34a', '#1677ff'], labels: ['正常', '待机'] },
-}
 
 // 底部面板高度，地图浮层的 bottom 要避开它
 const SHEET_HEIGHT = 172
@@ -59,6 +35,10 @@ export default function MapPage() {
   const index = req.data?.index
   const weather = req.data?.weather
   const center = station ?? FALLBACK_CENTER
+
+  // 「站点」图层只显示 marker，不贴图
+  const dataLayer = layer === 'station' ? null : layer
+  const overlay = useMapLayer('main-map', dataLayer, req.status === 'success')
 
   return (
     <View className="map-page">
@@ -106,6 +86,13 @@ export default function MapPage() {
             },
           }] as any : []}
           onError={(e) => console.error('[map] 加载失败', e)}
+          onRegionChange={(e: any) => {
+            // 只响应用户手势结束；贴图本身也会触发 regionchange，不过滤会形成请求循环
+            const d = e?.detail ?? e
+            const isEnd = d?.type === 'end'
+            const byUser = d?.causedBy === 'drag' || d?.causedBy === 'scale'
+            if (isEnd && byUser) void overlay.refresh()
+          }}
         />
 
         {/* 搜索框浮在地图顶部，拉满宽度 */}
@@ -120,9 +107,18 @@ export default function MapPage() {
 
         <MapLayerControl value={layer} onChange={setLayer} />
 
-        <View className="map-page__legend" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
-          <MapLegend spec={LEGENDS[layer]} />
-        </View>
+        {overlay.legend && (
+          <View className="map-page__legend" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
+            <MapLegend
+              spec={{
+                title: overlay.legend.title,
+                colors: overlay.legend.colors,
+                stops: overlay.legend.stops ?? undefined,
+                labels: overlay.legend.labels ? [overlay.legend.labels[0]!, overlay.legend.labels[1]!] : undefined,
+              }}
+            />
+          </View>
+        )}
 
         <View className="map-page__tools" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
           <View

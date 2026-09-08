@@ -227,6 +227,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/map/layers/{layer}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Layer */
+        get: operations["get_layer_v1_map_layers__layer__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -287,6 +304,11 @@ export interface components {
             station_id: string;
             /** Source */
             source: string;
+        };
+        /** Bounds */
+        Bounds: {
+            sw: components["schemas"]["LatLng"];
+            ne: components["schemas"]["LatLng"];
         };
         /**
          * CloudMotion
@@ -428,6 +450,11 @@ export interface components {
             data: components["schemas"]["HomeResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[LayerResponse] */
+        Envelope_LayerResponse_: {
+            data: components["schemas"]["LayerResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[LoginResponse] */
         Envelope_LoginResponse_: {
             data: components["schemas"]["LoginResponse"];
@@ -538,6 +565,77 @@ export interface components {
          * @enum {string}
          */
         IndexLevel: "excellent" | "good" | "fair" | "poor";
+        /** LatLng */
+        LatLng: {
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+        };
+        /** LayerFrame */
+        LayerFrame: {
+            /**
+             * Images
+             * @description 覆盖请求 bbox 所需的量化块
+             */
+            images: components["schemas"]["LayerImage"][];
+        };
+        /** LayerImage */
+        LayerImage: {
+            /**
+             * Url
+             * @description 图片地址，带版本号
+             */
+            url: string;
+            /** @description 已按 coord 转换 */
+            bounds: components["schemas"]["Bounds"];
+        };
+        /** LayerResponse */
+        LayerResponse: {
+            layer: components["schemas"]["LayerType"];
+            /**
+             * Observed At
+             * @description 数据观测时间，非请求时间
+             */
+            observed_at: string;
+            /** Unit */
+            unit: string | null;
+            legend: components["schemas"]["Legend"];
+            /**
+             * Frames
+             * @description 静态图层长度为 1，风场为多帧
+             */
+            frames: components["schemas"]["LayerFrame"][];
+            /** Frame Interval Ms */
+            frame_interval_ms: number | null;
+        };
+        /**
+         * LayerType
+         * @enum {string}
+         */
+        LayerType: "cloud" | "wind" | "temperature" | "radiation";
+        /** Legend */
+        Legend: {
+            /** Title */
+            title: string;
+            /**
+             * Type
+             * @description gradient | scale
+             */
+            type: string;
+            /**
+             * Stops
+             * @description 刻度值；无量纲图层为 null
+             */
+            stops: number[] | null;
+            /**
+             * Labels
+             * @description 无量纲图层用，如 [低, 高]
+             */
+            labels: string[] | null;
+            /** Colors */
+            colors: string[];
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Code */
@@ -1303,6 +1401,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_GeoReverseResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_layer_v1_map_layers__layer__get: {
+        parameters: {
+            query: {
+                /** @description west,south,east,north */
+                bbox: string;
+                zoom?: number;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                layer: components["schemas"]["LayerType"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_LayerResponse_"];
                 };
             };
             /** @description Validation Error */
