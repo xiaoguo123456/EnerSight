@@ -20,6 +20,9 @@ project.private.config.json
 .env
 .env.local
 .env.*.local
+.release.env
+.previous-release.env
+deploy/data/
 
 # 日志
 *.log

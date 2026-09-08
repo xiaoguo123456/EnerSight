@@ -10,20 +10,23 @@ x-logging: &default-logging
 
 services:
   api:
-    image: ${ENERSIGHT_IMAGE:-<ACR 地址>/enersight/api:<固定版本>@sha256:<摘要>}
+    image: ${ENERSIGHT_IMAGE:?必须提供固定摘要镜像}
     restart: unless-stopped
     init: true
     env_file:
       - .env
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
+    mem_limit: 1536m
+    cpus: 1.5
+    pids_limit: 256
     volumes:
       # 渲染好的图层瓦片、卫星归档帧、校准缓存。丢了会重新生成，但归档帧无法补
       - ./data:/app/data
     logging: *default-logging
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/ready >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5

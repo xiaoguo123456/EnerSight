@@ -1,0 +1,16 @@
+name: platform-gateway
+services:
+  nginx:
+    image: ${PLATFORM_NGINX_IMAGE:?需要提供 nginx 固定摘要}
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 128m
+    pids_limit: 100
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./services:/etc/nginx/platform-services:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

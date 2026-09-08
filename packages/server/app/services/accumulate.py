@@ -12,10 +12,10 @@ from datetime import date
 
 import httpx
 from sqlalchemy import func, select
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db import upsert_insert
 from app.models import DailyGeneration, Station
 from app.services import energy, weather
 
@@ -25,9 +25,7 @@ log = logging.getLogger(__name__)
 async def upsert_daily(
     db: AsyncSession, station_id: str, day: date, kwh: float, current_kw: float | None
 ) -> None:
-    # SQLite 与 PostgreSQL 的 upsert 语法不同；这里用 SQLite 方言，
-    # 切 PostgreSQL 时换成 sqlalchemy.dialects.postgresql.insert
-    stmt = sqlite_insert(DailyGeneration).values(
+    stmt = upsert_insert(db, DailyGeneration).values(
         station_id=station_id, day=day, kwh=kwh, current_kw=current_kw, source="forecast"
     )
     stmt = stmt.on_conflict_do_update(

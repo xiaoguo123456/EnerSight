@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="ENERSIGHT_")
 
     debug: bool = False
+    # 共用域名时由网关剥离此前缀；图片 URL 和 OpenAPI 保留公网前缀。
+    root_path: str = ""
+    # 共用 RDS 的连接预算：单实例最多 3 个业务连接。
+    db_pool_size: int = 2
+    db_max_overflow: int = 1
     # 定时任务开关。多实例部署时只在一个实例上开
     enable_scheduler: bool = True
 

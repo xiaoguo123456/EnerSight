@@ -9,13 +9,13 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import select
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import generate as ai
 from app.ai.input import PERIODS, build_input
 from app.ai.schema import AIReport
 from app.config import settings
+from app.db import upsert_insert
 from app.models import DailyGeneration, Report, Station
 from app.schemas.common import Coord, MetricWithDelta
 from app.schemas.report import AIReportResponse, ReportPeriodOut, ReportSummary
@@ -73,7 +73,7 @@ async def generate_and_store(
     gen = await ai.generate(inp)
     summary = await _summary(db, station, v.snapshot.daily_kwh, day)
 
-    stmt = sqlite_insert(Report).values(
+    stmt = upsert_insert(db, Report).values(
         station_id=station.id,
         day=day,
         content=gen.report.model_dump(),

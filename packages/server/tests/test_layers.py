@@ -76,6 +76,20 @@ class TestColormap:
 
 
 class TestApi:
+    async def test_共用域名的图片地址保留业务前缀(self, client, open_meteo, monkeypatch):
+        from app.main import app
+
+        monkeypatch.setattr(app, "root_path", "/enersight")
+        response = await client.get(
+            "https://platform.qhzhiyin.com/v1/map/layers/radiation",
+            params={"bbox": "120.5,28.5,121.5,29.5"},
+        )
+        assert response.status_code == 200
+        image = response.json()["data"]["frames"][0]["images"][0]
+        assert image["url"].startswith(
+            "https://platform.qhzhiyin.com/enersight/tiles/radiation/"
+        )
+
     async def test_返回块与图例并落盘(self, client: AsyncClient, open_meteo):
         r = await client.get(
             "/v1/map/layers/radiation",

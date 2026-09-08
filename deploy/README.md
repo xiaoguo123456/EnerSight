@@ -1,16 +1,12 @@
-# EnerSight 生产部署
+# 晴川观象生产部署
 
-固定摘要的 Docker 镜像 + 单服务 Compose，数据库用外部 PostgreSQL。完整说明见
-[docs/10-deployment.md](../docs/10-deployment.md)。
+生产入口：`https://platform.qhzhiyin.com/enersight`。GitHub 私有仓库：`xiaoguo123456/EnerSight`。
 
-```
-deploy/
-├── docker-compose.yml      只跑 api 一个服务，镜像写固定版本 + 摘要
-├── .env.example            复制为 .env 后填写，chmod 600，不提交
-└── scripts/
-    ├── preflight.sh        环境、.env、端口、Compose 语法检查，不输出敏感值
-    ├── deploy.sh           预检 → 拉镜像 → 原地更新 → 等 /health
-    └── rollback.sh         传入上一固定镜像回滚，不回退数据库迁移
-```
+- `docker-compose.yml`：单 API 容器，外部 PostgreSQL，主机回环端口 8001。
+- `.env.example`：生产配置示例，实际 `.env` 不入库，权限 600。
+- `scripts/deploy.sh`：固定摘要镜像发布、数据库就绪检查、失败恢复上一镜像。
+- `scripts/rollback.sh`：回滚应用，保留数据库。
+- `gateway/`：独立的 platform 域名共享 Nginx，根路径保留现有 New API，业务按前缀路由。
+- `../.github/workflows/prod.yml`：手动选择 main 中的提交，经检查后构建镜像、推送 ACR、部署 ECS。
 
-服务器目录建议 `/opt/enersight/`，用 `git archive` 只上传已提交文件，`.env` 单独 scp。
+完整配置、Secrets、首次切换和实施状态见 [部署说明](../docs/10-deployment.md)。

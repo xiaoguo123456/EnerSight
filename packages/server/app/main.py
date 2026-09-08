@@ -63,6 +63,7 @@ app = FastAPI(
     description="见 docs/06-api-contract.md",
     lifespan=lifespan,
     debug=settings.debug,
+    root_path=settings.root_path,
 )
 
 # 小程序不走 CORS（request 是原生的），这是给 H5 预览用的；生产按域名收紧

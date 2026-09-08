@@ -13,8 +13,26 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-engine = create_async_engine(settings.database_url, echo=settings.debug)
+pool_options = (
+    {
+        "pool_size": settings.db_pool_size,
+        "max_overflow": settings.db_max_overflow,
+        "pool_pre_ping": True,
+    }
+    if settings.database_url.startswith("postgresql")
+    else {}
+)
+engine = create_async_engine(settings.database_url, echo=settings.debug, **pool_options)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+def upsert_insert(session: AsyncSession, model):
+    """按实际连接选择冲突更新方言，开发 SQLite 与生产 PostgreSQL 共用业务逻辑。"""
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    return insert(model)
 
 
 class Base(DeclarativeBase):
