@@ -1,12 +1,15 @@
 import { Map, View, Text, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { useState } from 'react'
-import { formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
+import { useEffect, useRef, useState } from 'react'
+import { formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
+import type { CatalogPlant, GeoPlace } from '@enersight/core/types'
 import {
   EmptyState, Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, Skeleton, StatusBadge,
 } from '@/components'
 import type { MapLayer } from '@/components'
+import { geoApi } from '@/api/geo'
 import { homeApi } from '@/api/home'
+import { useCatalogMarkers } from '@/hooks/useCatalogMarkers'
 import { useMapLayer } from '@/hooks/useMapLayer'
 import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
@@ -22,11 +25,33 @@ const LEVEL_TEXT: Record<string, string> = {
 
 // 地图未加载到站点前的默认中心：华东
 const FALLBACK_CENTER = { latitude: 31.3, longitude: 120.62 }
+const PLACE_ICON: Record<GeoPlace['type'], 'mapPin' | 'navigation' | 'sun' | 'layers'> = {
+  city: 'mapPin', poi: 'mapPin', coordinate: 'navigation', station: 'sun', plant: 'layers',
+}
+
+/** 目录条目 → 表单预填参数 */
+function formQuery(p: { name: string; type: string; latitude: number; longitude: number; capacity?: number; id?: string }) {
+  const q = [
+    `name=${encodeURIComponent(p.name)}`, `type=${p.type}`,
+    `lat=${p.latitude.toFixed(5)}`, `lng=${p.longitude.toFixed(5)}`,
+  ]
+  if (p.capacity != null) q.push(`capacity=${p.capacity}`)
+  if (p.id) q.push(`catalog=${encodeURIComponent(p.id)}`)
+  return q.join('&')
+}
 
 export default function MapPage() {
   const [layer, setLayer] = useState<MapLayer>('cloud')
   // 卫星影像底图。docs/01 §四：全球地图 / 行政地图 / 卫星影像底图
   const [satellite, setSatellite] = useState(false)
+  const [scale, setScale] = useState(9)
+  // 地图中心：跟随站点；搜索选中后改为选中点
+  const [focus, setFocus] = useState<{ latitude: number; longitude: number } | null>(null)
+  const [keyword, setKeyword] = useState('')
+  const [results, setResults] = useState<GeoPlace[] | null>(null)
+  // 选中的公开电站（搜索结果或点 marker），底部出一条「添加为我的站点」
+  const [picked, setPicked] = useState<CatalogPlant | GeoPlace | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>()
   const safe = getSafeArea()
   const currentId = useStationStore((s) => s.currentId)
   const req = useRequest(() => homeApi.mapOverview(currentId ?? undefined), [currentId])
@@ -34,11 +59,55 @@ export default function MapPage() {
   const station = req.data?.station
   const index = req.data?.index
   const weather = req.data?.weather
-  const center = station ?? FALLBACK_CENTER
+  const center = focus ?? station ?? FALLBACK_CENTER
 
   // 「站点」图层只显示 marker，不贴图
   const dataLayer = layer === 'station' ? null : layer
   const overlay = useMapLayer('main-map', dataLayer, req.status === 'success')
+  // 公开电站 marker：任何图层下都显示，视野内最多 100 个
+  const catalog = useCatalogMarkers('main-map', req.status !== 'loading')
+  useEffect(() => { if (req.status !== 'loading') void catalog.refresh() }, [req.status])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 搜索：300ms 防抖，空串清空
+  useEffect(() => {
+    clearTimeout(timer.current)
+    const kw = keyword.trim()
+    if (!kw) { setResults(null); return }
+    timer.current = setTimeout(async () => {
+      try { setResults((await geoApi.search(kw)).results) } catch { setResults([]) }
+    }, 300)
+    return () => clearTimeout(timer.current)
+  }, [keyword])
+
+  const choose = (r: GeoPlace) => {
+    setResults(null)
+    setKeyword('')
+    setFocus({ latitude: r.latitude, longitude: r.longitude })
+    setPicked(r.type === 'plant' ? r : null)
+    setTimeout(() => { void overlay.refresh(); void catalog.refresh() }, 400)
+  }
+
+  const onMarkerTap = (e: any) => {
+    const id = Number(e?.detail?.markerId ?? e?.markerId)
+    const p = catalog.byMarkerId(id)
+    if (p) setPicked(p)
+  }
+
+  const addPicked = () => {
+    if (!picked) return
+    const isPlant = 'capacity' in picked
+    const q = isPlant
+      ? formQuery(picked)
+      : formQuery({ name: picked.name, type: 'solar', latitude: picked.latitude, longitude: picked.longitude, id: picked.catalog_id ?? undefined })
+    void Taro.navigateTo({ url: `/pages/station/form?${q}` })
+  }
+
+  const locate = () => {
+    if (!station) return
+    setFocus(null)
+    Taro.createMapContext('main-map').moveToLocation({ latitude: station.latitude, longitude: station.longitude })
+  }
+  const zoom = (delta: number) => setScale((v) => Math.min(18, Math.max(3, v + delta)))
 
   return (
     <View className="map-page">
@@ -70,44 +139,91 @@ export default function MapPage() {
           className="map-page__map"
           latitude={center.latitude}
           longitude={center.longitude}
-          scale={9}
+          scale={scale}
           showLocation
           showScale
           enableSatellite={satellite}
-          markers={station ? [{
-            id: 1,
-            latitude: station.latitude,
-            longitude: station.longitude,
-            width: 24, height: 24,
-            callout: {
-              content: station.name, color: '#ffffff', bgColor: '#1677FF',
-              padding: 6, borderRadius: 6, display: 'ALWAYS',
-              fontSize: 12, textAlign: 'center',
-            },
-          }] as any : []}
+          markers={[
+            ...(station ? [{
+              id: 1,
+              latitude: station.latitude,
+              longitude: station.longitude,
+              width: 24, height: 24,
+              callout: {
+                content: station.name, color: '#ffffff', bgColor: '#1677FF',
+                padding: 6, borderRadius: 6, display: 'ALWAYS',
+                fontSize: 12, textAlign: 'center',
+              },
+            }] : []),
+            ...catalog.markers,
+          ] as any}
+          onMarkerTap={onMarkerTap}
           onError={(e) => console.error('[map] 加载失败', e)}
           onRegionChange={(e: any) => {
             // 只响应用户手势结束；贴图本身也会触发 regionchange，不过滤会形成请求循环
             const d = e?.detail ?? e
             const isEnd = d?.type === 'end'
             const byUser = d?.causedBy === 'drag' || d?.causedBy === 'scale'
-            if (isEnd && byUser) void overlay.refresh()
+            if (isEnd && byUser) { void overlay.refresh(); void catalog.refresh() }
           }}
         />
 
-        {/* 搜索框浮在地图顶部，拉满宽度 */}
+        {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、我的站点与公开电站 */}
         <View className="map-page__search">
           <Icon name="search" size={15} color="#9ca3af" />
           <Input
             className="map-page__search-input"
-            placeholder="搜索城市 / 坐标 / 站点"
+            placeholder="搜索城市 / 坐标 / 站点 / 公开电站"
             placeholderClass="map-page__ph"
+            value={keyword}
+            onInput={(e) => setKeyword(e.detail.value)}
           />
+          {keyword && (
+            <View className="map-page__search-clear" onClick={() => { setKeyword(''); setResults(null) }}>
+              <Icon name="minus" size={12} color="#9ca3af" />
+            </View>
+          )}
         </View>
+        {results && (
+          <View className="map-page__results">
+            {results.length === 0 && <Text className="map-page__result-empty">没有匹配结果</Text>}
+            {results.map((r, i) => (
+              <View className="map-page__result" key={`${r.type}-${i}`} hoverClass="pressed" onClick={() => choose(r)}>
+                <Icon name={PLACE_ICON[r.type]} size={14} color={r.type === 'plant' ? '#7c3aed' : '#6b7280'} />
+                <View className="map-page__result-text">
+                  <Text className="map-page__result-name">{r.name}</Text>
+                  {r.address && <Text className="map-page__result-addr">{r.address}</Text>}
+                </View>
+                {r.type === 'plant' && <Text className="map-page__result-tag">公开电站</Text>}
+                {r.type === 'station' && <Text className="map-page__result-tag map-page__result-tag--mine">我的</Text>}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {picked && (
+          <View className="map-page__picked" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
+            <View className="map-page__picked-text">
+              <Text className="map-page__picked-name">{picked.name}</Text>
+              <Text className="map-page__picked-meta">
+                {'capacity' in picked
+                  ? `${picked.type === 'solar' ? '光伏' : '风电'} · ${formatPower(picked.capacity).value} ${formatPower(picked.capacity).unit}${picked.address ? ` · ${picked.address}` : ''}`
+                  : picked.address}
+              </Text>
+            </View>
+            <View className="map-page__picked-add" hoverClass="pressed" onClick={addPicked}>
+              <Icon name="plus" size={13} color="#fff" />
+              <Text className="map-page__picked-add-text">添加为我的站点</Text>
+            </View>
+            <View className="map-page__picked-close" onClick={() => setPicked(null)}>
+              <Icon name="minus" size={12} color="#9ca3af" />
+            </View>
+          </View>
+        )}
 
         <MapLayerControl value={layer} onChange={setLayer} />
 
-        {overlay.legend && (
+        {overlay.legend && !picked && (
           <View className="map-page__legend" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
             <MapLegend
               spec={{
@@ -132,13 +248,13 @@ export default function MapPage() {
               fill={satellite ? 'rgba(255,255,255,0.3)' : false}
             />
           </View>
-          <View className="map-page__tool">
+          <View className="map-page__tool" hoverClass="pressed" onClick={locate}>
             <Icon name="crosshair" size={17} color="#1f2937" />
           </View>
-          <View className="map-page__tool">
+          <View className="map-page__tool" hoverClass="pressed" onClick={() => zoom(1)}>
             <Icon name="plus" size={17} color="#1f2937" />
           </View>
-          <View className="map-page__tool">
+          <View className="map-page__tool" hoverClass="pressed" onClick={() => zoom(-1)}>
             <Icon name="minus" size={17} color="#1f2937" />
           </View>
         </View>

@@ -47,6 +47,64 @@
   }
   &__search-input { flex: 1; min-width: 0; font-size: 13px; color: var(--color-text); }
   &__ph { color: var(--color-text-weak); font-size: 13px; }
+  &__search-clear {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--color-bg);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  // 搜索结果下拉：盖在图层控件之上
+  &__results {
+    position: absolute;
+    left: 12px; right: 12px; top: 54px;
+    max-height: 300px; overflow-y: auto;
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-panel);
+    z-index: 5;
+  }
+  &__result {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-divider);
+    @include pressable;
+    &:last-child { border-bottom: 0; }
+  }
+  &__result-empty { display: block; padding: 14px; font-size: 12px; color: var(--color-text-weak); text-align: center; }
+  &__result-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  &__result-name { font-size: 13px; font-weight: 600; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__result-addr { font-size: 11px; color: var(--color-text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__result-tag {
+    font-size: 10px; padding: 2px 6px; border-radius: var(--radius-pill);
+    color: #7c3aed; background: rgba(124, 58, 237, .1);
+    &--mine { color: var(--color-primary); background: rgba(22, 119, 255, .1); }
+  }
+
+  // 选中的公开电站：一条可添加的浮条，与图例同一位置互斥
+  &__picked {
+    position: absolute;
+    left: 12px; right: 56px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-float);
+  }
+  &__picked-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  &__picked-name { font-size: 13px; font-weight: 600; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__picked-meta { font-size: 11px; color: var(--color-text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__picked-add {
+    display: flex; align-items: center; gap: 4px;
+    padding: 7px 10px; border-radius: var(--radius-pill);
+    background: var(--color-primary);
+    @include pressable;
+  }
+  &__picked-add-text { font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; }
+  &__picked-close {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--color-bg);
+    display: flex; align-items: center; justify-content: center;
+  }
 
   &__legend { position: absolute; left: 12px; }
 

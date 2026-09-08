@@ -72,11 +72,35 @@ async def search(
         lng, lat = _to_out(s.longitude, s.latitude, coord)
         results.append(
             GeoPlace(
-                name=s.name, address=s.address or "", latitude=lat, longitude=lng, type="station"
+                name=s.name,
+                address=s.address or "",
+                latitude=lat,
+                longitude=lng,
+                type="station",
+                catalog_id=None,
             )
         )
 
-    # 2. 坐标直解（输入视为 WGS84）
+    # 2. 公开电站目录（按名称/地区），最多 5 条，type=plant
+    from app.services import catalog
+
+    hits = await catalog.search(
+        db, keyword=kw, near=None, bbox=None, type_=None, coord=coord, limit=5
+    )
+    for p in hits.plants:
+        results.append(
+            GeoPlace(
+                name=p.name,
+                address=p.address
+                or f"{'光伏' if p.type.value == 'solar' else '风电'} {p.capacity / 1000:.0f} MW",
+                latitude=p.latitude,
+                longitude=p.longitude,
+                type="plant",
+                catalog_id=p.id,
+            )
+        )
+
+    # 3. 坐标直解（输入视为 WGS84）
     pc = parse_coordinate(kw)
     if pc:
         lng, lat = _to_out(pc[1], pc[0], coord)
@@ -87,10 +111,11 @@ async def search(
                 latitude=lat,
                 longitude=lng,
                 type="coordinate",
+                catalog_id=None,
             )
         )
 
-    # 3. 城市 / POI
+    # 4. 城市 / POI
     for item in await TencentLBS(http).suggest(kw):
         lng, lat = _to_out(item["longitude"], item["latitude"], coord)
         results.append(
@@ -100,6 +125,7 @@ async def search(
                 latitude=lat,
                 longitude=lng,
                 type="poi",
+                catalog_id=None,
             )
         )
 

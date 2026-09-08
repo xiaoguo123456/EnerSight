@@ -2,9 +2,10 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-GeoPlaceType = Literal["city", "poi", "station", "coordinate"]
+# plant = 公开电站目录里的场站，可一键添加为自己的站点
+GeoPlaceType = Literal["city", "poi", "station", "coordinate", "plant"]
 
 
 class GeoPlace(BaseModel):
@@ -13,6 +14,7 @@ class GeoPlace(BaseModel):
     latitude: float
     longitude: float
     type: GeoPlaceType
+    catalog_id: str | None = Field(description="type=plant 时为目录 id，其余 null")
 
 
 class GeoSearchResponse(BaseModel):

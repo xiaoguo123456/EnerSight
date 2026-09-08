@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stations/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Catalog */
+        get: operations["search_catalog_v1_stations_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stations": {
         parameters: {
             query?: never;
@@ -327,6 +344,63 @@ export interface components {
             sw: components["schemas"]["LatLng"];
             ne: components["schemas"]["LatLng"];
         };
+        /** CatalogPlantOut */
+        CatalogPlantOut: {
+            /** Id */
+            id: string;
+            /**
+             * Name
+             * @description 展示名：有中文名用中文名，否则数据集原名
+             */
+            name: string;
+            /**
+             * Name En
+             * @description 数据集原名（英文），与 name 相同时为 null
+             */
+            name_en: string | null;
+            type: components["schemas"]["StationType"];
+            /**
+             * Capacity
+             * @description kW
+             */
+            capacity: number;
+            /**
+             * Latitude
+             * @description 已按 coord 转换
+             */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /**
+             * Address
+             * @description 省市区，未回填为 null
+             */
+            address: string | null;
+            /** Owner */
+            owner: string | null;
+            /** Commissioning Year */
+            commissioning_year: number | null;
+            /**
+             * Distance Km
+             * @description near 查询时到查询点的距离，其余为 null
+             */
+            distance_km: number | null;
+            /**
+             * Source
+             * @description wri | gem，展示出处用
+             */
+            source: string;
+        };
+        /** CatalogSearchResponse */
+        CatalogSearchResponse: {
+            /** Plants */
+            plants: components["schemas"]["CatalogPlantOut"][];
+            /**
+             * Total
+             * @description 目录内该类型总数，供「共收录 N 座」文案
+             */
+            total: number;
+        };
         /**
          * CloudMotion
          * @description 云团短临外推三宫格。仅卫星短临预警有。docs/07 §四
@@ -369,6 +443,8 @@ export interface components {
              * @default wgs84
              */
             coord: components["schemas"]["Coord"];
+            /** Catalog Id */
+            catalog_id?: string | null;
             /** Tilt */
             tilt?: number | null;
             /** Azimuth */
@@ -455,6 +531,11 @@ export interface components {
             data: components["schemas"]["AlertListResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[CatalogSearchResponse] */
+        Envelope_CatalogSearchResponse_: {
+            data: components["schemas"]["CatalogSearchResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[CurrentAlertResponse] */
         Envelope_CurrentAlertResponse_: {
             data: components["schemas"]["CurrentAlertResponse"];
@@ -529,7 +610,12 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "city" | "poi" | "station" | "coordinate";
+            type: "city" | "poi" | "station" | "coordinate" | "plant";
+            /**
+             * Catalog Id
+             * @description type=plant 时为目录 id，其余 null
+             */
+            catalog_id: string | null;
         };
         /** GeoReverseResponse */
         GeoReverseResponse: {
@@ -981,6 +1067,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_LoginResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_catalog_v1_stations_catalog_get: {
+        parameters: {
+            query?: {
+                keyword?: string | null;
+                /** @description latitude,longitude，按 coord */
+                near?: string | null;
+                /** @description west,south,east,north，按 coord */
+                bbox?: string | null;
+                type?: components["schemas"]["StationType"] | null;
+                limit?: number;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_CatalogSearchResponse_"];
                 };
             };
             /** @description Validation Error */

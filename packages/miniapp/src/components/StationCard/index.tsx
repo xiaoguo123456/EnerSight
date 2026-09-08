@@ -58,7 +58,7 @@ export function StationCard({
             <Icon name="chevronRight" size={13} color="#9ca3af" />
             <View className="station-card__spacer" />
             <StatusBadge status={status} />
-            <View className="station-card__more" onClick={onMore}>
+            <View className="station-card__more" onClick={(e) => { e.stopPropagation(); onMore?.() }}>
               <Icon name="moreHorizontal" size={14} color="#9ca3af" />
             </View>
           </View>

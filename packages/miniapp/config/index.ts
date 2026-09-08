@@ -26,6 +26,14 @@ export default {
     projectDirectory: path.resolve(__dirname, '..'),
   },
   alias: { '@': SRC },
+  // 地图 marker 图标必须是文件路径：小程序 iconPath 不认 base64，而 vite 会把小图内联。
+  // 按文件拷进产物，代码里用 /assets/markers/xxx.png 绝对路径引用
+  copy: {
+    patterns: [
+      { from: 'src/assets/markers/', to: `dist/${process.env.TARO_ENV}/assets/markers/` },
+    ],
+    options: {},
+  },
   mini: {
     postcss: {
       pxtransform: { enable: true },

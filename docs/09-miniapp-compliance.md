@@ -282,6 +282,8 @@ mp 后台「开发管理 → 服务器域名」配置：
 
 ### 数据授权
 
+- [ ] 公开电站目录的署名已展示：WRI Global Power Plant Database（CC BY 4.0）；
+      导入 GEM 数据后加 Global Energy Monitor，并剔除其中标注 CC BY-NC 的 TransitionZero 记录
 - [ ] Himawari 云图数据的商用许可已核实
       —— 当前用日本气象厅官网瓦片（`www.jma.go.jp/bosai/himawari`）。JMA 网站遵循日本
       「公共データ利用規約」：注明出处可再利用含商用，加工后不得冒充官方发布；

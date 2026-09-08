@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Station
+from app.models import CatalogPlant, Station
 from app.satellite import himawari
 from app.services import accumulate, alerts, geo, reports, satellite, weather
 
@@ -100,6 +100,8 @@ def _make_archive_cloud(app: FastAPI):
 
 
 def _make_backfill_address(app: FastAPI):
+    """站点地址回填；顺带给公开电站目录回填省市区，每小时 100 条，省配额。"""
+
     async def job() -> None:
         async with SessionLocal() as db:
             rows = (
@@ -117,6 +119,33 @@ def _make_backfill_address(app: FastAPI):
             await db.commit()
         if rows:
             log.info("backfill_address: %d/%d", n, len(rows))
+        if not settings.tencent_lbs_key:
+            return
+        async with SessionLocal() as db:
+            plants = (
+                (
+                    await db.execute(
+                        select(CatalogPlant).where(CatalogPlant.province.is_(None)).limit(100)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            done = 0
+            for p in plants:
+                try:
+                    r = await geo.reverse(app.state.http, p.latitude, p.longitude)
+                except Exception:  # noqa: BLE001
+                    log.exception("backfill_catalog failed: plant=%s", p.id)
+                    continue
+                if r:
+                    p.province, p.city, p.district = r.province, r.city, r.district
+                    done += 1
+                else:
+                    p.province = ""  # 查不到也标记，避免每小时重复打同一批
+            await db.commit()
+        if plants:
+            log.info("backfill_catalog: %d/%d", done, len(plants))
 
     return job
 

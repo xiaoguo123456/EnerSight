@@ -643,7 +643,49 @@ CO₂ 减排 = 累计发电量 × 排放因子
 
 ---
 
-## 七、预警数据
+## 七、公开电站目录
+
+
+用户自己录站点的可能性不大，目录让产品「一打开就有内容」：地图上能看到周边真实场站，
+添加站点时可以直接选一座。
+
+
+### 数据来源
+
+| 来源 | 内容 | 授权 | 获取 | 状态 |
+| --- | --- | --- | --- | --- |
+| WRI Global Power Plant Database v1.3 | 全球 3.5 万座电站，中国光伏 1,318 座、风电 835 座，英文名、坐标、容量、投运年份、业主，数据截至 2021 | CC BY 4.0 | GitHub 直接下载 CSV | **已导入** |
+| Global Energy Monitor：Global Solar / Wind Power Tracker | ≥ 1 MW 场站，中国覆盖最全，**带中文名**、省市县、状态、多期容量，每季度更新 | CC BY 4.0（其中来自 TransitionZero 的部分为 CC BY-NC 4.0，商用前剔除） | 官网填表（姓名/邮箱）后下载 xlsx | 导入脚本已兼容，**待下载** |
+
+不用的：JAXA P-Tree（禁止再分发）、OpenStreetMap（ODbL 传染性，衍生库需同许可开放）、
+北极星等商业库。
+
+
+### 导入与合并
+
+```
+uv run python scripts/import_catalog.py wri global_power_plant_database.csv
+uv run python scripts/import_catalog.py gem Global-Solar-Power-Tracker.xlsx
+uv run python scripts/import_catalog.py gem Global-Wind-Power-Tracker.xlsx
+```
+
+- 只导 `operating` 且 ≥ 1 MW 的光伏、风电；容量统一存 kW
+- 同类型、相距 < 1.5 km 视为同一座：GEM 优先，覆盖 WRI；GEM 同一场址多期合并
+- 幂等：按 `{source}:{source_id}` 更新
+- 省市区由定时任务用腾讯逆地理逐步回填（每小时 100 条，需 key）；GEM 自带的直接用
+
+
+### 展示要求
+
+- 列表与地图 marker 处注明出处「WRI Global Power Plant Database（CC BY 4.0）」，
+  有 GEM 数据时加 「Global Energy Monitor」—— CC BY 的署名条款，不能省
+- 目录只读、全体共享；用户添加时复制一份到自己的站点并记 `catalog_id`
+- 容量是数据集口径（多为交流侧 MW），与用户自填的装机容量语义一致
+
+
+---
+
+## 八、预警数据
 
 
 ### 风险等级
@@ -679,7 +721,7 @@ CO₂ 减排 = 累计发电量 × 排放因子
 
 ---
 
-## 八、AI分析数据
+## 九、AI分析数据
 
 
 AI输入：

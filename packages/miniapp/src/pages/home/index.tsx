@@ -19,7 +19,8 @@ import './index.scss'
 const ENTRIES: QuickEntry[] = [
   { icon: 'map', title: '地图总览', subtitle: '宏观掌握区域情况', tone: 'energy',
     onTap: () => Taro.switchTab({ url: '/pages/map/index' }) },
-  { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary' },
+  { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary',
+    onTap: () => Taro.switchTab({ url: '/pages/alert/index' }) },
   { icon: 'fileText', title: 'AI分析报告', subtitle: '智能生成专业分析', tone: 'purple',
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
   { icon: 'settings', title: '站点管理', subtitle: '站点信息与设备', tone: 'cyan',

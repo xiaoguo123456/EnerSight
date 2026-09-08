@@ -1,0 +1,59 @@
+.catalog {
+  min-height: 100vh;
+  background: var(--color-bg);
+
+  &__body {
+    display: flex; flex-direction: column; gap: var(--space-card-gap);
+    padding: 4px var(--space-page) var(--space-page);
+  }
+
+  &__search {
+    display: flex; align-items: center; gap: 8px;
+    height: 42px; padding: 0 14px;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+  }
+  &__search-input { flex: 1; font-size: var(--font-body); color: var(--color-text); }
+  &__ph { color: var(--color-text-weak); }
+  &__clear {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--color-bg);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  &__list {
+    display: flex; flex-direction: column;
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+  &__item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px var(--space-card-pad);
+    border-bottom: 1px solid var(--color-divider);
+    @include pressable;
+    &:last-of-type { border-bottom: 0; }
+  }
+  &__thumb {
+    width: 36px; height: 36px; border-radius: var(--radius-thumb);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    &--solar { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+    &--wind { background: linear-gradient(135deg, #60a5fa, #1677ff); }
+  }
+  &__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  &__name {
+    font-size: var(--font-body); font-weight: 600; color: var(--color-text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  &__meta { font-size: var(--font-caption); color: var(--color-text-sub); }
+  &__add {
+    font-size: var(--font-caption); font-weight: 600; color: var(--color-primary);
+    padding: 4px 10px; border-radius: var(--radius-pill);
+    background: rgba(22, 119, 255, .08);
+  }
+  &__credit {
+    padding: 10px var(--space-card-pad);
+    font-size: var(--font-micro); color: var(--color-text-weak);
+  }
+}

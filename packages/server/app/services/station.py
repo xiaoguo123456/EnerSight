@@ -118,6 +118,7 @@ async def create_station(
         azimuth=req.azimuth,
         hub_height=req.hub_height,
         address=None,
+        catalog_id=req.catalog_id,
     )
     if http is not None:
         # 逆地理编码 best effort：失败不阻塞建站，定时任务会补

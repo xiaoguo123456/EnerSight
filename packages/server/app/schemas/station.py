@@ -56,6 +56,9 @@ class CreateStationRequest(BaseModel):
     capacity: float = Field(gt=0, description="kW")
     coord: Coord = Field(default=Coord.WGS84, description="入参坐标系")
 
+    # 从公开电站目录添加时带上，用于溯源；表单字段仍由客户端按目录条目预填
+    catalog_id: str | None = Field(default=None, max_length=24)
+
     # 出力模型参数，选填，不填用默认值。docs/07 §2.3
     tilt: float | None = Field(default=None, ge=0, le=90)
     azimuth: float | None = Field(default=None, ge=0, le=360)

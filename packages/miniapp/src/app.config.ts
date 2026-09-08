@@ -5,6 +5,8 @@ const PAGES = [
   'pages/station/index',
   'pages/mine/index',
   'pages/station/detail',
+  'pages/station/form',
+  'pages/station/catalog',
   'pages/report/index',
 ]
 

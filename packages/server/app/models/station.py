@@ -31,6 +31,9 @@ class Station(Base):
     address: Mapped[str | None] = mapped_column(String(128), default=None)
     image: Mapped[str | None] = mapped_column(String(256), default=None)
 
+    # 从公开电站目录添加时记录来源，便于日后同步目录更新
+    catalog_id: Mapped[str | None] = mapped_column(String(24), default=None)
+
     # 出力模型参数，选填。None 时用 docs/07 §2.3 的默认值
     tilt: Mapped[float | None] = mapped_column(Float, default=None)
     azimuth: Mapped[float | None] = mapped_column(Float, default=None)

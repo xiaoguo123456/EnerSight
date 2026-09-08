@@ -23,7 +23,8 @@ const TREND_TABS: { value: TrendMetric; label: string }[] = [
 ]
 
 const ACTIONS: QuickEntry[] = [
-  { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary' },
+  { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary',
+    onTap: () => Taro.switchTab({ url: '/pages/alert/index' }) },
   { icon: 'fileText', title: 'AI分析报告', subtitle: '智能生成专业分析', tone: 'purple',
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
 ]

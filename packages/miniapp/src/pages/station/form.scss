@@ -1,0 +1,62 @@
+.sform {
+  min-height: 100vh;
+  background: var(--color-bg);
+
+  &__body {
+    display: flex; flex-direction: column; gap: var(--space-card-gap);
+    padding: 4px var(--space-page) calc(var(--space-page) + 24px);
+  }
+
+  &__source {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px;
+    border-radius: var(--radius-module);
+    background: rgba(22, 119, 255, .08);
+  }
+  &__source-text { font-size: var(--font-caption); color: var(--color-primary); }
+
+  &__card {
+    display: flex; flex-direction: column; gap: 14px;
+    padding: var(--space-card-pad);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+  &__card-title { font-size: var(--font-module-title); font-weight: 600; color: var(--color-text); flex: 1; }
+  &__row-head { display: flex; align-items: center; gap: 8px; }
+  &__hint { font-size: var(--font-caption); color: var(--color-text-weak); }
+
+  &__field { display: flex; flex-direction: column; gap: 6px; }
+  &__field--half { flex: 1; }
+  &__coords { display: flex; gap: 12px; }
+  &__label { font-size: var(--font-caption); color: var(--color-text-sub); }
+  &__input {
+    height: 42px;
+    padding: 0 12px;
+    border-radius: var(--radius-button);
+    background: var(--color-bg);
+    font-size: var(--font-body);
+    color: var(--color-text);
+  }
+  &__ph { color: var(--color-text-weak); }
+
+  &__locate {
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(22, 119, 255, .08);
+    @include pressable;
+  }
+  &__locate-text { font-size: var(--font-caption); color: var(--color-primary); font-weight: 600; }
+
+  &__submit {
+    margin-top: 8px;
+    height: 46px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-button);
+    background: var(--color-primary);
+    box-shadow: var(--shadow-float);
+    @include pressable;
+    &--busy { opacity: .6; }
+  }
+  &__submit-text { font-size: var(--font-body); font-weight: 600; color: #fff; }
+}

@@ -143,6 +143,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 卫星拿不到时清掉卫星预警 —— 未知 ≠ 消失，`apply_detections(satellite_known=False)`
 - ❌ 拿黑瓦片当无云 —— JMA `targetTimes_fd.json` 先于瓦片更新，非 200 要退回上一帧
 - ❌ 删掉云图卡上的「日本气象厅」出处 —— JMA 利用规约要求注明来源
+- ❌ 删掉公开电站列表底部的 WRI / GEM 署名 —— CC BY 4.0 署名条款
+- ❌ 在小程序里用 `import` 引入 marker 图片 —— vite 会内联成 base64，`iconPath` 不认；用 `/assets/markers/` 文件路径，config 里有 copy 规则
 - ❌ 可见光与红外用同一个云像素阈值 —— 红外亮温整体偏暗，阈值见 `CLOUD_THRESHOLD`
 - ❌ Pydantic 响应字段给默认值 —— OpenAPI 会标成可选，前端类型多一层 undefined。可空字段写 `x: float | None = Field(...)` 不带 default，契约要求缺失一律 null 不省略
 - ❌ `core/` 里用 TS 构造器参数属性（`constructor(readonly x)`）—— Taro 的 babel 链路不认
@@ -173,6 +175,7 @@ pnpm --filter @enersight/miniapp build:weapp
 uv run fastapi dev                   # 开发，含 /docs
 docker build packages/server         # 构建镜像；部署见 deploy/ 与 docs/10
 uv run python scripts/calibrate.py   # 指数校准（07 §八），报告写到 docs/reports/
+uv run python scripts/import_catalog.py wri|gem <文件>   # 导入公开电站目录（04 §七）
 uv run python scripts/replay_flow.py --lat .. --lon .. --start .. --end ..   # 光流回放评估
 
 # 类型同步（改了 Pydantic 模型必跑）
@@ -220,8 +223,8 @@ make codegen                         # openapi.json → core/types/
 
 ## 当前状态
 
-**前后端全部打通，16 个接口全部落地，`make check` 全绿（130+ 测试）。**
-`src/mocks/` 已删除，7 个页面全部跑真数据。
+**前后端全部打通，17 个接口全部落地并被前端消费，`make check` 全绿（150+ 测试）。**
+`src/mocks/` 已删除，9 个页面全部跑真数据（含站点表单页、公开电站选择页）。
 
 | 接口 | 状态 | 备注 |
 | --- | --- | --- |
@@ -232,6 +235,7 @@ make codegen                         # openapi.json → core/types/
 | geo/search / geo/reverse | ✅ | 无腾讯 key 时降级 |
 | map/layers | ✅ | 4° 块、0.5° 网格服务端渲染；云图层用 Himawari 实况 |
 | satellite/cloud | ✅ | JMA 瓦片，白天可见光/真彩、夜间红外；光流外推见 07 §四 |
+| stations/catalog | ✅ | 公开电站目录（WRI 已导入 2,153 座，GEM 待下载），地图 marker 与一键添加 |
 
 已落地的关键实现：
 - `server/app/metrics`：pvlib 出力模型与环境指数
@@ -252,6 +256,9 @@ make codegen                         # openapi.json → core/types/
 
 **需要凭证才能通的：** 微信 AppID/AppSecret（真 `code2session`）、腾讯位置服务 key、
 `ANTHROPIC_API_KEY`。都有降级，不阻塞开发。
+
+**需要人工下载的：** Global Energy Monitor 的光伏/风电追踪库 xlsx（官网填表），
+拿到后 `scripts/import_catalog.py gem` 导入，目录会有中文名与省市县。
 
 **上线前：**
 - 合规办理周期最长，见 [09 §九](docs/09-miniapp-compliance.md)；Himawari 商用授权要法务核实

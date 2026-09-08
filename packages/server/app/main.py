@@ -16,7 +16,18 @@ from app import ratelimit
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
 from app.jobs import scheduler
-from app.routers import alerts, auth, geo, health, home, layers, reports, satellite, stations
+from app.routers import (
+    alerts,
+    auth,
+    catalog,
+    geo,
+    health,
+    home,
+    layers,
+    reports,
+    satellite,
+    stations,
+)
 
 
 def _check_production_config() -> None:
@@ -69,6 +80,7 @@ app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(catalog.router)  # 必须在 stations 之前，否则 /catalog 被当成 station_id
 app.include_router(stations.router)
 app.include_router(home.router)
 app.include_router(alerts.router)

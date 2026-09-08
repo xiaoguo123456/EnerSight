@@ -177,6 +177,7 @@ ETag: "..."
 | 14 | GET | `/v1/reports/{station_id}` | AI 分析报告 | §十 |
 | 15 | GET | `/v1/geo/search` | 地点搜索 | §十一 |
 | 16 | GET | `/v1/geo/reverse` | 逆地理编码 | §十一 |
+| 17 | GET | `/v1/stations/catalog` | 公开电站目录 | §5.5 |
 
 
 ---
@@ -286,6 +287,7 @@ interface CreateStationRequest {
   longitude: number
   capacity: number           // kW
   coord?: "wgs84" | "gcj02"  // 入参坐标系，默认 wgs84
+  catalog_id?: string        // 从公开电站目录添加时带上，仅用于溯源；字段仍由客户端预填
 
   // 出力模型参数，选填，不填用默认值（见 07 §2.3）
   tilt?: number              // 光伏倾角（°），默认 |latitude|
@@ -326,6 +328,44 @@ interface StationDetailResponse {
 PATCH  /v1/stations/{id}     body 为 CreateStationRequest 的任意子集
 DELETE /v1/stations/{id}     204 No Content
 ```
+
+
+### 5.5 公开电站目录
+
+```
+GET /v1/stations/catalog?keyword={k}&near={lat,lng}&bbox={w,s,e,n}&type={t}&limit=20&coord=gcj02
+```
+
+全体用户共享、只读的场站库，来自公开数据集（[04 §七](./04-data-specification.md)）。
+三种查法按 `keyword > near > bbox` 取其一：关键词匹配中文名 / 原名 / 省市区 / 业主，
+按容量降序；`near` 按距离升序（200 km 粗筛）；`bbox` 给地图视野内的 marker，按容量降序，
+`limit` 上限 200。`near` / `bbox` 入参按 `coord`。
+
+```ts
+interface CatalogSearchResponse {
+  plants: CatalogPlant[]
+  total: number                // 目录内该类型总数，供「共收录 N 座」文案
+}
+
+interface CatalogPlant {
+  id: string                   // "{source}:{source_id}"，建站时回填到 catalog_id
+  name: string                 // 有中文名用中文名，否则数据集原名
+  name_en: string | null       // 数据集原名，与 name 相同时为 null
+  type: "solar" | "wind"
+  capacity: number             // kW
+  latitude: number             // 已按 coord 转换
+  longitude: number
+  address: string | null       // 省市区，未回填为 null
+  owner: string | null
+  commissioning_year: number | null
+  distance_km: number | null   // near 查询时有值
+  source: "wri" | "gem"        // 展示出处用，数据授权要求注明
+}
+```
+
+**已落地。** 从目录「添加」= 客户端用条目预填表单再走 `POST /v1/stations`（带 `catalog_id`），
+用户可以改名、改容量；目录本身不可写，只由 `scripts/import_catalog.py` 导入。
+`/v1/geo/search` 的结果里也合并了目录命中（`type: "plant"`），地图搜索框一处搜全部。
 
 
 ---
@@ -621,8 +661,10 @@ interface GeoPlace {
   address: string
   latitude: number
   longitude: number
-  type: "city" | "poi" | "station" | "coordinate"
-  // station 为用户自己的站点；coordinate 为直接解析的经纬度输入
+  type: "city" | "poi" | "station" | "coordinate" | "plant"
+  // station 为用户自己的站点；coordinate 为直接解析的经纬度输入；
+  // plant 为公开电站目录命中，catalog_id 有值，可一键添加为自己的站点
+  catalog_id: string | null
 }
 
 interface GeoReverseResponse {
