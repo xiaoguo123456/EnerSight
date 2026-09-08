@@ -33,6 +33,9 @@ export type AlertSummary = S['AlertSummary']
 export type HomeResponse = S['HomeResponse']
 export type StationDetailResponse = S['StationDetailResponse']
 export type MapOverviewResponse = S['MapOverviewResponse']
+export type AlertListResponse = S['AlertListResponse']
+export type CurrentAlertResponse = S['CurrentAlertResponse']
+export type CloudMotion = S['CloudMotion']
 
 // ── 对应接口尚未落地，OpenAPI 里还没有，暂时手写。落地后改为 S['...'] ──
 export type LayerType = 'cloud' | 'wind' | 'temperature' | 'radiation'

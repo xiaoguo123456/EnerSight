@@ -23,7 +23,7 @@ from app.schemas.home import (
     TrendSeries,
 )
 from app.schemas.station import StationMetrics, StationSummary
-from app.services import accumulate, energy, weather
+from app.services import accumulate, alerts, energy, weather
 from app.services.station import get_station, to_summary
 from app.services.weather_text import describe_transition
 
@@ -160,14 +160,16 @@ async def build_home(
             )
 
     v = await build_station_view(http, station, coord, db)
+    # 首页也顺手扫一次预警，保证首次打开就有；常态刷新靠定时任务
+    await alerts.scan_station(db, station, v.forecast)
+    await db.commit()
     return HomeResponse(
         has_station=True,
         station=v.summary,
         index=v.index,
         weather=v.current,
         trends=build_trend(v.forecast, TrendMetric.RADIATION),
-        # 预警规则属于下一个里程碑，此处按契约返回 null，前端不渲染预警条
-        alert=None,
+        alert=await alerts.current_alert(db, station.id, v.forecast.tz),
     )
 
 

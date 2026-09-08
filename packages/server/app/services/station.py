@@ -147,6 +147,9 @@ async def update_station(
 
 
 async def delete_station(db: AsyncSession, owner_id: str, station_id: str) -> None:
+    from app.services.alerts import deactivate_all
+
     s = await get_station(db, owner_id, station_id)
+    await deactivate_all(db, s.id)
     await db.delete(s)
     await db.commit()

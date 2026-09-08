@@ -17,6 +17,12 @@
 
   .seg-tabs { margin-bottom: 4px; }
 
+  &__calm {
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    .state-view { padding: 24px; }
+  }
+
   &__card {
     background: var(--color-surface);
     border-radius: var(--radius-card);

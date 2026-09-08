@@ -3,5 +3,4 @@
  * 数值取合理范围，非设计稿里的示意值。
  */
 export { mockStations } from './stations'
-export { mockAlerts } from './alerts'
 export { mockReport } from './report'

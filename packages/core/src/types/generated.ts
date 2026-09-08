@@ -142,6 +142,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Alerts */
+        get: operations["list_alerts_v1_alerts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/alerts/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current Alert */
+        get: operations["current_alert_v1_alerts_current_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -151,6 +185,16 @@ export interface components {
          * @enum {string}
          */
         AlertLevel: "minor" | "moderate" | "severe" | "cleared";
+        /** AlertListResponse */
+        AlertListResponse: {
+            /** Alerts */
+            alerts: components["schemas"]["AlertSummary"][];
+            /**
+             * Next Cursor
+             * @description 下一页游标，null 表示没有更多
+             */
+            next_cursor: string | null;
+        };
         /** AlertSummary */
         AlertSummary: {
             /** Id */
@@ -166,6 +210,24 @@ export interface components {
             station_id: string;
             /** Source */
             source: string;
+        };
+        /**
+         * CloudMotion
+         * @description 云团短临外推三宫格。仅卫星短临预警有。docs/07 §四
+         */
+        CloudMotion: {
+            /** Distance Km */
+            distance_km: number;
+            /** Direction */
+            direction: string;
+            /** Direction Detail */
+            direction_detail: string;
+            /** Impact In Minutes */
+            impact_in_minutes: number;
+            /** Impact Start Time */
+            impact_start_time: string;
+            /** Reference Station */
+            reference_station: string;
         };
         /**
          * Coord
@@ -197,6 +259,12 @@ export interface components {
             azimuth?: number | null;
             /** Hub Height */
             hub_height?: number | null;
+        };
+        /** CurrentAlertResponse */
+        CurrentAlertResponse: {
+            alert: components["schemas"]["AlertSummary"] | null;
+            /** @description 仅卫星短临预警有；预报类为 null */
+            cloud_motion: components["schemas"]["CloudMotion"] | null;
         };
         /** CurrentWeather */
         CurrentWeather: {
@@ -252,6 +320,16 @@ export interface components {
             estimated: boolean;
             /** Attribution */
             attribution?: components["schemas"]["IndexAttribution"][];
+        };
+        /** Envelope[AlertListResponse] */
+        Envelope_AlertListResponse_: {
+            data: components["schemas"]["AlertListResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[CurrentAlertResponse] */
+        Envelope_CurrentAlertResponse_: {
+            data: components["schemas"]["CurrentAlertResponse"];
+            meta: components["schemas"]["Meta"];
         };
         /** Envelope[HomeResponse] */
         Envelope_HomeResponse_: {
@@ -880,6 +958,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_MapOverviewResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_alerts_v1_alerts_get: {
+        parameters: {
+            query?: {
+                station_id?: string | null;
+                level?: string;
+                cursor?: string | null;
+                limit?: number;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AlertListResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    current_alert_v1_alerts_current_get: {
+        parameters: {
+            query?: {
+                station_id?: string | null;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_CurrentAlertResponse_"];
                 };
             };
             /** @description Validation Error */

@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     index_good: float = 70.0
     index_fair: float = 55.0
 
+    # 预警阈值，docs/07 §五
+    alert_drop_moderate: float = 20.0
+    alert_drop_severe: float = 40.0
+
     # 衍生指标
     co2_factor_kg_per_kwh: float = 0.8
     tariff_yuan_per_kwh: float = 0.4
