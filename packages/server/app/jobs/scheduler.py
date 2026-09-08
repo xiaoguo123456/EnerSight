@@ -4,6 +4,7 @@
 - accumulate_generation  每小时     逐日发电累积（docs/07 §3.1）
 - scan_alerts            每 30 分钟  扫描预警规则（docs/07 §五）
 - generate_reports       每日 08:00  预生成 AI 报告（docs/08 §3.2）
+- backfill_address       每小时     给缺地址的站点补逆地理编码
 后续加入：预渲染图层、预生成 AI 报告、扫描预警。
 """
 
@@ -17,7 +18,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Station
-from app.services import accumulate, alerts, reports, weather
+from app.services import accumulate, alerts, geo, reports, weather
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +65,28 @@ def _make_generate_reports(app: FastAPI):
     return job
 
 
+def _make_backfill_address(app: FastAPI):
+    async def job() -> None:
+        async with SessionLocal() as db:
+            rows = (
+                (await db.execute(select(Station).where(Station.address.is_(None)))).scalars().all()
+            )
+            n = 0
+            for s in rows:
+                try:
+                    r = await geo.reverse(app.state.http, s.latitude, s.longitude)
+                    if r:
+                        s.address = r.address
+                        n += 1
+                except Exception:  # noqa: BLE001
+                    log.exception("backfill_address failed: station=%s", s.id)
+            await db.commit()
+        if rows:
+            log.info("backfill_address: %d/%d", n, len(rows))
+
+    return job
+
+
 def start(app: FastAPI) -> AsyncIOScheduler:
     sched = AsyncIOScheduler(timezone="UTC")
     # 每小时第 5 分钟，错开整点的气象数据更新
@@ -86,6 +109,13 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         _make_generate_reports(app),
         CronTrigger(hour=(settings.report_generate_hour - 8) % 24, minute=0),
         id="generate_reports",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _make_backfill_address(app),
+        CronTrigger(minute=20),
+        id="backfill_address",
         max_instances=1,
         coalesce=True,
     )

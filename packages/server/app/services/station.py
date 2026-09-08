@@ -101,7 +101,9 @@ async def get_station(db: AsyncSession, owner_id: str, station_id: str) -> Stati
     return s
 
 
-async def create_station(db: AsyncSession, owner_id: str, req: CreateStationRequest) -> Station:
+async def create_station(
+    db: AsyncSession, owner_id: str, req: CreateStationRequest, http=None
+) -> Station:
     lng, lat = _to_wgs84(req.longitude, req.latitude, req.coord)
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
         raise InvalidCoordinate()
@@ -115,9 +117,18 @@ async def create_station(db: AsyncSession, owner_id: str, req: CreateStationRequ
         tilt=req.tilt,
         azimuth=req.azimuth,
         hub_height=req.hub_height,
-        # 逆地理编码填 address 属于 geo 服务，接入腾讯位置服务后补
         address=None,
     )
+    if http is not None:
+        # 逆地理编码 best effort：失败不阻塞建站，定时任务会补
+        from app.services.geo import reverse
+
+        try:
+            r = await reverse(http, lat, lng)
+            if r:
+                s.address = r.address
+        except Exception:  # noqa: BLE001
+            pass
     db.add(s)
     await db.commit()
     await db.refresh(s)

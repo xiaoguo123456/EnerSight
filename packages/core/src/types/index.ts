@@ -39,6 +39,9 @@ export type CloudMotion = S['CloudMotion']
 export type AIReportResponse = S['AIReportResponse']
 export type ReportSummary = S['ReportSummary']
 export type ReportPeriodOut = S['ReportPeriodOut']
+export type GeoPlace = S['GeoPlace']
+export type GeoSearchResponse = S['GeoSearchResponse']
+export type GeoReverseResponse = S['GeoReverseResponse']
 
 // ── 对应接口尚未落地，OpenAPI 里还没有，暂时手写。落地后改为 S['...'] ──
 export type LayerType = 'cloud' | 'wind' | 'temperature' | 'radiation'

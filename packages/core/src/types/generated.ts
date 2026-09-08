@@ -193,6 +193,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/geo/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search */
+        get: operations["search_v1_geo_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/geo/reverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reverse */
+        get: operations["reverse_v1_geo_reverse_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -379,6 +413,16 @@ export interface components {
             data: components["schemas"]["CurrentAlertResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[GeoReverseResponse] */
+        Envelope_GeoReverseResponse_: {
+            data: components["schemas"]["GeoReverseResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[GeoSearchResponse] */
+        Envelope_GeoSearchResponse_: {
+            data: components["schemas"]["GeoSearchResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[HomeResponse] */
         Envelope_HomeResponse_: {
             data: components["schemas"]["HomeResponse"];
@@ -413,6 +457,38 @@ export interface components {
         Envelope_TrendSeries_: {
             data: components["schemas"]["TrendSeries"];
             meta: components["schemas"]["Meta"];
+        };
+        /** GeoPlace */
+        GeoPlace: {
+            /** Name */
+            name: string;
+            /** Address */
+            address: string;
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "city" | "poi" | "station" | "coordinate";
+        };
+        /** GeoReverseResponse */
+        GeoReverseResponse: {
+            /** Address */
+            address: string;
+            /** Province */
+            province: string;
+            /** City */
+            city: string;
+            /** District */
+            district: string;
+        };
+        /** GeoSearchResponse */
+        GeoSearchResponse: {
+            /** Results */
+            results: components["schemas"]["GeoPlace"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1156,6 +1232,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_AIReportResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_v1_geo_search_get: {
+        parameters: {
+            query: {
+                keyword: string;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_GeoSearchResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reverse_v1_geo_reverse_get: {
+        parameters: {
+            query: {
+                latitude: number;
+                longitude: number;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_GeoReverseResponse_"];
                 };
             };
             /** @description Validation Error */

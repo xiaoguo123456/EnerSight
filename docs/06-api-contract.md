@@ -606,7 +606,8 @@ interface GeoPlace {
   address: string
   latitude: number
   longitude: number
-  type: "city" | "poi" | "station"    // station 为用户自己的站点
+  type: "city" | "poi" | "station" | "coordinate"
+  // station 为用户自己的站点；coordinate 为直接解析的经纬度输入
 }
 
 interface GeoReverseResponse {
@@ -619,6 +620,10 @@ interface GeoReverseResponse {
 
 地图页搜索框「搜索城市 / 坐标 / 站点」：
 服务端合并三类结果 —— 用户站点匹配、城市 POI、以及直接解析的经纬度输入。
+
+**已落地。** 未配置腾讯 key 时降级：`/reverse` 返回 503，`/search` 只匹配站点与坐标。
+腾讯用 GCJ-02，服务端在调用前后转换，客户端无感知。建站时自动逆地理填 `address`，
+失败不阻塞，定时任务每小时补。
 
 
 ---

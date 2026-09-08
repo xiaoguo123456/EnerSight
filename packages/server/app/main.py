@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
 from app.jobs import scheduler
-from app.routers import alerts, auth, health, home, reports, stations
+from app.routers import alerts, auth, geo, health, home, reports, stations
 
 
 def _check_production_config() -> None:
@@ -70,3 +70,4 @@ app.include_router(stations.router)
 app.include_router(home.router)
 app.include_router(alerts.router)
 app.include_router(reports.router)
+app.include_router(geo.router)

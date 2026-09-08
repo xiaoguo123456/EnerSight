@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUserDep
@@ -34,12 +34,13 @@ async def list_stations(
 
 @router.post("", response_model=Envelope[StationSummary], status_code=201)
 async def create_station(
+    request: Request,
     user: CurrentUserDep,
     db: DbDep,
     body: CreateStationRequest,
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[StationSummary]:
-    s = await svc.create_station(db, user.id, body)
+    s = await svc.create_station(db, user.id, body, request.app.state.http)
     return envelope(svc.to_summary(s, coord), coord)
 
 

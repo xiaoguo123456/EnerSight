@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     wx_appid: str = ""
     wx_secret: str = ""
 
+    # 腾讯位置服务。未配置时逆地理编码返回 None、搜索只匹配站点与坐标
+    tencent_lbs_key: str = ""
+    tencent_lbs_base: str = "https://apis.map.qq.com/ws"
+
     # 上游数据源
     open_meteo_base: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_base: str = "https://archive-api.open-meteo.com/v1"
