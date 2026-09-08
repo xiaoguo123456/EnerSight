@@ -1,6 +1,6 @@
 .hero {
   position: relative;
-  padding: 18px 18px 16px;
+  padding: 16px 16px 14px;
   border-radius: var(--radius-module);
   overflow: hidden;
   // 渐变只做底色氛围，不做装饰。等级不同底色不同，一眼分辨好坏
@@ -31,7 +31,7 @@
     color: var(--color-energy);
   }
   &__unit {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--color-energy);
     margin-right: 8px;
@@ -40,13 +40,13 @@
   &--poor .hero__num, &--poor .hero__unit { color: var(--color-danger); }
 
   &__level {
-    padding: 2px 9px;
+    padding: 1px 8px;
     border-radius: var(--radius-pill);
     background: rgba(22, 163, 74, .12);
     color: var(--color-energy);
     font-size: var(--font-caption);
     font-weight: 600;
-    transform: translateY(-4px);
+    transform: translateY(-3px);
   }
   &--fair .hero__level { background: rgba(217, 119, 6, .12); color: #d97706; }
   &--poor .hero__level { background: rgba(239, 68, 68, .12); color: var(--color-danger); }
@@ -55,8 +55,8 @@
 
   &__summary {
     display: block;
-    margin-top: 8px;
-    font-size: var(--font-body);
+    margin-top: 6px;
+    font-size: 13px;
     line-height: 1.5;
     color: var(--color-text);
     max-width: 78%;
@@ -65,8 +65,8 @@
   // 右侧大叶子水印，压得很淡，只做质感不抢戏
   &__deco {
     position: absolute;
-    right: -14px;
-    bottom: -18px;
+    right: -12px;
+    bottom: -16px;
     pointer-events: none;
   }
 }

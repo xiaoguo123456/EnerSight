@@ -48,7 +48,7 @@ export function EnergyScoreCard({ score, level, summary, onExplain }: Props) {
       {summary && <Text className="hero__summary">{summary}</Text>}
 
       <View className="hero__deco">
-        <Icon name="leaf" size={96} color="rgba(22,163,74,.10)" fill="rgba(22,163,74,.06)" strokeWidth={1.2} />
+        <Icon name="leaf" size={80} color="rgba(22,163,74,.10)" fill="rgba(22,163,74,.06)" strokeWidth={1.2} />
       </View>
     </View>
   )
