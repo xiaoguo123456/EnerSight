@@ -113,10 +113,11 @@ class TestWindIndex:
     @pytest.mark.parametrize(
         ("cf", "level"),
         [
+            # 断点见 index._CF_POINTS，按 5 个风电基地校准。docs/07 §八
             (0.50, IndexLevel.EXCELLENT),
-            (0.35, IndexLevel.GOOD),
-            (0.22, IndexLevel.FAIR),
-            (0.10, IndexLevel.POOR),
+            (0.30, IndexLevel.GOOD),
+            (0.15, IndexLevel.FAIR),
+            (0.05, IndexLevel.POOR),
         ],
     )
     def test_容量因子分档(self, cf: float, level: IndexLevel):

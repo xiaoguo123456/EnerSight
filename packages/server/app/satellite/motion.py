@@ -102,7 +102,9 @@ def estimate(
         return CloudMotionEstimate(speed, heading, covered, None, None)
 
     # 来向锥：以站点为顶点、指向云团来处（去向的反方向）、半角 45°
-    ys, xs = np.nonzero(cloud_now)
+    # 前沿用腐蚀过的掩膜：孤立的纹理亮点会把前沿算得偏近，导致到站时间系统性偏早
+    front = cv2.erode(cloud_now.astype(np.uint8), np.ones((3, 3), np.uint8), iterations=1)
+    ys, xs = np.nonzero(front)
     dx = (xs - sx) * kx
     dy = (ys - sy) * ky
     dist = np.hypot(dx, dy)

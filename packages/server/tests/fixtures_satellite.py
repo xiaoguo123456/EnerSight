@@ -4,10 +4,12 @@
 这样重投影回等经纬度网格后就是干净的平移，光流能估出来。
 """
 
+import io
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import numpy as np
+from PIL import Image
 
 from app.satellite import himawari
 from app.satellite.himawari import TILE, tile_to_lonlat
@@ -43,18 +45,27 @@ class FakeSky:
                 raise himawari.UpstreamUnavailable("no frames")
             return sorted(sky.frames)
 
-        async def _tile(_http, when, band, x, y, _sem):
+        async def _tile_bytes(_http, when, band, x, y, _sem):
             sky.calls.append((when, band))
             if when not in sky.frames or when in sky.missing:
                 raise himawari.UpstreamUnavailable("not ready")
             if band in ("visible", "truecolor") and when in sky.night_times:
-                return np.zeros((TILE, TILE, 3), dtype=np.uint8)
-            return render_tile(sky.frames[when], himawari.settings.himawari_zoom, x, y)
+                rgb = np.zeros((TILE, TILE, 3), dtype=np.uint8)
+            else:
+                rgb = render_tile(sky.frames[when], himawari.settings.himawari_zoom, x, y)
+            return encode_jpeg(rgb)
 
         monkeypatch.setattr(himawari, "available_times", _times)
-        monkeypatch.setattr(himawari, "_fetch_tile", _tile)
+        monkeypatch.setattr(himawari, "fetch_tile_bytes", _tile_bytes)
         himawari.clear_cache()
         return sky
+
+
+def encode_jpeg(rgb: np.ndarray) -> bytes:
+    """与线上一样走 JPEG，归档测试才能覆盖编码误差"""
+    buf = io.BytesIO()
+    Image.fromarray(rgb, "RGB").save(buf, format="JPEG", quality=92)
+    return buf.getvalue()
 
 
 def render_tile(blobs: list[Blob], zoom: int, x: int, y: int) -> np.ndarray:

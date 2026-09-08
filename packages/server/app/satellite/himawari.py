@@ -119,23 +119,48 @@ async def previous_time(http: httpx.AsyncClient, when: datetime) -> datetime | N
 # ── 瓦片 ──
 
 
-async def _fetch_tile(
-    http: httpx.AsyncClient, when: datetime, band: str, x: int, y: int, sem: asyncio.Semaphore
-) -> np.ndarray:
+def tile_url(when: datetime, band: str, x: int, y: int) -> str:
     zoom = settings.himawari_zoom
     ts = when.strftime("%Y%m%d%H%M%S")
-    url = f"{settings.himawari_base}/{ts}/fd/{ts}/{BANDS[band]}/{zoom}/{x}/{y}.jpg"
-    key = f"{ts}:{band}:{zoom}:{x}:{y}"
+    return f"{settings.himawari_base}/{ts}/fd/{ts}/{BANDS[band]}/{zoom}/{x}/{y}.jpg"
 
-    async def _load() -> np.ndarray:
+
+async def fetch_tile_bytes(
+    http: httpx.AsyncClient, when: datetime, band: str, x: int, y: int, sem: asyncio.Semaphore
+) -> bytes:
+    """原始 JPEG 字节，按 (时刻, 波段, 瓦片) 缓存；归档直接落盘这份字节。"""
+    zoom = settings.himawari_zoom
+    key = f"{when.strftime('%Y%m%d%H%M%S')}:{band}:{zoom}:{x}:{y}"
+
+    async def _load() -> bytes:
         async with sem:
-            res = await _get(http, url, 20)
+            res = await _get(http, tile_url(when, band, x, y), 20)
         if res.status_code != 200:
             # 该时刻在列表里但瓦片还没出来（或圆盘外）：当未就绪，调用方退回上一帧
             raise UpstreamUnavailable("卫星最新帧尚未就绪")
-        return np.asarray(Image.open(io.BytesIO(res.content)).convert("RGB"))
+        return res.content
 
     return await _tiles.get_or_load(key, _load)
+
+
+def decode_tile(data: bytes) -> np.ndarray:
+    return np.asarray(Image.open(io.BytesIO(data)).convert("RGB"))
+
+
+async def _fetch_tile(
+    http: httpx.AsyncClient, when: datetime, band: str, x: int, y: int, sem: asyncio.Semaphore
+) -> np.ndarray:
+    return decode_tile(await fetch_tile_bytes(http, when, band, x, y, sem))
+
+
+def tiles_for_bbox(bbox: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+    """覆盖 bbox 的瓦片范围 (x0, y0, x1, y1)，含端点。"""
+    zoom = settings.himawari_zoom
+    w, s, e, n = bbox
+    x0, y0 = (int(v) for v in lonlat_to_tile(w, n, zoom))
+    x1, y1 = (int(v) for v in lonlat_to_tile(e, s, zoom))
+    limit = 2**zoom - 1
+    return max(x0, 0), max(y0, 0), min(x1, limit), min(y1, limit)
 
 
 async def fetch_mosaic(
@@ -146,12 +171,7 @@ async def fetch_mosaic(
 ) -> Mosaic:
     """拼出覆盖 bbox（WGS84 w,s,e,n）的瓦片马赛克。"""
     zoom = settings.himawari_zoom
-    w, s, e, n = bbox
-    x0, y0 = (int(v) for v in lonlat_to_tile(w, n, zoom))
-    x1, y1 = (int(v) for v in lonlat_to_tile(e, s, zoom))
-    limit = 2**zoom - 1
-    x0, x1 = max(x0, 0), min(x1, limit)
-    y0, y1 = max(y0, 0), min(y1, limit)
+    x0, y0, x1, y1 = tiles_for_bbox(bbox)
     sem = asyncio.Semaphore(CONCURRENCY)
     tasks = [
         _fetch_tile(http, when, band, x, y, sem)

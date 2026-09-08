@@ -57,7 +57,13 @@ def poa_from_components(
     ghi: pd.Series,
     dhi: pd.Series,
 ) -> pd.Series:
-    """倾斜面总辐照。"""
+    """倾斜面总辐照。
+
+    散射用 Perez 模型（pvlib 推荐、行业常用）。校准发现各向同性模型在晴朗干旱区
+    系统性低估 3–5%（缺环日散射分量），换 Perez 后 5 个气候区年发电量全部落入
+    PVGIS ±15%。docs/07 §八、docs/reports/index-calibration-*.md
+    """
+    times = pd.DatetimeIndex(solar_zenith.index)
     total = pvlib.irradiance.get_total_irradiance(
         surface_tilt=tilt,
         surface_azimuth=azimuth,
@@ -66,6 +72,9 @@ def poa_from_components(
         dni=dni,
         ghi=ghi,
         dhi=dhi,
+        dni_extra=pvlib.irradiance.get_extra_radiation(times),
+        airmass=pvlib.atmosphere.get_relative_airmass(solar_zenith),
+        model=settings.pv_sky_diffuse_model,
     )
     return total["poa_global"].fillna(0.0)
 

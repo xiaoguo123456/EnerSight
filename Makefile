@@ -67,7 +67,7 @@ test:
 
 lint:
 	pnpm -r typecheck
-	cd packages/server && uv run ruff check app tests
+	cd packages/server && uv run ruff check app tests scripts
 
 # 契约单向流动：服务端 Pydantic 模型是唯一来源，前端类型是生成产物。
 # 见 docs/05 §1.3

@@ -18,6 +18,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Station
+from app.satellite import himawari
 from app.services import accumulate, alerts, geo, reports, satellite, weather
 
 log = logging.getLogger(__name__)
@@ -67,6 +68,37 @@ def _make_generate_reports(app: FastAPI):
     return job
 
 
+def _make_archive_cloud(app: FastAPI):
+    """每 10 分钟归档各站点周边的分析波段瓦片；JMA 只留 35 小时，回放校准要自己攒。"""
+
+    async def job() -> None:
+        from app.satellite import archive
+        from app.services import satellite as sat_svc
+
+        async with SessionLocal() as db:
+            stations = (await db.execute(select(Station))).scalars().all()
+        try:
+            latest = await himawari.latest_time(app.state.http)
+        except Exception:  # noqa: BLE001
+            log.warning("archive_cloud: satellite times unavailable")
+            return
+        written, seen = 0, set()
+        for s in stations:
+            bbox = sat_svc.station_bbox(s.latitude, s.longitude)
+            band = sat_svc.analysis_band(s.latitude, s.longitude, latest)
+            if (bbox, band) in seen:
+                continue
+            seen.add((bbox, band))
+            try:
+                written += await archive.archive_frame(app.state.http, latest, band, bbox)
+            except Exception:  # noqa: BLE001
+                log.warning("archive_cloud failed: station=%s", s.id, exc_info=True)
+        removed = archive.prune()
+        log.info("archive_cloud: %s, %d tiles written, %d days pruned", latest, written, removed)
+
+    return job
+
+
 def _make_backfill_address(app: FastAPI):
     async def job() -> None:
         async with SessionLocal() as db:
@@ -106,6 +138,14 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
     )
+    if settings.enable_archive:
+        sched.add_job(
+            _make_archive_cloud(app),
+            CronTrigger(minute="2,12,22,32,42,52"),  # JMA 帧延迟约 10 分钟，错开整点
+            id="archive_cloud",
+            max_instances=1,
+            coalesce=True,
+        )
     # 每日预生成报告。站点时区暂按 UTC+8 处理，多时区站点后续按站点分组
     sched.add_job(
         _make_generate_reports(app),

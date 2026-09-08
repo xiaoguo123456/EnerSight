@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # 注明出处可商用（公共データ利用規約），但是网页自用接口无 SLA。见 docs/04、docs/09
     himawari_base: str = "https://www.jma.go.jp/bosai/himawari/data/satimg"
     himawari_zoom: int = 5  # 最高级别，256px/瓦片，约 4–5 km/px
+    # 云图帧归档：JMA 只留 35 小时，光流精度校准要自己攒历史。每站每帧几十 KB
+    enable_archive: bool = True
+    archive_dir: str = "data/archive/himawari"
+    archive_retention_days: int = 60
 
     # 上游数据源
     open_meteo_base: str = "https://api.open-meteo.com/v1"
@@ -45,10 +49,11 @@ class Settings(BaseSettings):
     pv_gamma_pdc: float = -0.004
     pv_losses: float = 0.14
     pv_temperature_model: str = "open_rack_glass_glass"
+    pv_sky_diffuse_model: str = "perez"  # 校准结论，见 docs/07 §八
     wind_v_in: float = 3.0
     wind_v_rated: float = 12.0
     wind_v_out: float = 25.0
-    wind_shear_alpha: float = 0.14
+    wind_shear_alpha: float = 0.18  # 按 ERA5 10 m / 100 m 风速在 5 个风电基地拟合，见 docs/07 §八
 
     # 指数分档阈值，上线前需按 docs/07 §八 校准
     index_excellent: float = 85.0
