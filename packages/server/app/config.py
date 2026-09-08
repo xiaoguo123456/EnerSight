@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="ENERSIGHT_")
 
     debug: bool = False
+    # 定时任务开关。多实例部署时只在一个实例上开
+    enable_scheduler: bool = True
 
     # 数据库。本地 SQLite 零依赖起步，线上换 PostgreSQL：
     #   postgresql+asyncpg://user:pass@host/enersight

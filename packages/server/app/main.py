@@ -3,6 +3,7 @@
 接口契约见 docs/06。所有响应经 envelope 包装，坐标系由 coord 参数决定。
 """
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
+from app.jobs import scheduler
 from app.routers import auth, health, home, stations
 
 
@@ -28,11 +30,18 @@ def _check_production_config() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # 应用自身的日志按 INFO 输出；uvicorn 只配了自己的 logger
+    logging.getLogger("app").setLevel(logging.DEBUG if settings.debug else logging.INFO)
+    if not logging.getLogger("app").handlers:
+        logging.getLogger("app").addHandler(logging.StreamHandler())
     _check_production_config()
     app.state.http = httpx.AsyncClient(timeout=10.0)
+    sched = scheduler.start(app) if settings.enable_scheduler else None
     try:
         yield
     finally:
+        if sched:
+            sched.shutdown(wait=False)
         await app.state.http.aclose()
 
 

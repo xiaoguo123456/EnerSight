@@ -57,6 +57,12 @@ async def list_stations(
     q = base.where(Station.type == type_) if type_ else base
     rows = (await db.execute(q.order_by(Station.created_at))).scalars().all()
 
+    # 指标从逐日累积表读（定时任务每小时写），不在列表里跑 pvlib
+    from app.config import settings
+    from app.services.accumulate import metrics_from_db
+
+    m = await metrics_from_db(db, [s.id for s in rows])
+
     # 计数单独算，不从筛选后的列表推 —— 前端 Tab 的数字要对全量。docs/06 §5.1
     count_q = (
         select(Station.type, func.count())
@@ -70,7 +76,19 @@ async def list_stations(
         solar=by_type.get("solar", 0),
         wind=by_type.get("wind", 0),
     )
-    return StationListResponse(stations=[to_summary(s, coord) for s in rows], counts=counts)
+    stations = []
+    for st in rows:
+        summary = to_summary(st, coord)
+        if st.id in m:
+            d = m[st.id]
+            summary.metrics = StationMetrics(
+                daily_generation=d["daily"],
+                current_power=d["current"],
+                total_generation=round(d["total"], 1),
+                co2_reduction=round(d["total"] * settings.co2_factor_kg_per_kwh, 1),
+            )
+        stations.append(summary)
+    return StationListResponse(stations=stations, counts=counts)
 
 
 async def get_station(db: AsyncSession, owner_id: str, station_id: str) -> Station:

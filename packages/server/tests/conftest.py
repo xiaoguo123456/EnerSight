@@ -45,3 +45,4 @@ def _debug_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(settings, "debug", True)
     monkeypatch.setattr(settings, "wx_appid", "")
+    monkeypatch.setattr(settings, "enable_scheduler", False)

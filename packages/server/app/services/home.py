@@ -23,7 +23,7 @@ from app.schemas.home import (
     TrendSeries,
 )
 from app.schemas.station import StationMetrics, StationSummary
-from app.services import energy, weather
+from app.services import accumulate, energy, weather
 from app.services.station import get_station, to_summary
 from app.services.weather_text import describe_transition
 
@@ -109,7 +109,7 @@ class StationView:
 
 
 async def build_station_view(
-    http: httpx.AsyncClient, station: Station, coord: Coord
+    http: httpx.AsyncClient, station: Station, coord: Coord, db: AsyncSession | None = None
 ) -> StationView:
     fc = await weather.get_forecast(http, station.latitude, station.longitude)
 
@@ -117,13 +117,15 @@ async def build_station_view(
     loop = asyncio.get_running_loop()
     snap = await loop.run_in_executor(None, energy.compute, station, fc)
 
+    # 累计与减排来自逐日累积表（定时任务维护）；没有记录时为 None
+    total_kwh, co2_kg = (await accumulate.totals(db, station.id)) if db else (None, None)
+
     summary = to_summary(station, coord)
-    # 累计发电与减排需要逐日累积的历史，那是定时任务的事；有了再填
     summary.metrics = StationMetrics(
         daily_generation=round(snap.daily_kwh, 1),
         current_power=round(snap.current_kw, 1) if snap.current_kw is not None else None,
-        total_generation=None,
-        co2_reduction=None,
+        total_generation=round(total_kwh, 1) if total_kwh is not None else None,
+        co2_reduction=round(co2_kg, 1) if co2_kg is not None else None,
     )
     return StationView(
         station=station,
@@ -157,7 +159,7 @@ async def build_home(
                 has_station=False, station=None, index=None, weather=None, trends=None, alert=None
             )
 
-    v = await build_station_view(http, station, coord)
+    v = await build_station_view(http, station, coord, db)
     return HomeResponse(
         has_station=True,
         station=v.summary,

@@ -62,7 +62,7 @@ async def get_station_detail(
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[StationDetailResponse]:
     station = await get_station(db, user.id, station_id)
-    v = await svc.build_station_view(request.app.state.http, station, coord)
+    v = await svc.build_station_view(request.app.state.http, station, coord, db)
     return envelope(
         StationDetailResponse(
             station=v.summary,
@@ -92,7 +92,7 @@ async def get_map_overview(
         from app.errors import StationNotFound
 
         raise StationNotFound()
-    v = await svc.build_station_view(request.app.state.http, station, coord)
+    v = await svc.build_station_view(request.app.state.http, station, coord, db)
     return envelope(
         MapOverviewResponse(
             station=v.summary,
