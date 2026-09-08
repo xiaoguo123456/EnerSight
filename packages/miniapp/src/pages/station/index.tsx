@@ -13,29 +13,10 @@ import './index.scss'
 
 type Filter = 'all' | StationType
 
-/** 三种录入方式。docs/01 §六：定位 / 手输经纬度 / 从公开电站目录选 */
-const ADD_WAYS = ['获取当前位置添加', '输入经纬度添加', '从公开电站选择'] as const
-
-async function addByLocation() {
-  try {
-    const r = await Taro.getLocation({ type: 'gcj02' })
-    await Taro.navigateTo({
-      url: `/pages/station/form?lat=${r.latitude.toFixed(5)}&lng=${r.longitude.toFixed(5)}`,
-    })
-  } catch {
-    Taro.showToast({ title: '定位失败，可改为手动输入经纬度', icon: 'none' })
-  }
-}
-
-function addManually() {
-  void Taro.navigateTo({ url: '/pages/station/form' })
-}
-
+/** 站点只能从公开电站目录添加，不提供自建。docs/01 §六 */
 function addFromCatalog() {
   void Taro.navigateTo({ url: '/pages/station/catalog' })
 }
-
-const ADD_ACTIONS = [addByLocation, addManually, addFromCatalog]
 
 export default function StationList() {
   const [type, setType] = useState<Filter>('all')
@@ -55,19 +36,10 @@ export default function StationList() {
   const list = type === 'all' ? all : all.filter((s) => s.type === type)
   const counts = req.data?.counts ?? { all: 0, solar: 0, wind: 0 }
 
-  const openAddMenu = async () => {
-    try {
-      const { tapIndex } = await Taro.showActionSheet({ itemList: [...ADD_WAYS] })
-      await ADD_ACTIONS[tapIndex]?.()
-    } catch {
-      // 用户取消
-    }
-  }
-
   const openMoreMenu = async (id: string, name: string) => {
     let tapIndex: number
     try {
-      ({ tapIndex } = await Taro.showActionSheet({ itemList: ['编辑站点', '删除站点'], itemColor: '#1f2937' }))
+      ({ tapIndex } = await Taro.showActionSheet({ itemList: ['编辑参数', '移除站点'], itemColor: '#1f2937' }))
     } catch {
       return
     }
@@ -76,9 +48,9 @@ export default function StationList() {
       return
     }
     const { confirm } = await Taro.showModal({
-      title: '删除站点',
-      content: `确定删除「${name}」？预警与发电记录会一并删除。`,
-      confirmText: '删除',
+      title: '移除站点',
+      content: `从我的站点移除「${name}」？预警与发电记录会一并删除，之后可从公开电站里再次添加。`,
+      confirmText: '移除',
       confirmColor: '#ef4444',
     })
     if (!confirm) return
@@ -113,21 +85,15 @@ export default function StationList() {
           ]}
         />
 
-        <View className="stations__add">
-          <View className="stations__add-item" hoverClass="pressed" onClick={() => void addByLocation()}>
-            <Icon name="mapPin" size={15} color="#1677ff" fill />
-            <Text className="stations__add-text">当前位置</Text>
+        <View className="stations__add" hoverClass="pressed" onClick={addFromCatalog}>
+          <View className="stations__add-icon">
+            <Icon name="layers" size={16} color="#1677ff" />
           </View>
-          <View className="stations__add-divider" />
-          <View className="stations__add-item" hoverClass="pressed" onClick={addManually}>
-            <Icon name="navigation" size={15} color="#16a34a" fill />
-            <Text className="stations__add-text">输入经纬度</Text>
+          <View className="stations__add-text-wrap">
+            <Text className="stations__add-text">从公开电站添加</Text>
+            <Text className="stations__add-sub">全国近两万座光伏 / 风电场站，按附近或名称查找</Text>
           </View>
-          <View className="stations__add-divider" />
-          <View className="stations__add-item" hoverClass="pressed" onClick={addFromCatalog}>
-            <Icon name="layers" size={15} color="#7c3aed" />
-            <Text className="stations__add-text">公开电站</Text>
-          </View>
+          <Icon name="chevronRight" size={14} color="#9ca3af" />
         </View>
 
         {req.status === 'loading' && (
@@ -143,7 +109,7 @@ export default function StationList() {
           <EmptyState
             icon="mapPin"
             title={all.length === 0 ? '还没有站点' : '该类型下没有站点'}
-            description={all.length === 0 ? '添加第一个站点，或从公开电站目录里选一个' : undefined}
+            description={all.length === 0 ? '从公开电站目录里选一座，开始查看发电环境' : undefined}
             actionText={all.length === 0 ? '选择公开电站' : undefined}
             onAction={all.length === 0 ? addFromCatalog : undefined}
           />
@@ -166,7 +132,7 @@ export default function StationList() {
             />
           ))}
 
-        <FloatingActionButton text="新增站点" onTap={() => void openAddMenu()} />
+        <FloatingActionButton text="添加电站" onTap={addFromCatalog} />
       </View>
     </View>
   )

@@ -8,7 +8,9 @@
 后续加入：预渲染图层、预生成 AI 报告、扫描预警。
 """
 
+import asyncio
 import logging
+from datetime import UTC
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -99,6 +101,50 @@ def _make_archive_cloud(app: FastAPI):
     return job
 
 
+def _make_sync_catalog(app: FastAPI):
+    """按月从 GEM 拉光伏 / 风电追踪库重新导入目录；上次成功时间记在 data/catalog/.last_sync。"""
+
+    async def job() -> None:
+        from datetime import datetime, timedelta
+        from pathlib import Path
+
+        from app.catalog import gem, importer
+
+        if not settings.gem_contact_email:
+            return
+        cat_dir = Path(settings.catalog_dir)
+        stamp = cat_dir / ".last_sync"
+        if stamp.exists():
+            last = datetime.fromisoformat(stamp.read_text().strip())
+            if datetime.now(UTC) - last < timedelta(days=settings.catalog_sync_days):
+                return
+        for t in ("solar", "wind"):
+            try:
+                d = await gem.download(app.state.http, t, cat_dir)
+                rows = await asyncio.get_running_loop().run_in_executor(
+                    None, importer.read_gem, d.path, "CHN"
+                )
+                async with SessionLocal() as db:
+                    res = await importer.upsert(db, rows)
+                    retired = await importer.retire_missing(db, "gem", t, res.seen_ids or set())
+                    await db.commit()
+                log.info(
+                    "sync_catalog %s: +%d ~%d dedup %d retired %d",
+                    t,
+                    res.added,
+                    res.updated,
+                    res.replaced,
+                    retired,
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("sync_catalog failed: %s", t)
+                return  # 一类失败就不盖时间戳，下次再试
+        cat_dir.mkdir(parents=True, exist_ok=True)
+        stamp.write_text(datetime.now(UTC).isoformat())
+
+    return job
+
+
 def _make_backfill_address(app: FastAPI):
     """站点地址回填；顺带给公开电站目录回填省市区，每小时 100 条，省配额。"""
 
@@ -164,6 +210,14 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         _make_scan_alerts(app),
         CronTrigger(minute="5,20,35,50"),  # 卫星 10 分钟一帧，短临外推要跟得上
         id="scan_alerts",
+        max_instances=1,
+        coalesce=True,
+    )
+    # 目录同步：每天凌晨检查一次，实际按 catalog_sync_days 间隔执行
+    sched.add_job(
+        _make_sync_catalog(app),
+        CronTrigger(hour=20, minute=30),  # UTC 20:30 = 北京 04:30
+        id="sync_catalog",
         max_instances=1,
         coalesce=True,
     )

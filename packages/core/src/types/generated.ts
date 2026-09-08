@@ -424,27 +424,31 @@ export interface components {
          * @enum {string}
          */
         Coord: "wgs84" | "gcj02";
-        /** CreateStationRequest */
+        /**
+         * CreateStationRequest
+         * @description 两种建法：给 catalog_id 从公开电站目录复制（其余字段可省，给了则覆盖）；
+         *     或者不给 catalog_id、把五个必填字段都给全（API 保留，小程序 V1 不提供自建入口）。
+         */
         CreateStationRequest: {
+            /** Catalog Id */
+            catalog_id?: string | null;
             /** Name */
-            name: string;
-            type: components["schemas"]["StationType"];
+            name?: string | null;
+            type?: components["schemas"]["StationType"] | null;
             /** Latitude */
-            latitude: number;
+            latitude?: number | null;
             /** Longitude */
-            longitude: number;
+            longitude?: number | null;
             /**
              * Capacity
              * @description kW
              */
-            capacity: number;
+            capacity?: number | null;
             /**
              * @description 入参坐标系
              * @default wgs84
              */
             coord: components["schemas"]["Coord"];
-            /** Catalog Id */
-            catalog_id?: string | null;
             /** Tilt */
             tilt?: number | null;
             /** Azimuth */

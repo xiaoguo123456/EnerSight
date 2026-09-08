@@ -20,7 +20,6 @@ def _out(p: CatalogPlant, coord: Coord, distance_km: float | None = None) -> Cat
     lng, lat = p.longitude, p.latitude
     if coord == Coord.GCJ02:
         lng, lat = wgs84_to_gcj02(lng, lat)
-    parts = [x for x in (p.province, p.city, p.district) if x]
     return CatalogPlantOut(
         id=p.id,
         name=p.display_name,
@@ -29,12 +28,22 @@ def _out(p: CatalogPlant, coord: Coord, distance_km: float | None = None) -> Cat
         capacity=p.capacity_kw,
         latitude=lat,
         longitude=lng,
-        address="".join(parts) or None,
+        address=join_address(p.province, p.city, p.district),
         owner=p.owner_name,
         commissioning_year=p.commissioning_year,
         distance_km=round(distance_km, 1) if distance_km is not None else None,
         source=p.source,
     )
+
+
+def join_address(*parts: str | None) -> str | None:
+    """省市区拼接：全中文直接连，出现英文（GEM 的市县）用空格隔开，避免「甘肃省JiuquanGuazhou」。"""
+    out = ""
+    for part in (x.strip() for x in parts if x and x.strip()):
+        if out and (out[-1].isascii() or part[0].isascii()):
+            out += " "
+        out += part
+    return out or None
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -46,7 +55,7 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 async def count(db: AsyncSession, type_: StationType | None) -> int:
-    q = select(func.count()).select_from(CatalogPlant)
+    q = select(func.count()).select_from(CatalogPlant).where(CatalogPlant.status == "operating")
     if type_:
         q = q.where(CatalogPlant.type == type_.value)
     return int((await db.execute(q)).scalar_one())
@@ -67,7 +76,7 @@ async def search(
     near / bbox 入参已按 coord 转成 WGS84。
     """
     limit = min(limit, MAX_LIMIT)
-    q = select(CatalogPlant)
+    q = select(CatalogPlant).where(CatalogPlant.status == "operating")
     if type_:
         q = q.where(CatalogPlant.type == type_.value)
     total = await count(db, type_)

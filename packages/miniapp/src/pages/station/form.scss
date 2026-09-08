@@ -39,6 +39,12 @@
   }
   &__ph { color: var(--color-text-weak); }
 
+  &__ro { display: flex; align-items: baseline; gap: 12px; }
+  &__ro-label { width: 64px; flex-shrink: 0; font-size: var(--font-caption); color: var(--color-text-sub); }
+  &__ro-value { flex: 1; font-size: var(--font-body); color: var(--color-text); }
+  &__note { display: flex; align-items: center; gap: 6px; }
+  &__note-text { font-size: var(--font-micro); color: var(--color-text-weak); }
+
   &__locate {
     display: flex; align-items: center; gap: 4px;
     padding: 4px 10px;

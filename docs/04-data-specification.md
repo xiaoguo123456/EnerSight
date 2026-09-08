@@ -655,7 +655,9 @@ CO₂ 减排 = 累计发电量 × 排放因子
 | 来源 | 内容 | 授权 | 获取 | 状态 |
 | --- | --- | --- | --- | --- |
 | WRI Global Power Plant Database v1.3 | 全球 3.5 万座电站，中国光伏 1,318 座、风电 835 座，英文名、坐标、容量、投运年份、业主，数据截至 2021 | CC BY 4.0 | GitHub 直接下载 CSV | **已导入** |
-| Global Energy Monitor：Global Solar / Wind Power Tracker | ≥ 1 MW 场站，中国覆盖最全，**带中文名**、省市县、状态、多期容量，每季度更新 | CC BY 4.0（其中来自 TransitionZero 的部分为 CC BY-NC 4.0，商用前剔除） | 官网填表（姓名/邮箱）后下载 xlsx | 导入脚本已兼容，**待下载** |
+| Global Energy Monitor：Global Solar / Wind Power Tracker（2026-02 版） | ≥ 1 MW 场站，中国 operating 光伏 13,618 期 / 风电 5,997 期，合并同址后 12,875 / 4,860 座，**带中文名**、省市县、业主、多期容量，每季度更新 | CC BY 4.0（TransitionZero 的 CC BY-NC 部分只在「Distributed (<1 MW)」表，不导入） | 官网表单：提交联系人信息换令牌，再换预签名地址；`app/catalog/gem.py` 已自动化 | **已导入**，定时任务按月同步 |
+
+目录合计 18,764 座（GEM 17,735 + WRI 未被覆盖的 1,029），17,506 座有中文名。
 
 不用的：JAXA P-Tree（禁止再分发）、OpenStreetMap（ODbL 传染性，衍生库需同许可开放）、
 北极星等商业库。
@@ -672,7 +674,11 @@ uv run python scripts/import_catalog.py gem Global-Wind-Power-Tracker.xlsx
 - 只导 `operating` 且 ≥ 1 MW 的光伏、风电；容量统一存 kW
 - 同类型、相距 < 1.5 km 视为同一座：GEM 优先，覆盖 WRI；GEM 同一场址多期合并
 - 幂等：按 `{source}:{source_id}` 更新
-- 省市区由定时任务用腾讯逆地理逐步回填（每小时 100 条，需 key）；GEM 自带的直接用
+- 省市区：GEM 的省份映射成中文，市县暂为英文；配了腾讯 key 后回填任务逐步换成中文
+- **定期同步**：`sync_catalog` 每天凌晨检查，距上次成功超过 `catalog_sync_days`（默认 30）
+  就用 `ENERSIGHT_GEM_CONTACT_*` 里的联系人提交 GEM 表单、下载两份 xlsx 重新导入；
+  这次没出现的 GEM 条目标记 `retired`，搜索与 marker 不再显示，用户已添加的站点不动。
+  每次同步都会在 GEM 那边留一条提交记录，不要把周期调得比月更短
 
 
 ### 展示要求

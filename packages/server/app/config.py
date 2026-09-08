@@ -56,6 +56,22 @@ class Settings(BaseSettings):
     wind_shear_alpha: float = 0.18  # 按 ERA5 10 m / 100 m 风速在 5 个风电基地拟合，见 docs/07 §八
 
     # 指数分档阈值，上线前需按 docs/07 §八 校准
+    # 公开电站目录同步：GEM 下载要提交联系人信息（表单），按月一次。docs/04 §七
+    catalog_sync_days: int = 30
+    catalog_dir: str = "data/catalog"
+    gem_contact_name: str = ""
+    gem_contact_email: str = ""  # 空则不同步
+    gem_contact_org: str = "EnerSight"
+    gem_use_case: str = (
+        "Seeding the public plant catalog of EnerSight, a WeChat mini program for solar and wind "
+        "plant operators in China with weather-based generation forecasts and satellite cloud "
+        "alerts. Users pick their plant from the tracker instead of entering coordinates. "
+        "Attribution to Global Energy Monitor is shown in the app."
+    )
+    gem_supabase_key: str = "sb_publishable_8mQAV8B2HhveNc5T8VGqPQ_1lgsFAvz"  # 官网表单里的公开 key
+    gem_mint_url: str = "https://auxunjnrktkmeqyoyngm.supabase.co/rest/v1/rpc/mint_submission"
+    gem_presign_url: str = "https://auxunjnrktkmeqyoyngm.supabase.co/functions/v1/presign"
+
     # 限流：每个 token / IP 每分钟请求数，0 关闭。小程序一页最多十几个请求
     rate_limit_per_minute: int = 120
     trust_forwarded_for: bool = False  # 仅在 ALB/反代前置且直连已被安全组挡住时开启

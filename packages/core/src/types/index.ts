@@ -18,7 +18,7 @@ type S = components['schemas']
 
 // ── 已由接口引用，取自生成产物 ──
 export type Coord = S['Coord']
-export type StationType = S['CreateStationRequest']['type']
+export type StationType = S['StationSummary']['type']
 export type StationStatus = S['StationSummary']['status']
 export type AlertLevel = S['AlertLevel']
 export type IndexLevel = S['IndexLevel']

@@ -138,6 +138,7 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 客户端硬编码图层色阶 —— 图例由 `/v1/map/layers` 下发
 - ❌ 客户端用自己请求的 bbox 贴图 —— 用服务端返回的对齐后 `bounds`
 - ❌ 实现储能站相关功能 —— V1 不做，设计稿里有但已明确排除
+- ❌ 给小程序加「自建站点」入口（定位 / 手输经纬度）—— 站点只从公开电站目录添加，见 01 §六
 - ❌ 用户请求时同步调 AI —— 全部预生成 + 缓存，见 08 §三
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）
 - ❌ 卫星拿不到时清掉卫星预警 —— 未知 ≠ 消失，`apply_detections(satellite_known=False)`
@@ -235,7 +236,7 @@ make codegen                         # openapi.json → core/types/
 | geo/search / geo/reverse | ✅ | 无腾讯 key 时降级 |
 | map/layers | ✅ | 4° 块、0.5° 网格服务端渲染；云图层用 Himawari 实况 |
 | satellite/cloud | ✅ | JMA 瓦片，白天可见光/真彩、夜间红外；光流外推见 07 §四 |
-| stations/catalog | ✅ | 公开电站目录（WRI 已导入 2,153 座，GEM 待下载），地图 marker 与一键添加 |
+| stations/catalog | ✅ | 公开电站目录 18,764 座（GEM + WRI），按月自动同步；站点只能从目录添加 |
 
 已落地的关键实现：
 - `server/app/metrics`：pvlib 出力模型与环境指数
@@ -257,8 +258,8 @@ make codegen                         # openapi.json → core/types/
 **需要凭证才能通的：** 微信 AppID/AppSecret（真 `code2session`）、腾讯位置服务 key、
 `ANTHROPIC_API_KEY`。都有降级，不阻塞开发。
 
-**需要人工下载的：** Global Energy Monitor 的光伏/风电追踪库 xlsx（官网填表），
-拿到后 `scripts/import_catalog.py gem` 导入，目录会有中文名与省市县。
+**目录同步需要配置：** `ENERSIGHT_GEM_CONTACT_NAME / EMAIL / ORG`，定时任务用它提交 GEM
+下载表单（每月一次）。不配则不同步，目录停留在最后一次手动导入。
 
 **上线前：**
 - 合规办理周期最长，见 [09 §九](docs/09-miniapp-compliance.md)；Himawari 商用授权要法务核实

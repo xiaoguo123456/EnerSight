@@ -9,6 +9,7 @@ import {
 import type { MapLayer } from '@/components'
 import { geoApi } from '@/api/geo'
 import { homeApi } from '@/api/home'
+import { stationsApi } from '@/api/stations'
 import { useCatalogMarkers } from '@/hooks/useCatalogMarkers'
 import { useMapLayer } from '@/hooks/useMapLayer'
 import { getSafeArea } from '@/hooks/useSafeArea'
@@ -27,17 +28,6 @@ const LEVEL_TEXT: Record<string, string> = {
 const FALLBACK_CENTER = { latitude: 31.3, longitude: 120.62 }
 const PLACE_ICON: Record<GeoPlace['type'], 'mapPin' | 'navigation' | 'sun' | 'layers'> = {
   city: 'mapPin', poi: 'mapPin', coordinate: 'navigation', station: 'sun', plant: 'layers',
-}
-
-/** 目录条目 → 表单预填参数 */
-function formQuery(p: { name: string; type: string; latitude: number; longitude: number; capacity?: number; id?: string }) {
-  const q = [
-    `name=${encodeURIComponent(p.name)}`, `type=${p.type}`,
-    `lat=${p.latitude.toFixed(5)}`, `lng=${p.longitude.toFixed(5)}`,
-  ]
-  if (p.capacity != null) q.push(`capacity=${p.capacity}`)
-  if (p.id) q.push(`catalog=${encodeURIComponent(p.id)}`)
-  return q.join('&')
 }
 
 export default function MapPage() {
@@ -93,13 +83,18 @@ export default function MapPage() {
     if (p) setPicked(p)
   }
 
-  const addPicked = () => {
-    if (!picked) return
-    const isPlant = 'capacity' in picked
-    const q = isPlant
-      ? formQuery(picked)
-      : formQuery({ name: picked.name, type: 'solar', latitude: picked.latitude, longitude: picked.longitude, id: picked.catalog_id ?? undefined })
-    void Taro.navigateTo({ url: `/pages/station/form?${q}` })
+  const setCurrent = useStationStore((s) => s.setCurrent)
+  const addPicked = async () => {
+    const id = picked && ('capacity' in picked ? picked.id : picked.catalog_id)
+    if (!id) return
+    try {
+      const s = await stationsApi.addFromCatalog(id)
+      setCurrent(s.id)
+      setPicked(null)
+      Taro.showToast({ title: '已添加到我的站点', icon: 'success' })
+    } catch {
+      Taro.showToast({ title: '添加失败，请稍后再试', icon: 'none' })
+    }
   }
 
   const locate = () => {
@@ -211,7 +206,7 @@ export default function MapPage() {
                   : picked.address}
               </Text>
             </View>
-            <View className="map-page__picked-add" hoverClass="pressed" onClick={addPicked}>
+            <View className="map-page__picked-add" hoverClass="pressed" onClick={() => void addPicked()}>
               <Icon name="plus" size={13} color="#fff" />
               <Text className="map-page__picked-add-text">添加为我的站点</Text>
             </View>

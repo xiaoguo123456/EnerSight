@@ -49,15 +49,16 @@ class StationListResponse(BaseModel):
 
 
 class CreateStationRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=64)
-    type: StationType
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
-    capacity: float = Field(gt=0, description="kW")
-    coord: Coord = Field(default=Coord.WGS84, description="入参坐标系")
+    """两种建法：给 catalog_id 从公开电站目录复制（其余字段可省，给了则覆盖）；
+    或者不给 catalog_id、把五个必填字段都给全（API 保留，小程序 V1 不提供自建入口）。"""
 
-    # 从公开电站目录添加时带上，用于溯源；表单字段仍由客户端按目录条目预填
     catalog_id: str | None = Field(default=None, max_length=24)
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    type: StationType | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    capacity: float | None = Field(default=None, gt=0, description="kW")
+    coord: Coord = Field(default=Coord.WGS84, description="入参坐标系")
 
     # 出力模型参数，选填，不填用默认值。docs/07 §2.3
     tilt: float | None = Field(default=None, ge=0, le=90)
@@ -66,7 +67,9 @@ class CreateStationRequest(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def _strip(cls, v: str) -> str:
+    def _strip(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         v = v.strip()
         if not v:
             raise ValueError("站点名称不能为空")

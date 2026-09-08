@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { formatPower } from '@enersight/core/format'
 import type { CatalogPlant, StationType } from '@enersight/core/types'
 import { catalogApi } from '@/api/catalog'
+import { stationsApi } from '@/api/stations'
+import { useStationStore } from '@/store'
 import { EmptyState, ErrorState, Icon, PageHeader, SegmentedTabs, Skeleton } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import './catalog.scss'
@@ -12,7 +14,7 @@ type TypeFilter = 'all' | StationType
 
 /**
  * 从公开电站目录选择。默认按当前位置列出附近场站；输入关键词按名称 / 地区搜索。
- * 选中后进表单页预填，用户可改名与容量再保存。docs/01 §六、docs/06 §5.5
+ * 点「添加」直接复制为自己的站点，装机容量与模型参数之后可在站点里改。docs/01 §六、docs/06 §5.5
  */
 export default function CatalogPicker() {
   const [keyword, setKeyword] = useState('')
@@ -44,13 +46,23 @@ export default function CatalogPicker() {
     [debounced, near, type, located],
   )
 
-  const pick = (p: CatalogPlant) => {
-    const q = [
-      `name=${encodeURIComponent(p.name)}`, `type=${p.type}`,
-      `lat=${p.latitude.toFixed(5)}`, `lng=${p.longitude.toFixed(5)}`,
-      `capacity=${p.capacity}`, `catalog=${encodeURIComponent(p.id)}`,
-    ].join('&')
-    Taro.redirectTo({ url: `/pages/station/form?${q}` })
+  const setCurrent = useStationStore((s) => s.setCurrent)
+  const [adding, setAdding] = useState<string | null>(null)
+
+  // 直接落库：服务端从目录复制名称/类型/坐标/容量，重复添加返回已有的
+  const pick = async (p: CatalogPlant) => {
+    if (adding) return
+    setAdding(p.id)
+    try {
+      const s = await stationsApi.addFromCatalog(p.id)
+      setCurrent(s.id)
+      Taro.showToast({ title: '已添加到我的站点', icon: 'success' })
+      setTimeout(() => Taro.navigateBack(), 600)
+    } catch {
+      Taro.showToast({ title: '添加失败，请稍后再试', icon: 'none' })
+    } finally {
+      setAdding(null)
+    }
   }
 
   const subtitle = debounced
@@ -98,7 +110,7 @@ export default function CatalogPicker() {
             {req.data.plants.map((p) => {
               const cap = formatPower(p.capacity)
               return (
-                <View className="catalog__item" key={p.id} hoverClass="pressed" onClick={() => pick(p)}>
+                <View className="catalog__item" key={p.id} hoverClass="pressed" onClick={() => void pick(p)}>
                   <View className={`catalog__thumb catalog__thumb--${p.type}`}>
                     <Icon name={p.type === 'solar' ? 'sun' : 'wind'} size={16} color="#fff" fill={p.type === 'solar'} />
                   </View>
@@ -111,7 +123,7 @@ export default function CatalogPicker() {
                       {p.commissioning_year ? ` · ${p.commissioning_year} 年` : ''}
                     </Text>
                   </View>
-                  <Text className="catalog__add">添加</Text>
+                  <Text className="catalog__add">{adding === p.id ? '添加中' : '添加'}</Text>
                 </View>
               )
             })}

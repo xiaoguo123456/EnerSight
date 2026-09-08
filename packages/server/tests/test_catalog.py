@@ -85,18 +85,19 @@ class TestCatalog:
         assert plant[0]["address"] == "光伏 50 MW"  # 无省市区时用类型+容量顶上
         assert all(r["catalog_id"] is None for r in d["results"] if r["type"] != "plant")
 
-    async def test_从目录建站带溯源(self, client: AsyncClient, seeded):
-        body = {
-            "name": "瓜州风电基地",
-            "type": "wind",
-            "latitude": 40.52,
-            "longitude": 95.78,
-            "capacity": 200000,
-            "catalog_id": "gem:B",
-        }
-        r = await client.post("/v1/stations", json=body)
+    async def test_从目录建站只给id即可且幂等(self, client: AsyncClient, seeded):
+        r = await client.post("/v1/stations", json={"catalog_id": "gem:B"})
         assert r.status_code == 201, r.text
-        sid = r.json()["data"]["id"]
+        d = r.json()["data"]
+        assert d["name"] == "瓜州风电基地" and d["type"] == "wind" and d["capacity"] == 200000
+        assert d["address"] == "甘肃省"
+        sid = d["id"]
+        # 再加一次返回同一个，不重复
+        r2 = await client.post("/v1/stations", json={"catalog_id": "gem:B"})
+        assert r2.json()["data"]["id"] == sid
+        lst = (await client.get("/v1/stations")).json()["data"]
+        assert lst["counts"]["all"] == 1
+
         from app.db import get_session
         from app.main import app
         from app.models import Station
@@ -106,3 +107,23 @@ class TestCatalog:
         s = await db.get(Station, sid)
         assert s.catalog_id == "gem:B"
         await gen.aclose()
+
+    async def test_目录id不存在404_缺字段400(self, client: AsyncClient, seeded):
+        r = await client.post("/v1/stations", json={"catalog_id": "gem:NOPE"})
+        assert r.status_code == 404 and r.json()["error"]["code"] == "CATALOG_NOT_FOUND"
+        r = await client.post("/v1/stations", json={"name": "x", "type": "solar"})
+        assert r.status_code == 400 and r.json()["error"]["code"] == "INVALID_PARAM"
+
+    async def test_退役条目不出现在搜索(self, client: AsyncClient, seeded):
+        from app.db import get_session
+        from app.main import app
+
+        gen = app.dependency_overrides[get_session]()
+        db = await gen.__anext__()
+        p = await db.get(CatalogPlant, "gem:D")
+        p.status = "retired"
+        await db.commit()
+        await gen.aclose()
+        d = (await client.get("/v1/stations/catalog", params={"keyword": "风电"})).json()["data"]
+        assert [x["id"] for x in d["plants"]] == ["gem:B"]
+        assert d["total"] == 3

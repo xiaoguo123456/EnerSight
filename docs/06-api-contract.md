@@ -281,13 +281,13 @@ POST /v1/stations
 
 ```ts
 interface CreateStationRequest {
-  name: string
-  type: "solar" | "wind"
-  latitude: number
-  longitude: number
-  capacity: number           // kW
+  catalog_id?: string        // 从公开电站目录复制：其余字段可省，给了则覆盖目录值
+  name?: string              // 以下五项在不给 catalog_id 时必填（自建分支，小程序不暴露）
+  type?: "solar" | "wind"
+  latitude?: number
+  longitude?: number
+  capacity?: number          // kW
   coord?: "wgs84" | "gcj02"  // 入参坐标系，默认 wgs84
-  catalog_id?: string        // 从公开电站目录添加时带上，仅用于溯源；字段仍由客户端预填
 
   // 出力模型参数，选填，不填用默认值（见 07 §2.3）
   tilt?: number              // 光伏倾角（°），默认 |latitude|
@@ -297,6 +297,10 @@ interface CreateStationRequest {
 ```
 
 服务端行为：
+
+- 给了 `catalog_id`：名称取中文名、类型 / 坐标 / 容量 / 省市区取目录值；同一用户重复添加
+  同一座返回已有站点（幂等，仍是 201）；目录里没有返回 `404 CATALOG_NOT_FOUND`
+- 没给 `catalog_id` 且缺必填字段：`400 INVALID_PARAM`
 
 - 按经纬度逆地理编码填充 `address`
 - 按 `type` 分配默认封面图
@@ -363,8 +367,9 @@ interface CatalogPlant {
 }
 ```
 
-**已落地。** 从目录「添加」= 客户端用条目预填表单再走 `POST /v1/stations`（带 `catalog_id`），
-用户可以改名、改容量；目录本身不可写，只由 `scripts/import_catalog.py` 导入。
+**已落地。** 从目录「添加」= `POST /v1/stations { catalog_id }`，服务端复制；用户之后只能改
+装机容量与模型参数（PATCH）。目录本身不可写：脚本 `scripts/import_catalog.py` 手动导入，
+定时任务 `sync_catalog` 按月从 GEM 重新拉取，这次没出现的条目标记 `retired` 并从搜索里隐藏。
 `/v1/geo/search` 的结果里也合并了目录命中（`type: "plant"`），地图搜索框一处搜全部。
 
 
@@ -743,6 +748,7 @@ interface MetricWithDelta {
 | 403 | `STATION_FORBIDDEN` | 站点不属于当前用户 |
 | 404 | `STATION_NOT_FOUND` | 站点不存在 |
 | 404 | `LAYER_NOT_FOUND` | 图层类型不支持 |
+| 404 | `CATALOG_NOT_FOUND` | 公开电站目录里没有该 id |
 | 202 | `REPORT_GENERATING` | 报告生成中，稍后重试 |
 | 429 | `RATE_LIMITED` | 请求过于频繁。已落地：每 token / IP 每分钟 120 次，响应带 `Retry-After` |
 | 502 | `UPSTREAM_UNAVAILABLE` | 上游数据源不可用 |

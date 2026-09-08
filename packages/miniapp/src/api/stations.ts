@@ -15,6 +15,10 @@ export const stationsApi = {
   create: (body: CreateStationRequest) =>
     api.post<StationSummary>('/v1/stations', body),
 
+  /** 从公开电站目录添加：服务端复制名称/类型/坐标/容量，重复添加返回已有的 */
+  addFromCatalog: (catalogId: string) =>
+    api.post<StationSummary>('/v1/stations', { catalog_id: catalogId }),
+
   update: (id: string, body: UpdateStationRequest) =>
     api.patch<StationSummary>(`/v1/stations/${id}`, body),
 

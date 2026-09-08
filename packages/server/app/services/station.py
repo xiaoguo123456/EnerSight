@@ -104,23 +104,55 @@ async def get_station(db: AsyncSession, owner_id: str, station_id: str) -> Stati
 async def create_station(
     db: AsyncSession, owner_id: str, req: CreateStationRequest, http=None
 ) -> Station:
-    lng, lat = _to_wgs84(req.longitude, req.latitude, req.coord)
+    from app.models import CatalogPlant
+
+    plant: CatalogPlant | None = None
+    if req.catalog_id:
+        plant = await db.get(CatalogPlant, req.catalog_id)
+        if plant is None:
+            raise ApiError("CATALOG_NOT_FOUND", "公开电站不存在", 404)
+        # 幂等：同一用户重复添加同一座，返回已有的
+        existing = (
+            await db.execute(
+                select(Station).where(
+                    Station.owner_id == owner_id, Station.catalog_id == req.catalog_id
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing
+
+    if req.latitude is not None and req.longitude is not None:
+        lng, lat = _to_wgs84(req.longitude, req.latitude, req.coord)
+    elif plant is not None:
+        lng, lat = plant.longitude, plant.latitude
+    else:
+        raise ApiError("INVALID_PARAM", "缺少经纬度，或给 catalog_id", 400)
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
         raise InvalidCoordinate()
+    name = req.name or (plant.display_name if plant else None)
+    type_ = req.type.value if req.type else (plant.type if plant else None)
+    capacity = req.capacity or (plant.capacity_kw if plant else None)
+    if not name or not type_ or not capacity:
+        raise ApiError("INVALID_PARAM", "name / type / capacity 必填，或给 catalog_id", 400)
+    from app.services.catalog import join_address
+
+    address = join_address(plant.province, plant.city, plant.district) if plant else None
+
     s = Station(
         owner_id=owner_id,
-        name=req.name,
-        type=req.type.value,
+        name=name[:64],
+        type=type_,
         latitude=lat,
         longitude=lng,
-        capacity_kw=req.capacity,
+        capacity_kw=capacity,
         tilt=req.tilt,
         azimuth=req.azimuth,
         hub_height=req.hub_height,
-        address=None,
+        address=address or None,
         catalog_id=req.catalog_id,
     )
-    if http is not None:
+    if http is not None and s.address is None:
         # 逆地理编码 best effort：失败不阻塞建站，定时任务会补
         from app.services.geo import reverse
 
