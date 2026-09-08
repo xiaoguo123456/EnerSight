@@ -64,3 +64,22 @@ class HomeResponse(BaseModel):
     weather: CurrentWeather | None
     trends: TrendSeries | None = Field(description="24 小时，默认辐射")
     alert: AlertSummary | None = Field(description="今日最高等级一条，无预警为 null")
+
+
+class StationDetailResponse(BaseModel):
+    """docs/06 §5.3"""
+
+    station: StationSummary
+    weather: CurrentWeather | None
+    index: EnergyIndex | None
+    trends: TrendSeries | None
+    updated_at: str = Field(description="「数据更新时间」，取气象观测时刻")
+
+
+class MapOverviewResponse(BaseModel):
+    """docs/06 §7.1"""
+
+    station: StationSummary
+    index: EnergyIndex | None
+    weather: CurrentWeather | None
+    ai_hint: str | None = Field(description="底部 AI 提示条一句话")

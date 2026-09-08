@@ -108,6 +108,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stations/{station_id}/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Station Detail */
+        get: operations["get_station_detail_v1_stations__station_id__detail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/map/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Map Overview */
+        get: operations["get_map_overview_v1_map_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -229,6 +263,16 @@ export interface components {
             data: components["schemas"]["LoginResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[MapOverviewResponse] */
+        Envelope_MapOverviewResponse_: {
+            data: components["schemas"]["MapOverviewResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[StationDetailResponse] */
+        Envelope_StationDetailResponse_: {
+            data: components["schemas"]["StationDetailResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[StationListResponse] */
         Envelope_StationListResponse_: {
             data: components["schemas"]["StationListResponse"];
@@ -304,6 +348,20 @@ export interface components {
             /** Expires In */
             expires_in: number;
         };
+        /**
+         * MapOverviewResponse
+         * @description docs/06 §7.1
+         */
+        MapOverviewResponse: {
+            station: components["schemas"]["StationSummary"];
+            index: components["schemas"]["EnergyIndex"] | null;
+            weather: components["schemas"]["CurrentWeather"] | null;
+            /**
+             * Ai Hint
+             * @description 底部 AI 提示条一句话
+             */
+            ai_hint: string | null;
+        };
         /** Meta */
         Meta: {
             coord: components["schemas"]["Coord"];
@@ -331,6 +389,21 @@ export interface components {
             solar: number;
             /** Wind */
             wind: number;
+        };
+        /**
+         * StationDetailResponse
+         * @description docs/06 §5.3
+         */
+        StationDetailResponse: {
+            station: components["schemas"]["StationSummary"];
+            weather: components["schemas"]["CurrentWeather"] | null;
+            index: components["schemas"]["EnergyIndex"] | null;
+            trends: components["schemas"]["TrendSeries"] | null;
+            /**
+             * Updated At
+             * @description 「数据更新时间」，取气象观测时刻
+             */
+            updated_at: string;
         };
         /** StationListResponse */
         StationListResponse: {
@@ -736,6 +809,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_TrendSeries_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_station_detail_v1_stations__station_id__detail_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                station_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_StationDetailResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_map_overview_v1_map_overview_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+                station_id?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MapOverviewResponse_"];
                 };
             };
             /** @description Validation Error */

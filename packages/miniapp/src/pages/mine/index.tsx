@@ -2,7 +2,8 @@ import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Icon, PageTitleBar } from '@/components'
 import type { IconName } from '@/components'
-import { mockStations } from '@/mocks'
+import { stationsApi } from '@/api/stations'
+import { useRequest } from '@/hooks/useRequest'
 import './index.scss'
 
 /**
@@ -19,12 +20,15 @@ interface Row {
 }
 
 export default function Mine() {
+  const stations = useRequest(() => stationsApi.list(), [])
+  const count = stations.data?.counts.all
+
   const groups: { title: string; rows: Row[] }[] = [
     {
       title: '站点',
       rows: [
         { icon: 'lineChart', tone: '#1677ff', label: '我的站点',
-          value: `${mockStations.length} 个`,
+          value: count === undefined ? undefined : `${count} 个`,
           onTap: () => Taro.switchTab({ url: '/pages/station/index' }) },
         { icon: 'bell', tone: '#f59e0b', label: '预警通知', value: '已开启' },
       ],

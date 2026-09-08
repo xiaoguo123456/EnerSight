@@ -186,3 +186,25 @@ class TestTrends:
         r = await client.get("/v1/trends", params={"station_id": sid, "metric": "humidity"})
         assert r.status_code == 400
         assert r.json()["error"]["code"] == "INVALID_PARAM"
+
+
+class TestDetailAndMap:
+    async def test_详情含更新时间(self, client: AsyncClient, open_meteo):
+        sid = await _create(client, SUZHOU)
+        r = await client.get(f"/v1/stations/{sid}/detail", params={"coord": "gcj02"})
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert d["station"]["id"] == sid
+        assert d["index"]["score"] is not None
+        assert d["updated_at"].endswith("+08:00")
+        assert len(d["trends"]["points"]) == 25
+
+    async def test_地图概览含提示语(self, client: AsyncClient, open_meteo):
+        sid = await _create(client, SUZHOU)
+        d = (await client.get("/v1/map/overview", params={"station_id": sid})).json()["data"]
+        assert d["station"]["id"] == sid
+        assert d["ai_hint"] and "未来2小时" in d["ai_hint"]
+
+    async def test_地图概览无站点404(self, client: AsyncClient, open_meteo):
+        r = await client.get("/v1/map/overview")
+        assert r.status_code == 404

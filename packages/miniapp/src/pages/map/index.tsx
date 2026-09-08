@@ -1,15 +1,15 @@
 import { Map, View, Text, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useState } from 'react'
+import { formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
 import {
-  formatPercent, formatRadiation, formatTemperature, formatWindSpeed,
-} from '@enersight/core/format'
-import {
-  Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, StatusBadge,
+  EmptyState, Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, Skeleton, StatusBadge,
 } from '@/components'
 import type { LegendSpec, MapLayer } from '@/components'
+import { homeApi } from '@/api/home'
 import { getSafeArea } from '@/hooks/useSafeArea'
-import { mockHome } from '@/mocks'
+import { useRequest } from '@/hooks/useRequest'
+import { useStationStore } from '@/store'
 import './index.scss'
 
 // 图例由接口下发，此处为接口落地前的占位。docs/06 §7.2
@@ -40,12 +40,25 @@ const LEGENDS: Record<MapLayer, LegendSpec> = {
 // 底部面板高度，地图浮层的 bottom 要避开它
 const SHEET_HEIGHT = 172
 
+const LEVEL_TEXT: Record<string, string> = {
+  excellent: '优秀', good: '良好', fair: '一般', poor: '较差',
+}
+
+// 地图未加载到站点前的默认中心：华东
+const FALLBACK_CENTER = { latitude: 31.3, longitude: 120.62 }
+
 export default function MapPage() {
   const [layer, setLayer] = useState<MapLayer>('cloud')
   // 卫星影像底图。docs/01 §四：全球地图 / 行政地图 / 卫星影像底图
   const [satellite, setSatellite] = useState(false)
-  const { station, index, weather } = mockHome
   const safe = getSafeArea()
+  const currentId = useStationStore((s) => s.currentId)
+  const req = useRequest(() => homeApi.mapOverview(currentId ?? undefined), [currentId])
+
+  const station = req.data?.station
+  const index = req.data?.index
+  const weather = req.data?.weather
+  const center = station ?? FALLBACK_CENTER
 
   return (
     <View className="map-page">
@@ -62,7 +75,7 @@ export default function MapPage() {
           <View className="map-page__station-thumb">
             <Icon name="sun" size={14} color="#fff" />
           </View>
-          <Text className="map-page__station-name">{station.name}</Text>
+          <Text className="map-page__station-name">{station?.name ?? '选择站点'}</Text>
           <Icon name="chevronDown" size={13} color="#6b7280" />
         </View>
       </View>
@@ -75,13 +88,13 @@ export default function MapPage() {
         <Map
           id="main-map"
           className="map-page__map"
-          latitude={station.latitude}
-          longitude={station.longitude}
+          latitude={center.latitude}
+          longitude={center.longitude}
           scale={9}
           showLocation
           showScale
           enableSatellite={satellite}
-          markers={[{
+          markers={station ? [{
             id: 1,
             latitude: station.latitude,
             longitude: station.longitude,
@@ -91,7 +104,7 @@ export default function MapPage() {
               padding: 6, borderRadius: 6, display: 'ALWAYS',
               fontSize: 12, textAlign: 'center',
             },
-          }] as any}
+          }] as any : []}
           onError={(e) => console.error('[map] 加载失败', e)}
         />
 
@@ -137,41 +150,56 @@ export default function MapPage() {
         {/* 底部面板叠在地图上 */}
         <View className="map-page__sheet" style={{ height: `${SHEET_HEIGHT}px` }}>
           <View className="map-page__handle" />
-          <View
-            className="map-page__sheet-head"
-            onClick={() => Taro.navigateTo({ url: '/pages/station/detail?id=s1' })}
-          >
-            <Text className="map-page__sheet-name">{station.name}</Text>
-            <StatusBadge status={station.status} />
-            <View className="map-page__sheet-spacer" />
-            <Icon name="chevronRight" size={15} color="#9ca3af" />
-          </View>
+          {req.status === 'loading' && <Skeleton height={120} lines={2} />}
+          {req.status === 'error' && (
+            <EmptyState
+              icon={req.error.status === 404 ? 'mapPin' : 'alertTriangle'}
+              title={req.error.status === 404 ? '还没有站点' : '加载失败'}
+              actionText={req.error.status === 404 ? '去添加' : '重试'}
+              onAction={req.error.status === 404
+                ? () => Taro.switchTab({ url: '/pages/station/index' })
+                : req.reload}
+            />
+          )}
+          {req.status === 'success' && station && (
+            <>
+              <View
+                className="map-page__sheet-head"
+                onClick={() => Taro.navigateTo({ url: `/pages/station/detail?id=${station.id}` })}
+              >
+                <Text className="map-page__sheet-name">{station.name}</Text>
+                <StatusBadge status={station.status} />
+                <View className="map-page__sheet-spacer" />
+                <Icon name="chevronRight" size={15} color="#9ca3af" />
+              </View>
 
-          <MetricGrid>
-            <MetricCard icon="leaf" iconColor="#16a34a" label="环境指数"
-              metric={{ value: String(index.score), unit: '分' }}
-              caption="良好" />
-            <MetricCard icon="cloudSun" label="天气"
-              metric={formatTemperature(weather.temperature.value)}
-              caption={weather.weather_text} />
-            <MetricCard icon="wind" iconFill={false} label="风速"
-              metric={formatWindSpeed(weather.wind_speed.value)}
-              deltaPercent={weather.wind_speed.delta_percent} />
-            <MetricCard icon="sun" label="辐射"
-              metric={formatRadiation(weather.radiation.value)}
-              deltaPercent={weather.radiation.delta_percent} />
-          </MetricGrid>
+              <MetricGrid>
+                <MetricCard icon="leaf" iconColor="#16a34a" label="环境指数"
+                  metric={{ value: index?.score != null ? String(Math.round(index.score)) : '—', unit: '分' }}
+                  caption={LEVEL_TEXT[index?.level ?? ''] ?? '—'} />
+                <MetricCard icon="cloudSun" label="天气"
+                  metric={formatTemperature(weather?.temperature.value ?? 0)}
+                  caption={weather?.weather_text ?? undefined} />
+                <MetricCard icon="wind" iconFill={false} label="风速"
+                  metric={formatWindSpeed(weather?.wind_speed.value ?? 0)}
+                  deltaPercent={weather?.wind_speed.delta_percent ?? null} />
+                <MetricCard icon="sun" label="辐射"
+                  metric={formatRadiation(weather?.radiation.value ?? 0)}
+                  deltaPercent={weather?.radiation.delta_percent ?? null} />
+              </MetricGrid>
 
-          <View
-            className="map-page__hint"
-            onClick={() => Taro.navigateTo({ url: '/pages/report/index' })}
-          >
-            <Icon name="barChart" size={14} color="#1677ff" />
-            <Text className="map-page__hint-text">
-              未来2小时整体适宜发电，14:30后云量逐步增加
-            </Text>
-            <Icon name="chevronRight" size={13} color="#9ca3af" />
-          </View>
+              {req.data.ai_hint && (
+                <View
+                  className="map-page__hint"
+                  onClick={() => Taro.navigateTo({ url: '/pages/report/index' })}
+                >
+                  <Icon name="barChart" size={14} color="#1677ff" />
+                  <Text className="map-page__hint-text">{req.data.ai_hint}</Text>
+                  <Icon name="chevronRight" size={13} color="#9ca3af" />
+                </View>
+              )}
+            </>
+          )}
         </View>
       </View>
     </View>
