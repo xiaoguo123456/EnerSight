@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     index_good: float = 70.0
     index_fair: float = 55.0
 
+    # AI。docs/08 §二：默认规则模板；claude 需 ANTHROPIC_API_KEY；
+    # 境内公开发布应换成已备案模型的 provider（同一接口，另写实现）
+    ai_provider: str = "rule"  # rule | claude
+    ai_model: str = "claude-opus-5"
+    ai_timeout_seconds: float = 20.0
+    report_generate_hour: int = 8  # 每日预生成时刻（UTC+8）
+
     # 预警阈值，docs/07 §五
     alert_drop_moderate: float = 20.0
     alert_drop_severe: float = 40.0

@@ -1,28 +1,64 @@
 import { View, Text } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useRouter } from '@tarojs/taro'
 import {
   formatCo2, formatCoordinate, formatCurrency, formatEnergy, formatHours,
 } from '@enersight/core/format'
+import { homeApi } from '@/api/home'
+import { reportsApi } from '@/api/reports'
 import {
-  DataSummaryGrid, Icon, PageHeader, SectionHeader, SuggestionList, TimelineAnalysis,
+  DataSummaryGrid, ErrorState, Icon, PageHeader, SectionHeader, Skeleton,
+  SuggestionList, TimelineAnalysis,
 } from '@/components'
 import type { SummaryCell } from '@/components'
-import { mockReport } from '@/mocks'
+import { useRequest } from '@/hooks/useRequest'
+import { useStationStore } from '@/store'
 import './index.scss'
 
 export default function Report() {
-  const r = mockReport
+  const { params } = useRouter()
+  const currentId = useStationStore((st) => st.currentId)
+  const routeId = params.id ?? currentId ?? ''
+
+  // 没带 id 时先取默认站点再拉报告
+  const req = useRequest(async () => {
+    const sid = routeId || (await homeApi.get()).station?.id
+    if (!sid) throw new Error('no station')
+    return reportsApi.get(sid)
+  }, [routeId])
+
+  if (req.status === 'loading') {
+    return (
+      <View className="report">
+        <PageHeader title="AI分析报告" />
+        <View className="report__body">
+          <Skeleton height={90} lines={2} />
+          <Skeleton height={130} lines={3} />
+          <Skeleton height={160} lines={3} />
+        </View>
+      </View>
+    )
+  }
+  if (req.status === 'error') {
+    return (
+      <View className="report">
+        <PageHeader title="AI分析报告" />
+        <View className="report__body"><ErrorState error={req.error} onRetry={req.reload} /></View>
+      </View>
+    )
+  }
+
+  const r = req.data
   const s = r.summary
 
   const cells: SummaryCell[] = [
     { icon: 'zap', tone: 'energy', label: '发电量',
-      metric: formatEnergy(s.generation.value), deltaPercent: s.generation.delta_percent },
+      metric: formatEnergy(s.generation.value ?? 0), deltaPercent: s.generation.delta_percent },
     { icon: 'clock', tone: 'primary', label: '等效利用小时',
-      metric: formatHours(s.equivalent_hours.value), deltaPercent: s.equivalent_hours.delta_percent },
+      metric: formatHours(s.equivalent_hours.value ?? 0), deltaPercent: s.equivalent_hours.delta_percent },
     { icon: 'leaf', tone: 'purple', label: 'CO₂减排',
-      metric: formatCo2(s.co2_reduction.value), deltaPercent: s.co2_reduction.delta_percent },
+      metric: formatCo2(s.co2_reduction.value ?? 0), deltaPercent: s.co2_reduction.delta_percent },
     { icon: 'coins', tone: 'warning', label: '收益预估',
-      metric: formatCurrency(s.estimated_revenue.value), deltaPercent: s.estimated_revenue.delta_percent },
+      metric: formatCurrency(s.estimated_revenue.value ?? 0), deltaPercent: s.estimated_revenue.delta_percent },
   ]
 
   return (
@@ -40,7 +76,7 @@ export default function Report() {
               <View className="report__station-addr">
                 <Icon name="mapPin" size={10} color="#9ca3af" />
                 <Text className="report__station-addr-text">
-                  {r.station.address}（{formatCoordinate(r.station.latitude, r.station.longitude)}）
+                  {r.station.address ?? '—'}（{formatCoordinate(r.station.latitude, r.station.longitude)}）
                 </Text>
               </View>
             </View>
@@ -66,21 +102,23 @@ export default function Report() {
           <TimelineAnalysis periods={r.periods} />
         </View>
 
-        <View className="report__risk">
-          <View className="report__risk-head">
-            <Icon name="alertTriangle" size={16} color="#f59e0b" />
-            <Text className="report__risk-label">风险提醒</Text>
-            <View
-              className="report__risk-more"
-              onClick={() => Taro.switchTab({ url: '/pages/alert/index' })}
-            >
-              <Text>查看更多</Text>
-              <Icon name="chevronRight" size={12} color="#9ca3af" />
+        {r.risk_title && (
+          <View className="report__risk">
+            <View className="report__risk-head">
+              <Icon name="alertTriangle" size={16} color="#f59e0b" />
+              <Text className="report__risk-label">风险提醒</Text>
+              <View
+                className="report__risk-more"
+                onClick={() => Taro.switchTab({ url: '/pages/alert/index' })}
+              >
+                <Text>查看更多</Text>
+                <Icon name="chevronRight" size={12} color="#9ca3af" />
+              </View>
             </View>
+            <Text className="report__risk-title">{r.risk_title}</Text>
+            {r.risk_detail && <Text className="report__risk-detail">{r.risk_detail}</Text>}
           </View>
-          <Text className="report__risk-title">{r.risk_title}</Text>
-          <Text className="report__risk-detail">{r.risk_detail}</Text>
-        </View>
+        )}
 
         <View className="report__card">
           <SectionHeader icon="clipboard" iconColor="#16a34a" title="运营建议" />

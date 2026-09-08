@@ -176,10 +176,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/reports/{station_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Report */
+        get: operations["get_report_v1_reports__station_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIReportResponse */
+        AIReportResponse: {
+            station: components["schemas"]["StationSummary"];
+            /** Report Date */
+            report_date: string;
+            /** Generated At */
+            generated_at: string;
+            /**
+             * Is Fallback
+             * @description 供埋点统计，不用于改变展示
+             */
+            is_fallback: boolean;
+            /** Verdict Title */
+            verdict_title: string;
+            /** Verdict Detail */
+            verdict_detail: string;
+            /** Periods */
+            periods: components["schemas"]["ReportPeriodOut"][];
+            /** Risk Title */
+            risk_title: string | null;
+            /** Risk Detail */
+            risk_detail: string | null;
+            /** Suggestions */
+            suggestions: string[];
+            summary: components["schemas"]["ReportSummary"];
+        };
         /**
          * AlertLevel
          * @enum {string}
@@ -321,6 +364,11 @@ export interface components {
             /** Attribution */
             attribution?: components["schemas"]["IndexAttribution"][];
         };
+        /** Envelope[AIReportResponse] */
+        Envelope_AIReportResponse_: {
+            data: components["schemas"]["AIReportResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[AlertListResponse] */
         Envelope_AlertListResponse_: {
             data: components["schemas"]["AlertListResponse"];
@@ -458,6 +506,46 @@ export interface components {
              * @description 较昨日同期百分比，None 时前端隐藏标签
              */
             delta_percent: number | null;
+        };
+        /** ReportPeriodOut */
+        ReportPeriodOut: {
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "morning" | "afternoon" | "evening";
+            /**
+             * Weather Summary
+             * @description 「晴转多云」
+             */
+            weather_summary: string;
+            /**
+             * Generation Impact
+             * @description 「发电条件良好」
+             */
+            generation_impact: string;
+            /**
+             * Level
+             * @description 时间轴节点配色
+             * @enum {string}
+             */
+            level: "good" | "warning" | "risk";
+            /**
+             * Time Range
+             * @description 「06:00 – 12:00」
+             */
+            time_range: string;
+        };
+        /** ReportSummary */
+        ReportSummary: {
+            /** @description kWh */
+            generation: components["schemas"]["MetricWithDelta"];
+            /** @description h */
+            equivalent_hours: components["schemas"]["MetricWithDelta"];
+            /** @description kg */
+            co2_reduction: components["schemas"]["MetricWithDelta"];
+            /** @description 元 */
+            estimated_revenue: components["schemas"]["MetricWithDelta"];
         };
         /** StationCounts */
         StationCounts: {
@@ -1031,6 +1119,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_CurrentAlertResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_v1_reports__station_id__get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                station_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AIReportResponse_"];
                 };
             };
             /** @description Validation Error */
