@@ -1,7 +1,6 @@
 """报告：生成、存档、读取。docs/08 §三
 
-用户请求只读缓存；未生成时同步生成一次并落库（首访体验），
-常态由每日 08:00 的定时任务预生成。
+当日报告按需生成或更新十分钟缓存，历史报告只读已有存档。
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -105,7 +104,11 @@ async def generate_and_store(
     await db.execute(stmt)
     await db.commit()
     return (
-        await db.execute(select(Report).where(Report.station_id == station.id, Report.day == day))
+        await db.execute(
+            select(Report)
+            .where(Report.station_id == station.id, Report.day == day)
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one()
 
 

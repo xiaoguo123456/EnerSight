@@ -127,7 +127,10 @@ async def test_公共报告过期按需更新并保留计算口径(client: Async
         old = row.generated_at
         await db.commit()
     second = (await client.get("/v1/reports/gem:B")).json()["data"]
-    assert datetime.fromisoformat(second["generated_at_iso"]).replace(tzinfo=None) > old
+    assert (
+        datetime.fromisoformat(second["generated_at_iso"]).astimezone(UTC).replace(tzinfo=None)
+        > old
+    )
     assert "满负荷" not in str(second["suggestions"])
     assert second["station"]["source"] == "gem"
     assert second["station"]["original_name"]
