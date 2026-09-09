@@ -51,7 +51,7 @@ export default function Home() {
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId, model])
   const fleet = useRequest(() => api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: model }), [model])
   const f = fleet.data?.model === model ? fleet.data : null
-  const d = home.data && (!home.data.has_station || home.data.prediction?.model === model) ? home.data : null
+  const d = home.data && (!home.data.prediction || home.data.prediction.model === model) ? home.data : null
   useEffect(() => {
     if (!visible || !f) return
     const timer = setTimeout(() => void fleet.reload(), ['queued','building'].includes(f.status) ? 8000 : 120000)
@@ -90,7 +90,7 @@ export default function Home() {
             <Text className="forecast-note">气象条件下估算 · 未计入限电、检修</Text>
             <View className="forecast-row forecast-meta"><Text>装机 {formatPower(station?.capacity).value} {formatPower(station?.capacity).unit}</Text><Text onClick={() => station && Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>场站资料 ›</Text></View>
             {p?.energy_kwh != null && <PowerCurve prediction={p} id={`power-${model}-${version}`} />}
-            {p?.energy_kwh == null && <Text className="forecast-note">全天气象数据或场站参数不完整，暂不估算日总量。</Text>}
+            {p?.energy_kwh == null && <Text className="forecast-note">{!p ? '预测服务暂未就绪，请稍后刷新。' : '全天气象数据或场站参数不完整，暂不估算日总量。'}</Text>}
             {home.refreshError && <Text className="forecast-warning" onClick={home.reload}>刷新失败，当前保留上次预测 · 点击重试</Text>}
           </View>
           {weather && <View className="home__card"><SectionHeader icon="cloudSun" title="气象依据" /><MetricGrid>
