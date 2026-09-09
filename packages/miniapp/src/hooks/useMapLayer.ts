@@ -59,7 +59,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       for (const p of response.samples) {
         const x = (p.longitude - region.southwest.longitude) / (region.northeast.longitude - region.southwest.longitude) * 100
         const y = (north - merc(p.latitude)) / (north - south) * 100
-        if (x < 8 || x > 88 || y < 8 || y > 92 || selected.some(q => Math.abs(q.x-x)<23 && Math.abs(q.y-y)<12)) continue
+        if (x < 8 || x > 88 || y < 20 || y > 92 || selected.some(q => Math.abs(q.x-x)<23 && Math.abs(q.y-y)<12)) continue
         selected.push({ x, y, text: `${Math.round(p.value)}${response.unit === '℃' ? '℃' : ' W/m²'}` })
       }
       setSamples(selected.map(p => ({ left: `${p.x}%`, top: `${p.y}%`, text: p.text })))
