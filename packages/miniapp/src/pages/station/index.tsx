@@ -1,7 +1,7 @@
 import { View, Text, Input, Picker, ScrollView, Button } from '@tarojs/components'
 import Taro, { useReachBottom, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
-import { formatPower } from '@enersight/core/format'
+import { formatPower, thousands } from '@enersight/core/format'
 import type { StationSummary, StationType } from '@enersight/core/types'
 import { stationsApi } from '@/api/stations'
 import { useStationStore } from '@/store'
@@ -109,7 +109,7 @@ export default function Stations() {
       {query.type !== 'all' && <Text onClick={() => change({ type: 'all' })}>{query.type === 'solar' ? '光伏' : '风电'} ×</Text>}
     </View>}
     <View className="catalog__results-head">
-      <Text>{result.loading && !result.items.length ? '正在查找电站' : `共 ${result.total.toLocaleString()} 座电站`}</Text>
+      <Text>{result.loading && !result.items.length ? '正在查找电站' : `共 ${thousands(result.total)} 座电站`}</Text>
       <Picker mode="selector" range={['容量优先', '名称排序']} value={query.sort === 'capacity' ? 0 : 1}
         onChange={(e) => change({ sort: Number(e.detail.value) === 0 ? 'capacity' : 'name' })}>
         <View className="catalog__sort"><Text>{query.sort === 'capacity' ? '容量优先' : '名称排序'}</Text><Icon name="chevronDown" size={13} color="#64748b" /></View>

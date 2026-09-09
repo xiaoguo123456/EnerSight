@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   formatBeijingTime, isDataStale, formatCo2, formatCoordinate, formatCurrency, formatDelta, formatEnergy,
   formatHours, formatPercent, formatPower, formatRadiation,
@@ -126,5 +126,22 @@ describe('数据时间与时效', () => {
     const now = Date.parse('2026-09-09T06:00:00Z')
     expect(isDataStale('2026-09-09T05:00:00Z', 30, now)).toBe(true)
     expect(isDataStale('2026-09-09T13:45:00+08:00', 30, now)).toBe(false)
+  })
+})
+
+// 模拟部分真机忽略本地化选项，防止浮点尾数直接进入界面。
+describe('真机数字格式兼容', () => {
+  it('不依赖 toLocaleString，统一保留指定小数位', () => {
+    const locale = vi.spyOn(Number.prototype, 'toLocaleString').mockImplementation(function (this: number) { return String(this) })
+    try {
+      expect(thousands(5534.783027370007, 1)).toBe('5,534.8')
+      expect(thousands(2768.20850272, 1)).toBe('2,768.2')
+      expect(thousands(2766.57452465, 1)).toBe('2,766.6')
+      expect(thousands(18661)).toBe('18,661')
+      expect(thousands(0, 1)).toBe('0.0')
+      expect(thousands(-1234.56, 1)).toBe('-1,234.6')
+      expect(formatWindSpeed(2.45).value).toBe('2.5')
+      expect(locale).not.toHaveBeenCalled()
+    } finally { locale.mockRestore() }
   })
 })

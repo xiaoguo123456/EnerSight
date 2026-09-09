@@ -1,7 +1,7 @@
 import { Picker, View, Text } from '@tarojs/components'
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
-import { formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatWindSpeed, formatPower } from '@enersight/core/format'
+import { thousands, formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatWindSpeed, formatPower } from '@enersight/core/format'
 import type { FleetPrediction, GenerationPrediction } from '@enersight/core/types'
 import { api } from '@/api'
 import { homeApi } from '@/api/home'
@@ -15,7 +15,7 @@ import './index.scss'
 function energy(value?: number | null) {
   if (value == null) return { value: '—', unit: 'MWh' }
   const divisor = value >= 1e6 ? 1e6 : value >= 1000 ? 1000 : 1
-  return { value: (value / divisor).toLocaleString('en-US', { maximumFractionDigits: 1 }), unit: divisor === 1e6 ? 'GWh' : divisor === 1000 ? 'MWh' : 'kWh' }
+  return { value: thousands(value / divisor, 1), unit: divisor === 1e6 ? 'GWh' : divisor === 1000 ? 'MWh' : 'kWh' }
 }
 function Value({ value }: { value?: number | null }) {
   const v = energy(value)
@@ -111,7 +111,7 @@ export default function Home() {
             <View className="forecast-row"><Text className="forecast-title">{f.status === 'ready' ? '今日预测总量' : '已覆盖场站预测合计'}</Text><View onClick={info} className="forecast-help">口径 ⓘ</View></View>
             <Value value={f.energy_kwh} /><Text className="forecast-note">平台运营目录 · 未计入限电、检修</Text>
             <View className="forecast-split"><View><Text className="forecast-muted">已覆盖光伏</Text><Text>{energy(f.energy_kwh == null ? null : f.solar_kwh).value} {energy(f.energy_kwh == null ? null : f.solar_kwh).unit}</Text></View><View><Text className="forecast-muted">已覆盖风电</Text><Text>{energy(f.energy_kwh == null ? null : f.wind_kwh).value} {energy(f.energy_kwh == null ? null : f.wind_kwh).unit}</Text></View></View>
-            <View className="forecast-coverage"><View className="forecast-row"><Text>装机容量覆盖率</Text><Text>{coverage.toFixed(1)}%</Text></View><View className="forecast-progress"><View style={{ width: `${coverage}%` }} /></View><Text className="forecast-muted">已计算 {f.covered_count.toLocaleString()} / {f.total_count.toLocaleString()} 座 · 已知装机容量为分母</Text></View>
+            <View className="forecast-coverage"><View className="forecast-row"><Text>装机容量覆盖率</Text><Text>{coverage.toFixed(1)}%</Text></View><View className="forecast-progress"><View style={{ width: `${coverage}%` }} /></View><Text className="forecast-muted">已计算 {thousands(f.covered_count)} / {thousands(f.total_count)} 座 · 已知装机容量为分母</Text></View>
             {['queued','building'].includes(f.status) && <Text className="forecast-note">{f.status === 'queued' ? '后台排队计算中' : '后台正在计算更多区域'}，结果自动更新。</Text>}
             {f.message && <Text className="forecast-warning">{f.message}</Text>}
             {(f.invalid_count > 0 || f.failed_count > 0) && <Text className="forecast-note">参数不足 {f.invalid_count} 座 · 气象待补 {f.failed_count} 座，未计入总量。</Text>}

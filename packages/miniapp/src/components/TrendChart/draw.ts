@@ -1,3 +1,5 @@
+import { thousands } from '@enersight/core/format'
+
 /**
  * 趋势图绘制。纯函数，不依赖 Taro，可单独测试。
  *
@@ -51,7 +53,7 @@ function niceMax(values: (number | null)[], yMax: number | null): number {
 }
 
 function fmtTick(v: number): string {
-  return v >= 1000 ? v.toLocaleString('en-US') : String(v)
+  return v >= 1000 ? thousands(v) : String(v)
 }
 
 function hhmm(i: number): string {

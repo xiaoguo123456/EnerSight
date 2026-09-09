@@ -17,10 +17,10 @@ export interface Formatted {
 
 /** 数值 ≥ 1000 时加千分位分隔符。docs/04 §十 */
 export function thousands(n: number, fractionDigits = 0): string {
-  return n.toLocaleString('en-US', {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  })
+  // 部分小程序真机忽略 toLocaleString 的小数位参数，显式舍入后再加分隔符。
+  const [integer = '', fraction] = n.toFixed(fractionDigits).split('.')
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return fraction === undefined ? grouped : `${grouped}.${fraction}`
 }
 
 /** 功率：≥ 1000 kW 进位为 MW。320 kW / 1.8 MW */
