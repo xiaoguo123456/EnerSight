@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import engine, upsert_insert
-from app.models import DailyGeneration, Report
+from app.models import CatalogPlant, DailyGeneration, Report
 from app.services.accumulate import upsert_daily
 
 
@@ -19,6 +19,16 @@ async def main() -> None:
         transaction = await connection.begin()
         try:
             async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                district = "A" * 44  # 真实 GEM 目录中的区县名称最长为 44 字符。
+                plant = CatalogPlant(
+                    id="gem:pg-smoke", source="gem", source_id="pg-smoke",
+                    name="目录长地名验证", type="solar", capacity_kw=1000,
+                    latitude=31, longitude=120, district=district,
+                )
+                session.add(plant)
+                await session.flush()
+                await session.refresh(plant)
+                assert plant.district == district, "目录地名必须完整保存"
                 day = date(2026, 1, 1)
                 await upsert_daily(session, "pg-smoke", day, 10, 2)
                 await upsert_daily(session, "pg-smoke", day, 20, 3)

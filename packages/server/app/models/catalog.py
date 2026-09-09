@@ -29,7 +29,7 @@ class CatalogPlant(Base):
 
     province: Mapped[str | None] = mapped_column(String(32), default=None)
     city: Mapped[str | None] = mapped_column(String(32), default=None)
-    district: Mapped[str | None] = mapped_column(String(32), default=None)
+    district: Mapped[str | None] = mapped_column(String(128), default=None)
     owner_name: Mapped[str | None] = mapped_column(String(128), default=None)
     commissioning_year: Mapped[int | None] = mapped_column(Integer, default=None)
     status: Mapped[str] = mapped_column(String(16), default="operating")
