@@ -1,5 +1,5 @@
 import { View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
 import {
   formatPercent, formatRadiation, formatTemperature, formatWindSpeed,
@@ -43,6 +43,9 @@ const TREND_TABS: { value: TrendMetric; label: string }[] = [
  * 一个 /v1/home 请求覆盖首屏；切趋势 Tab 才再请求 /v1/trends。
  */
 export default function Home() {
+  // 切换电站时首页可能隐藏；显示后重建画布，避免在零尺寸布局上初始化。
+  const [chartVersion, setChartVersion] = useState(0)
+  useDidShow(() => setChartVersion((v) => v + 1))
   const currentId = useStationStore((s) => s.currentId)
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId])
 
@@ -148,7 +151,7 @@ export default function Home() {
             <SectionHeader icon="trendingUp" title="24小时趋势" action="查看更多" />
             <SegmentedTabs options={TREND_TABS} value={metric} onChange={(v) => void switchTrend(v as TrendMetric)} />
             <View className="home__chart">
-              <TrendChart id="home-trend" data={fromTrendSeries(trend)} />
+              <TrendChart key={`${station.id}-${chartVersion}`} id="home-trend" data={fromTrendSeries(trend)} />
             </View>
           </View>
         )}
