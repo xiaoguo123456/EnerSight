@@ -24,7 +24,7 @@ const LEVEL_TEXT: Record<IndexLevel, string> = {
  * 层级靠尺寸差拉开，不靠加边框加阴影。
  */
 export function EnergyScoreCard({ score, level, summary, onExplain }: Props) {
-  const lv = level ?? 'poor'
+  const lv = level ?? 'unknown'
   return (
     <View className={`hero hero--${lv}`}>
       <View className="hero__head" onClick={onExplain ?? (() => Taro.showModal({ title: '发电适宜度说明', content: '指数为 0–100 分，依据气象条件估算光伏或风电的发电适宜程度。分数越高，气象条件越有利。低分不代表设备故障；未触发天气预警也不代表发电条件良好。估算未接入电站实测出力，仅供参考。', showCancel: false, confirmText: '知道了' }))}>
