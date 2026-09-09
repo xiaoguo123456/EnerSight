@@ -2,12 +2,12 @@
   .page-header { position: sticky; top: 0; z-index: 10; background: var(--color-surface); }
   min-height: 100vh; background: var(--color-surface);
   &__body { padding: 12px 20px calc(28px + env(safe-area-inset-bottom)); }
-  &__meta { padding-bottom: 22px; border-bottom: 1px solid var(--color-divider); }
+  &__meta { text-align: center; padding: 8px 4px 24px; border-bottom: 1px solid var(--color-divider); }
   &__eyebrow { display: block; font-size: 12px; color: var(--color-text-sub); margin-bottom: 10px; }
   &__station-name { display: block; font-size: 18px; font-weight: 650; line-height: 1.5; color: var(--color-text); overflow-wrap: anywhere; }
   &__station-addr-text { display: block; font-size: 12px; line-height: 1.6; color: var(--color-text-sub); margin-top: 6px; }
   &__method { display: block; margin-top: 10px; font-size: 12px; color: var(--color-text-sub); }
-  &__verdict { padding: 24px 0 20px; }
+  &__verdict { padding: 24px 4px 20px; text-align: center; }
   &__verdict-label { font-size: 13px; color: var(--color-text-sub); }
   &__verdict-title { display: block; margin-top: 8px; font-size: 20px; font-weight: 650; line-height: 1.5; color: var(--color-text); }
   &__verdict-detail { display: block; margin-top: 10px; font-size: 14px; line-height: 1.75; color: #475569; }

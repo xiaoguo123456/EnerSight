@@ -43,7 +43,7 @@ export function AlertRecordList({
             </View>
             <Text className="alert-records__desc">{r.description}</Text>
           </View>
-          <Icon name="chevronRight" size={13} color="#9ca3af" />
+          {onTap && <Icon name="chevronRight" size={13} color="#9ca3af" />}
         </View>
       ))}
     </View>

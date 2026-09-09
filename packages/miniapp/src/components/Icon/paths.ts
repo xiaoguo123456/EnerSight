@@ -8,6 +8,8 @@
  * 新增图标：到 lucide.dev 找到图标，复制其 <path>/<circle> 等内容贴到这里。
  */
 export const ICON_PATHS = {
+  // 与底部电站导航共用图形，避免将目录误认为设置。
+  factory: '<path d="M3 21V10l6 3V7l6 3V3h6v18H3Z"/><path d="M7 17h1M12 17h1M17 17h1"/>',
   chevronUp: '<path d="m6 15 6-6 6 6"/>',
   x: '<path d="m6 6 12 12M18 6 6 18"/>',
   // 气象

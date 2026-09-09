@@ -17,13 +17,13 @@ import { useStationStore } from '@/store'
 import './index.scss'
 
 const ENTRIES: QuickEntry[] = [
-  { icon: 'map', title: '地图总览', subtitle: '宏观掌握区域情况', tone: 'energy',
+  { icon: 'map', title: '地图总览', subtitle: '宏观掌握区域情况', tone: 'primary',
     onTap: () => Taro.switchTab({ url: '/pages/map/index' }) },
   { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary',
     onTap: () => Taro.switchTab({ url: '/pages/alert/index' }) },
-  { icon: 'fileText', title: '分析报告', subtitle: '查看气象分析', tone: 'purple',
+  { icon: 'fileText', title: '分析报告', subtitle: '查看气象分析', tone: 'primary',
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
-  { icon: 'settings', title: '电站目录', subtitle: '浏览全部公开电站', tone: 'cyan',
+  { icon: 'factory', title: '电站目录', subtitle: '浏览全部公开电站', tone: 'primary',
     onTap: () => Taro.switchTab({ url: '/pages/station/index' }) },
 ]
 
@@ -36,8 +36,8 @@ const TREND_TABS: { value: TrendMetric; label: string }[] = [
 /**
  * 首页信息层级：
  *   顶栏     站点名 = 页面标题
- *   Hero     环境指数，全页唯一大字
- *   支撑     四宫格，紧贴 Hero
+ *   摘要     发电适宜度与气象说明
+ *   支撑     当前气象指标
  *   趋势 / 预警 / 入口
  *
  * 一个 /v1/home 请求覆盖首屏；切趋势 Tab 才再请求 /v1/trends。
