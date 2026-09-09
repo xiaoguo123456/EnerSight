@@ -11,7 +11,14 @@ current_model: ContextVar[str] = ContextVar("weather_model", default="best_match
 def supports_selection(path: str) -> bool:
     path = "/v1/" + path.split("/v1/", 1)[-1]
     return (
-        path in {"/v1/home", "/v1/trends", "/v1/map/overview", "/v1/predictions/fleet"}
+        path
+        in {
+            "/v1/home",
+            "/v1/trends",
+            "/v1/map/overview",
+            "/v1/predictions/fleet",
+            "/v1/predictions/fleet/history",
+        }
         or path.startswith("/v1/map/layers/")
         or (path.startswith("/v1/stations/") and path.endswith("/detail"))
     )

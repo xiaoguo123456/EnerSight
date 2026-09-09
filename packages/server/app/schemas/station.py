@@ -24,6 +24,15 @@ class StationMetrics(BaseModel):
         )
 
 
+class CatalogPhase(BaseModel):
+    id: str
+    name: str
+    phase_name: str
+    capacity_kw: float
+    capacity_rating: str
+    owner: str = ""
+
+
 class StationSummary(BaseModel):
     id: str
     name: str
@@ -42,6 +51,10 @@ class StationSummary(BaseModel):
         default=None, description="目录入库更新时间，不代表数据源发布日"
     )
     owner_name: str | None = None
+    phases: list[CatalogPhase] = Field(default_factory=list)
+    source_file: str | None = None
+    capacity_note: str | None = None
+    prediction_blocked_reason: str | None = None
 
 
 class StationCounts(BaseModel):

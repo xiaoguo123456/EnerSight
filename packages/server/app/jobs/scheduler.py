@@ -257,6 +257,16 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
     )
+    from app.services import fleet_history
+
+    sched.add_job(
+        fleet_history.checkpoint,
+        "interval",
+        minutes=10,
+        id="fleet_history",
+        max_instances=1,
+        coalesce=True,
+    )
     sched.start()
     log.info("scheduler started: %s", [j.id for j in sched.get_jobs()])
     return sched

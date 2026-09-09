@@ -127,10 +127,13 @@ async def build_station_view(
     # 累计与减排来自逐日累积表（定时任务维护）；没有记录时为 None
     total_kwh, co2_kg = (await accumulate.totals(db, station.id)) if db else (None, None)
 
+    from app.services import prediction
+
+    estimate = await asyncio.to_thread(prediction.compute, station, fc)
     summary = to_summary(station, coord)
     summary.metrics = StationMetrics(
-        daily_generation=round(snap.daily_kwh, 1),
-        current_power=round(snap.current_kw, 1) if snap.current_kw is not None else None,
+        daily_generation=estimate.energy_kwh,
+        current_power=estimate.power_kw[fc.current_hour().hour].value,
         total_generation=round(total_kwh, 1) if total_kwh is not None else None,
         co2_reduction=round(co2_kg, 1) if co2_kg is not None else None,
     )
@@ -186,6 +189,11 @@ async def build_home(
     from app.services import prediction
 
     forecast_prediction = await asyncio.to_thread(prediction.compute, station, v.forecast)
+    from app.services import prediction_archive
+
+    await asyncio.to_thread(prediction_archive.save, station, v.forecast, forecast_prediction)
+    tomorrow = await asyncio.to_thread(prediction.compute, station, v.forecast, day_offset=1)
+    await asyncio.to_thread(prediction_archive.save, station, v.forecast, tomorrow)
     return HomeResponse(
         prediction=forecast_prediction,
         has_station=True,

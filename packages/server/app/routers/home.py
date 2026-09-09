@@ -1,6 +1,7 @@
 """首页聚合与趋势。docs/06 §六、§八"""
 
-from typing import Annotated
+from datetime import date
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,3 +111,25 @@ async def fleet_prediction(request: Request, user: CurrentUserDep, coord: CoordQ
     from app.weather_model import current_model
 
     return envelope(await fleet.ensure(request.app.state.http, current_model.get()), coord)
+
+
+@router.get("/predictions/fleet/history")
+async def fleet_history(
+    request: Request,
+    user: CurrentUserDep,
+    period: Literal["week", "month", "year"] = "week",
+    anchor: date | None = None,
+):
+    import asyncio
+    from datetime import datetime
+
+    from app.errors import ApiError
+    from app.services import fleet_history as history
+    from app.weather_model import current_model
+
+    if anchor and not 2000 <= anchor.year <= 2100:
+        raise ApiError("INVALID_PARAM", "日期超出支持范围", 400)
+    result = await asyncio.to_thread(
+        history.summary, current_model.get(), period, anchor or datetime.now(history.TZ).date()
+    )
+    return envelope(result, Coord.WGS84)

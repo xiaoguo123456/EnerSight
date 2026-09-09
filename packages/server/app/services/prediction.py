@@ -8,6 +8,7 @@ import pandas as pd
 from app.metrics import pv, solar, wind
 from app.models import Station
 from app.schemas.prediction import GenerationPrediction, PowerPoint
+from app.services.prediction_basis import DC_AC_RATIO, INVERTER_EFFICIENCY, VERSION
 from app.services.weather import Forecast
 from app.weather_model import current_model
 
@@ -30,17 +31,26 @@ def hourly_power(station: Station, frame: pd.DataFrame, tz: str) -> pd.Series:
         ghi=frame["shortwave_radiation"],
         dhi=frame["diffuse_radiation"],
     )
-    return pv.dc_power(
-        poa_global=poa,
-        temp_air=frame["temperature_2m"],
-        wind_speed=frame["wind_speed_10m"],
-        capacity_kw=station.capacity_kw,
-    ).clip(upper=station.capacity_kw)
+    dc_capacity, ac_capacity = getattr(station, "_pv_capacity", None) or (
+        station.capacity_kw,
+        station.capacity_kw / DC_AC_RATIO,
+    )
+    return (
+        pv.dc_power(
+            poa_global=poa,
+            temp_air=frame["temperature_2m"],
+            wind_speed=frame["wind_speed_10m"],
+            capacity_kw=dc_capacity,
+        )
+        * INVERTER_EFFICIENCY
+    ).clip(upper=ac_capacity)
 
 
-def compute(station: Station, fc: Forecast, model: str | None = None) -> GenerationPrediction:
-    today = fc.today()
-    day = fc.current_hour().normalize()
+def compute(
+    station: Station, fc: Forecast, model: str | None = None, *, day_offset: int = 0
+) -> GenerationPrediction:
+    day = fc.current_hour().normalize() + pd.Timedelta(days=day_offset)
+    today = fc.hourly.loc[day : day + pd.Timedelta(hours=23)]
     hours = pd.date_range(day, periods=24, freq="h")
     frame = today.reindex(hours)
     required = (
@@ -55,7 +65,8 @@ def compute(station: Station, fc: Forecast, model: str | None = None) -> Generat
         ]
     )
     complete = (
-        np.isfinite(station.capacity_kw)
+        not getattr(station, "_prediction_blocked", None)
+        and np.isfinite(station.capacity_kw)
         and station.capacity_kw > 0
         and all(c in frame and np.isfinite(frame[c].astype(float)).all() for c in required)
     )
@@ -75,5 +86,14 @@ def compute(station: Station, fc: Forecast, model: str | None = None) -> Generat
             "未计入限电、检修及故障影响",
             "光伏采用标准损耗与默认组件参数；风电采用通用功率曲线",
             "缺失设备参数采用默认值；非实际并网电量",
+            f"光伏容配比假设 {DC_AC_RATIO}，逆变器效率假设 {INVERTER_EFFICIENCY:.0%}；非实测"
+            if station.type == "solar"
+            else "轮毂高度缺失时使用默认高度，通用功率曲线未校准至实际机型",
+            f"计算版本 {VERSION}",
+            *(
+                [station._prediction_blocked]
+                if getattr(station, "_prediction_blocked", None)
+                else []
+            ),
         ],
     )

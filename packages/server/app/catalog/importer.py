@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -49,6 +50,7 @@ class Row:
     owner: str | None = None
     year: int | None = None
     status: str = "operating"
+    provenance: dict = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -163,6 +165,7 @@ def _col(headers: list[str], *candidates: str) -> int | None:
 def read_gem(path: Path, country: str | None) -> list[Row]:
     import openpyxl
 
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     # 数据表通常叫 Data；找第一张含 Latitude 列的表
     ws = None
@@ -192,6 +195,10 @@ def read_gem(path: Path, country: str | None) -> list[Row]:
         "city": _col(headers, "Major area (prefecture, district)", "City"),
         "district": _col(headers, "Local area (taluk, county)", "Local area"),
         "loc_id": _col(headers, "GEM location ID", "GEM location"),
+        "rating": _col(headers, "Capacity Rating"),
+        "phase_name": _col(headers, "Phase Name"),
+        "wiki": _col(headers, "Wiki URL"),
+        "accuracy": _col(headers, "Location accuracy"),
         "phase_id": _col(headers, "GEM phase ID", "GEM unit/phase ID", "GEM unit ID"),
     }
     missing = [k for k in ("name", "cap", "lat", "lon", "status") if ix[k] is None]
@@ -206,6 +213,7 @@ def read_gem(path: Path, country: str | None) -> list[Row]:
         return r[i] if i is not None and i < len(r) else None
 
     grouped: dict[str, Row] = {}
+    phase_seen: dict[str, tuple] = {}
     for r in rows:
         if country:
             c = str(cell(r, "country") or "").lower()
@@ -235,12 +243,50 @@ def read_gem(path: Path, country: str | None) -> list[Row]:
         except (TypeError, ValueError):
             year = None
         key = f"{kind}:{loc}"
+        pid = str(cell(r, "phase_id") or "")
+        rating_raw = str(cell(r, "rating") or "unknown")
+        rating = (
+            "ac"
+            if rating_raw.lower() == "mwac"
+            else "dc"
+            if rating_raw.lower() in ("mwp/dc", "mwdc", "mwp")
+            else "unknown"
+        )
+        signature = (loc, kind, cap, lat, lon, rating)
+        if pid and pid in phase_seen:
+            if phase_seen[pid] != signature:
+                raise ValueError(f"同一分期 {pid} 存在冲突，拒绝覆盖目录")
+            continue
+        if pid:
+            phase_seen[pid] = signature
+        phase = dict(
+            id=pid,
+            name=first_name(str(cell(r, "local") or cell(r, "name") or "")),
+            phase_name=str(cell(r, "phase_name") or ""),
+            capacity_kw=cap * 1000,
+            capacity_rating=rating,
+            capacity_rating_raw=rating_raw,
+            latitude=lat,
+            longitude=lon,
+            technology=str(r[tech] or "") if tech is not None else "",
+            owner=str(cell(r, "owner") or cell(r, "owner_en") or ""),
+            status=status,
+        )
         if key in grouped:
-            grouped[key].capacity_mw += cap  # 同一场址多期合并
+            grouped[key].capacity_mw += cap
+            grouped[key].provenance["phases"].append(phase)
             continue
         grouped[key] = Row(
             source="gem",
             source_id=loc,
+            provenance=dict(
+                source_file=path.name,
+                source_sha256=digest,
+                location_id=loc,
+                wiki_url=str(cell(r, "wiki") or ""),
+                location_accuracy=str(cell(r, "accuracy") or ""),
+                phases=[phase],
+            ),
             name=first_name(str(cell(r, "name") or "")),
             name_local=(first_name(str(cell(r, "local"))) or None) if cell(r, "local") else None,
             type=kind,
@@ -253,6 +299,14 @@ def read_gem(path: Path, country: str | None) -> list[Row]:
             owner=(first_name(str(cell(r, "owner") or cell(r, "owner_en") or "")) or None),
             year=year,
         )
+    for item in grouped.values():
+        phases = item.provenance["phases"]
+        if len(phases) > 1:
+            # 不能继续把首期名称当作全部容量的名称；各期完整名称保存在溯源中。
+            region = item.district or item.city or item.province or "公开"
+            item.name_local = (
+                f"{region}{'光伏' if item.type == 'solar' else '风电'}场址（{len(phases)}期合计）"
+            )
     return list(grouped.values())
 
 
@@ -311,6 +365,7 @@ async def upsert(db: AsyncSession, rows: list[Row]) -> ImportResult:
             name_local=(r.name_local or None) and r.name_local[:128],
             type=r.type,
             capacity_kw=r.capacity_mw * 1000.0,
+            provenance=r.provenance or None,
             latitude=r.lat,
             longitude=r.lon,
             province=r.province,

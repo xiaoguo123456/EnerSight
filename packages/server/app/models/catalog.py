@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Float, Integer, String
+from sqlalchemy import JSON, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base, utcnow
@@ -33,6 +33,8 @@ class CatalogPlant(Base):
     owner_name: Mapped[str | None] = mapped_column(String(128), default=None)
     commissioning_year: Mapped[int | None] = mapped_column(Integer, default=None)
     status: Mapped[str] = mapped_column(String(16), default="operating")
+
+    provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 

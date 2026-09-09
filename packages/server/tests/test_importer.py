@@ -138,7 +138,8 @@ class TestReadGem:
         assert len(rs) == 1
         r = rs[0]
         assert r.id == "gem:L1" and r.type == "wind"
-        assert r.capacity_mw == 250 and r.name_local == "瓜州风电场"
+        assert r.capacity_mw == 250 and "2期合计" in r.name_local
+        assert [p["id"] for p in r.provenance["phases"]] == ["G1", "G2"]
         assert (
             r.province == "甘肃省" and r.city == "Jiuquan" and r.owner == "华能" and r.year == 2018
         )

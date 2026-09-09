@@ -1,0 +1,13 @@
+.fleet-history { display:flex; flex-direction:column; gap:16px; }
+.history-nav { display:flex; align-items:center; justify-content:space-between; font-size:13px; color:#33465e; > view { min-height:44px; display:flex; align-items:center; color:#1264d6; } .history-disabled { color:#748092; } }
+.history-total { font-size:30px; font-weight:650; color:#192b40; margin:14px 0 8px; }
+.history-empty { padding:28px 6px; font-size:14px; line-height:1.8; color:#526174; }
+.history-legend { display:flex; gap:14px; margin:18px 0 8px; font-size:11px; color:#526174; }
+.history-chart { display:flex; gap:3px; height:175px; align-items:flex-end; }
+.history-column { flex:1; min-width:0; padding-top:6px; border-radius:4px; &--active { background:#eef4fb; } }
+.history-track { height:140px; display:flex; align-items:flex-end; justify-content:center; }
+.history-stack { width:72%; max-width:28px; display:flex; flex-direction:column; min-height:2px; overflow:hidden; border-radius:3px 3px 0 0; background:#617084; }
+.history-solar { background:#cf922c; } .history-wind { background:#1677ff; }
+.history-gap { width:50%; border-bottom:1px dashed #adb8c5; }
+.history-axis { display:block; text-align:center; height:24px; line-height:24px; font-size:10px; color:#617084; }
+.history-refresh { text-align:center; padding:12px; color:#1264d6; font-size:13px; }

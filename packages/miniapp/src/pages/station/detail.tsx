@@ -74,7 +74,7 @@ export default function StationDetail() {
             </View>
             <Text className="detail__station-name">{station.name}</Text>
             <View className="detail__capacity">
-              <Text className="detail__capacity-label">目录装机容量</Text>
+              <Text className="detail__capacity-label">目录申报容量</Text>
               <Text className="detail__capacity-value">{cap.value}<Text className="detail__capacity-unit"> {cap.unit}</Text></Text>
             </View>
             <View className="detail__favorite" onClick={() => toggleFavorite(station)}>{favorites.some((s) => s.id === id) ? '已收藏 · 点击取消' : '收藏到常看电站'}</View>
@@ -122,6 +122,13 @@ export default function StationDetail() {
           </View>
         )}
 
+        {(station.phases?.length || station.prediction_blocked_reason) && <View className="detail__card">
+          <SectionHeader icon="fileText" title="分期与容量口径" />
+          <Text className="detail__note">{station.capacity_note || '容量口径待核验'}</Text>
+          {station.prediction_blocked_reason && <Text className="detail__note">{station.prediction_blocked_reason}</Text>}
+          {station.phases?.map(phase => <View key={phase.id || phase.phase_name} className="detail__info-row"><Text className="detail__info-label">{phase.name} · {phase.phase_name}</Text><Text className="detail__info-value">{formatPower(phase.capacity_kw).value} {formatPower(phase.capacity_kw).unit} · {phase.capacity_rating === 'ac' ? '交流' : phase.capacity_rating === 'dc' ? '直流' : station.type === 'wind' ? '额定容量' : '类型未知'}</Text></View>)}
+          <Text className="detail__note">来源版本：{station.source_file || '待核验'}。公开分期记录不代表已由场站实测确认。</Text>
+        </View>}
         <View className="detail__card">
           <SectionHeader icon="mapPin" title="电站资料" />
           <View className="detail__info-row"><Text className="detail__info-label">所在地区</Text><Text className="detail__info-value">{station.address || '暂无地区信息'}</Text></View>

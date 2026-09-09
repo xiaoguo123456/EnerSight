@@ -36,6 +36,7 @@ def plant(id, lat=31.3, capacity=1000, kind="wind", name=None):
         id=id,
         source="gem",
         source_id=id,
+        provenance={"phases": [{"capacity_kw": capacity, "capacity_rating": "ac"}]},
         name=name or id,
         type=kind,
         capacity_kw=capacity,

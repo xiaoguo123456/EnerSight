@@ -115,7 +115,19 @@ def from_catalog(p: CatalogPlant) -> Station:
     )
     from datetime import UTC
 
+    from app.services.prediction_basis import catalog_basis
+
+    basis, blocked = catalog_basis(p)
+    station._pv_capacity = basis
+    station._prediction_blocked = blocked
+    provenance = p.provenance or {}
     station._catalog_metadata = {
+        "phases": provenance.get("phases", []),
+        "source_file": provenance.get("source_file"),
+        "capacity_note": "原始分期申报容量合计；交流/直流口径见分期"
+        if p.type == "solar"
+        else "已投运分期额定容量合计",
+        "prediction_blocked_reason": blocked,
         "source": p.source,
         "original_name": p.name,
         "local_name": p.name_local,

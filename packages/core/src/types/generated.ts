@@ -196,6 +196,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/predictions/fleet/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fleet History */
+        get: operations["fleet_history_v1_predictions_fleet_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/alerts": {
         parameters: {
             query?: never;
@@ -411,6 +428,24 @@ export interface components {
         Bounds: {
             sw: components["schemas"]["LatLng"];
             ne: components["schemas"]["LatLng"];
+        };
+        /** CatalogPhase */
+        CatalogPhase: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Phase Name */
+            phase_name: string;
+            /** Capacity Kw */
+            capacity_kw: number;
+            /** Capacity Rating */
+            capacity_rating: string;
+            /**
+             * Owner
+             * @default
+             */
+            owner: string;
         };
         /** CatalogPlantOut */
         CatalogPlantOut: {
@@ -1223,6 +1258,14 @@ export interface components {
             catalog_updated_at?: string | null;
             /** Owner Name */
             owner_name?: string | null;
+            /** Phases */
+            phases?: components["schemas"]["CatalogPhase"][];
+            /** Source File */
+            source_file?: string | null;
+            /** Capacity Note */
+            capacity_note?: string | null;
+            /** Prediction Blocked Reason */
+            prediction_blocked_reason?: string | null;
         };
         /**
          * StationType
@@ -1768,6 +1811,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_FleetPrediction_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fleet_history_v1_predictions_fleet_history_get: {
+        parameters: {
+            query?: {
+                period?: "week" | "month" | "year";
+                anchor?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

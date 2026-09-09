@@ -18,6 +18,7 @@ from app.models import CatalogPlant, Station
 from app.render import tiles
 from app.schemas.prediction import FleetPrediction, PowerPoint, RegionPrediction
 from app.services import prediction, weather
+from app.services.prediction_basis import VERSION, catalog_basis
 from app.weather_model import MODELS
 
 log = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ FIELDS = [
 
 
 def directory() -> Path:
-    path = tiles.tile_dir().parent / "fleet-predictions"
+    path = tiles.tile_dir().parent / "fleet-predictions" / VERSION
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -66,6 +67,7 @@ def blank(model: str, day: str) -> FleetPrediction:
         status="queued",
         assumptions=[
             "区域近似：1°气象网格，按场站容量与能源类型估算",
+            "已区分分期交直流容量，容配比假设1.2、逆变器效率假设96%；未知容量类型不计入预测",
             "采用默认设备参数，未计入限电、检修及故障影响",
             "统一北京时间；仅汇总平台运营目录，非全国实测电量",
         ],
@@ -114,7 +116,11 @@ def calculate_cell(plants, raw, model, day):
     lat, lon = cell(plants[0])
     for p in plants:
         hub = wind.default_hub_height(p.capacity_kw) if p.type == "wind" else None
-        key = (p.type, hub)
+        basis, blocked = catalog_basis(p)
+        if blocked:
+            continue
+        dc_ratio, ac_ratio = (v / p.capacity_kw for v in basis)
+        key = (p.type, hub, round(dc_ratio, 6), round(ac_ratio, 6))
         if key not in curves:
             st = Station(
                 type=p.type,
@@ -125,6 +131,7 @@ def calculate_cell(plants, raw, model, day):
                 azimuth=None,
                 hub_height=hub,
             )
+            st._pv_capacity = (dc_ratio, ac_ratio)
             out = prediction.compute(st, fc, model)
             curves[key] = (
                 np.array([v.value for v in out.power_kw], dtype=float)
@@ -142,9 +149,10 @@ async def build(http, model: str, day: str, plants) -> None:
     out = blank(model, day)
     rows, dup, invalid = eligible(plants)
     out.total_count = len(plants) - dup
-    out.eligible_count = len(rows)
+    verified = [p for p in rows if not catalog_basis(p)[1]]
+    out.eligible_count = len(verified)
     out.duplicate_count = dup
-    out.invalid_count = invalid
+    out.invalid_count = invalid + len(rows) - len(verified)
     out.total_capacity_kw = sum(p.capacity_kw for p in rows) + sum(
         p.capacity_kw
         for p in plants
@@ -159,7 +167,7 @@ async def build(http, model: str, day: str, plants) -> None:
         )
     )
     groups = defaultdict(list)
-    for p in rows:
+    for p in verified:
         groups[cell(p)].append(p)
     # 容量大的区域先计算，优先提高覆盖容量。
     keys = sorted(groups, key=lambda k: sum(p.capacity_kw for p in groups[k]), reverse=True)
@@ -269,6 +277,8 @@ async def build(http, model: str, day: str, plants) -> None:
         else "error"
     )
     publish()
+    from app.services import fleet_history
+    fleet_history.capture(out.model_dump(), VERSION)
     # 留两天快照，清理旧天气文件，避免磁盘长期增长。
     for old in directory().glob("*.json"):
         if old.stat().st_mtime < datetime.now(UTC).timestamp() - 172800:
@@ -291,7 +301,10 @@ async def ensure(http, model: str) -> FleetPrediction:
             - datetime.fromisoformat(saved["generated_at"]).timestamp()
         )
         if (
-            saved["status"] == "ready"
+            (
+                saved["status"] == "ready"
+                or (saved["status"] == "partial" and not saved.get("failed_count"))
+            )
             and age < 43200
             or saved["status"] in ("partial", "error")
             and age < 1800
