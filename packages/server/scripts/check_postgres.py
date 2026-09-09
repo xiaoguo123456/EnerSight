@@ -19,7 +19,8 @@ async def main() -> None:
         transaction = await connection.begin()
         try:
             async with AsyncSession(bind=connection, expire_on_commit=False) as session:
-                station_id = "gem:postgres-public-test1"  # 24 字符公开 ID，覆盖生产字段上限。
+                station_id = "gem:postgres-public-test"  # 24 字符公开 ID，覆盖生产字段上限。
+                assert len(station_id) == 24
                 district = "A" * 44  # 真实 GEM 目录中的区县名称最长为 44 字符。
                 plant = CatalogPlant(
                     id=station_id,
