@@ -6,7 +6,7 @@
   "compileType": "miniprogram",
   "libVersion": "3.16.2",
   "setting": {
-    "urlCheck": false,
+    "urlCheck": true,
     "es6": false,
     "enhance": false,
     "postcss": false,

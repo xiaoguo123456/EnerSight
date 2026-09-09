@@ -136,3 +136,11 @@ aliyun alb UpdateRuleAttribute --region cn-beijing --force \
   --RuleActions.1.ForwardGroupConfig.ServerGroupTuples.1.ServerGroupId sgp-2bta4zqj9hwh5hjhrd \
   --RuleActions.1.ForwardGroupConfig.ServerGroupTuples.1.Weight 100
 ```
+
+### 小程序联调记录（2026-09-09）
+
+- 重新构建生产小程序包，确认产物使用 `https://platform.qhzhiyin.com/enersight`，不再请求示例域名。
+- 项目配置与本地配置均开启 `urlCheck`；开发者工具界面中“不校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书”未勾选。
+- 修复客户端首次收到 `UNAUTHORIZED` 时未启动登录的问题；首次未登录、令牌过期均只尝试登录后重试一次，避免循环。新增 3 项回归测试，核心包共 22 项测试及小程序类型检查通过。
+- 开发者工具模拟器已完成真实微信登录；生产日志确认登录接口和首页接口均返回 200。首页显示正常的无站点状态，地图底图可显示；无站点时地图概览返回 404 并展示添加入口，属于现有空状态逻辑。
+- 已生成真机预览二维码，手机扫码验收仍待用户完成。当前账号无站点，尚未验证站点卫星图片加载。开发者工具基本信息页未正常显示域名列表，未确认手动刷新按钮操作，但开启校验后的实际请求已经通过。

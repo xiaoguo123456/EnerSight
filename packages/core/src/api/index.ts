@@ -110,8 +110,8 @@ export function createClient(opts: ClientOptions): ApiClient {
     const message = errBody?.error?.message ?? '请求失败'
     const err = new ApiError(code, message, res.status)
 
-    // token 过期：重新登录后重试一次，仅一次
-    if (res.status === 401 && code === 'TOKEN_EXPIRED' && !didRelogin) {
+    // 首次未登录或 token 失效时登录，并且最多重试一次，避免认证失败死循环。
+    if (res.status === 401 && ['UNAUTHORIZED', 'TOKEN_EXPIRED'].includes(code) && !didRelogin) {
       const fresh = await opts.relogin()
       await opts.tokenStore.set(fresh)
       return send<T>(method, url, query, body, attempt, true)
