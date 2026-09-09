@@ -256,7 +256,7 @@ export default function MapPage() {
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
             <MapLegend
               spec={{
-                title: overlay.legend.title,
+                title: `${overlay.legend.title}${overlay.samples.length ? ' · 区域预报' : ''}`,
                 colors: overlay.legend.colors,
                 stops: overlay.legend.stops ?? undefined,
                 labels: overlay.legend.labels ? [overlay.legend.labels[0]!, overlay.legend.labels[1]!] : undefined,
