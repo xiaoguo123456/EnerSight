@@ -179,6 +179,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/predictions/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fleet Prediction */
+        get: operations["fleet_prediction_v1_predictions_fleet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/alerts": {
         parameters: {
             query?: never;
@@ -606,6 +623,11 @@ export interface components {
             data: components["schemas"]["CurrentAlertResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[FleetPrediction] */
+        Envelope_FleetPrediction_: {
+            data: components["schemas"]["FleetPrediction"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[GeoReverseResponse] */
         Envelope_GeoReverseResponse_: {
             data: components["schemas"]["GeoReverseResponse"];
@@ -671,6 +693,102 @@ export interface components {
             data: components["schemas"]["TrendSeries"];
             meta: components["schemas"]["Meta"];
         };
+        /** FleetPrediction */
+        FleetPrediction: {
+            /** Model */
+            model: string;
+            /** Date */
+            date: string;
+            /**
+             * Timezone
+             * @default Asia/Shanghai
+             */
+            timezone: string;
+            /** Generated At */
+            generated_at: string;
+            /** Energy Kwh */
+            energy_kwh: number | null;
+            /** Power Kw */
+            power_kw: components["schemas"]["PowerPoint"][];
+            /** Assumptions */
+            assumptions?: string[];
+            /** Status */
+            status: string;
+            /**
+             * Total Count
+             * @default 0
+             */
+            total_count: number;
+            /**
+             * Eligible Count
+             * @default 0
+             */
+            eligible_count: number;
+            /**
+             * Covered Count
+             * @default 0
+             */
+            covered_count: number;
+            /**
+             * Duplicate Count
+             * @default 0
+             */
+            duplicate_count: number;
+            /**
+             * Invalid Count
+             * @default 0
+             */
+            invalid_count: number;
+            /**
+             * Failed Count
+             * @default 0
+             */
+            failed_count: number;
+            /**
+             * Total Capacity Kw
+             * @default 0
+             */
+            total_capacity_kw: number;
+            /**
+             * Covered Capacity Kw
+             * @default 0
+             */
+            covered_capacity_kw: number;
+            /**
+             * Solar Kwh
+             * @default 0
+             */
+            solar_kwh: number;
+            /**
+             * Wind Kwh
+             * @default 0
+             */
+            wind_kwh: number;
+            /** Regions */
+            regions?: components["schemas"]["RegionPrediction"][];
+            /** Message */
+            message?: string | null;
+        };
+        /** GenerationPrediction */
+        GenerationPrediction: {
+            /** Model */
+            model: string;
+            /** Date */
+            date: string;
+            /**
+             * Timezone
+             * @default Asia/Shanghai
+             */
+            timezone: string;
+            /** Generated At */
+            generated_at: string;
+            /** Energy Kwh */
+            energy_kwh: number | null;
+            /** Power Kw */
+            power_kw: components["schemas"]["PowerPoint"][];
+            /** Assumptions */
+            assumptions?: string[];
+        };
         /** GeoPlace */
         GeoPlace: {
             /** Name */
@@ -722,6 +840,7 @@ export interface components {
         };
         /** HomeResponse */
         HomeResponse: {
+            prediction?: components["schemas"]["GenerationPrediction"] | null;
             /** Has Station */
             has_station: boolean;
             station: components["schemas"]["StationSummary"] | null;
@@ -886,6 +1005,13 @@ export interface components {
              */
             delta_percent: number | null;
         };
+        /** PowerPoint */
+        PowerPoint: {
+            /** Time */
+            time: string;
+            /** Value */
+            value: number | null;
+        };
         /** PublicStationListResponse */
         PublicStationListResponse: {
             /** Stations */
@@ -903,6 +1029,15 @@ export interface components {
              * @description 目录中可筛选的省级地区
              */
             regions: string[];
+        };
+        /** RegionPrediction */
+        RegionPrediction: {
+            /** Province */
+            province: string;
+            /** Energy Kwh */
+            energy_kwh: number;
+            /** Covered Count */
+            covered_count: number;
         };
         /** ReportPeriodOut */
         ReportPeriodOut: {
@@ -1599,6 +1734,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_MapOverviewResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fleet_prediction_v1_predictions_fleet_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_FleetPrediction_"];
                 };
             };
             /** @description Validation Error */

@@ -244,6 +244,19 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
     )
+
+    async def prepare_fleet():
+        from app.services import fleet_prediction
+
+        await fleet_prediction.ensure(app.state.http, "best_match")
+
+    sched.add_job(
+        prepare_fleet,
+        CronTrigger(hour="0,12", minute=15),
+        id="fleet_prediction",
+        max_instances=1,
+        coalesce=True,
+    )
     sched.start()
     log.info("scheduler started: %s", [j.id for j in sched.get_jobs()])
     return sched

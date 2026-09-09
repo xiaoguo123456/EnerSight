@@ -54,6 +54,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if sched:
             sched.shutdown(wait=False)
+        from app.services import fleet_prediction
+
+        await fleet_prediction.shutdown()
         await app.state.http.aclose()
 
 

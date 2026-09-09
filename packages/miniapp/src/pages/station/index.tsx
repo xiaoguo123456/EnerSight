@@ -1,5 +1,5 @@
 import { View, Text, Input, Picker, ScrollView, Button } from '@tarojs/components'
-import Taro, { useReachBottom } from '@tarojs/taro'
+import Taro, { useReachBottom, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import { formatPower } from '@enersight/core/format'
 import type { StationSummary, StationType } from '@enersight/core/types'
@@ -21,6 +21,7 @@ function regionLabel(address: string | null) {
 
 export default function Stations() {
   const [keyword, setKeyword] = useState('')
+  useDidShow(() => { const province = Taro.getStorageSync('enersight_prediction_province'); if (province) { Taro.removeStorageSync('enersight_prediction_province'); setKeyword(''); setQuery({ ...INITIAL, province }) } })
   const [query, setQuery] = useState<Filter>(INITIAL)
   const [retry, setRetry] = useState(0)
   const [result, setResult] = useState({ items: [] as StationSummary[], total: 0, hasMore: false, regions: [] as string[], loading: true, error: false })

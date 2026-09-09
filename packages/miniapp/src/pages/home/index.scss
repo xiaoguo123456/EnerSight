@@ -30,3 +30,26 @@
 
 .home .station-title { position: sticky; top: 0; z-index: 10; }
 .home__detail-link { font-size: 13px; color: #1264d6; min-height: 36px; display: flex; align-items: center; }
+.forecast-toolbar,.forecast-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.forecast-model { min-height:44px; display:flex; align-items:center; gap:6px; color:#1264d6; font-size:14px; }
+.forecast-title { font-size:15px; font-weight:600; color:#233146; }
+.forecast-muted { display:block; color:#617084; font-size:12px; line-height:1.6; }
+.forecast-note { display:block; color:#526174; font-size:12px; line-height:1.7; }
+.forecast-help { min-height:40px; display:flex; align-items:center; color:#617084; font-size:12px; }
+.forecast-value { display:flex; align-items:baseline; gap:8px; margin:5px 0 6px; font-size:34px; font-weight:650; color:#192b40; font-variant-numeric:tabular-nums; }
+.forecast-value__unit { font-size:15px; font-weight:400; color:#617084; }
+.forecast-meta { padding:14px 0; color:#53667d; font-size:12px; border-bottom:1px solid #eef2f6; }
+.forecast-curve { padding-top:18px; }
+.forecast-curve .forecast-muted { margin-top:5px; }
+.forecast-warning { display:block; color:#98521a; font-size:12px; line-height:1.7; margin-top:8px; }
+.forecast-split { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding:18px 0; border-bottom:1px solid #eef2f6; font-size:17px; font-weight:550; }
+.forecast-coverage { padding:18px 0 12px; font-size:13px; }
+.forecast-progress { height:4px; margin:10px 0; border-radius:4px; background:#e7edf5; overflow:hidden; }
+.forecast-progress > view { height:100%; background:#1677ff; }
+.forecast-region { display:flex; justify-content:space-between; gap:10px; min-height:48px; align-items:center; border-bottom:1px solid #eef2f6; font-size:13px; color:#33465e; }
+.forecast-more { text-align:center; padding:15px 0 2px; color:#1264d6; font-size:13px; }
+.fleet-short { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 14px; background:#eef4fb; border-radius:12px; }
+.fleet-short .forecast-title { font-size:13px; }
+.fleet-short__value { flex-shrink:0; font-size:15px; color:#1264d6; font-weight:600; }
+.forecast-footer { display:flex; justify-content:space-between; gap:12px; padding:6px 0; font-size:11px; color:#617084; }
+.forecast-footer > text:first-child { color:#1264d6; }

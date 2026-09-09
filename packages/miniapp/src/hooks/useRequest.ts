@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDidShow } from '@tarojs/taro'
+import { useWeatherModel } from '@/store/weatherModel'
 import { ApiError } from '@enersight/core/api'
 
 export type RequestState<T> =
@@ -9,6 +10,7 @@ export type RequestState<T> =
 
 /** 切换查询时清空旧结果；刷新失败保留已成功的数据，并明确暴露失败状态。 */
 export function useRequest<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
+  const model = useWeatherModel(s => s.model)
   const [state, setState] = useState<RequestState<T>>({ status: 'loading', data: null, error: null })
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<ApiError | null>(null)
@@ -29,7 +31,7 @@ export function useRequest<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
       setState((s) => preserve && s.status === 'success' ? s : { status: 'error', data: null, error })
     } finally { if (id === seq.current) setRefreshing(false) }
     // 查询参数由调用方声明。
-  }, deps)
+  }, [...deps, model])
   const reload = useCallback(() => run(true), [run])
   useEffect(() => { void run(); return () => { ++seq.current } }, [run])
   useDidShow(() => { if (checked.current && Date.now() - checked.current > 60_000) void reload() })

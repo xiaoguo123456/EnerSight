@@ -8,6 +8,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from app.schemas.common import AlertLevel, EnergyIndex, MetricWithDelta
+from app.schemas.prediction import GenerationPrediction
 from app.schemas.station import StationSummary
 
 
@@ -58,6 +59,7 @@ class AlertSummary(BaseModel):
 
 
 class HomeResponse(BaseModel):
+    prediction: GenerationPrediction | None = None
     has_station: bool
     station: StationSummary | None
     index: EnergyIndex | None

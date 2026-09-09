@@ -17,6 +17,7 @@ from app.schemas.home import (
     TrendRange,
     TrendSeries,
 )
+from app.schemas.prediction import FleetPrediction
 from app.services import home as svc
 from app.services import weather
 from app.services.station import get_station
@@ -101,3 +102,11 @@ async def get_map_overview(
         ),
         coord,
     )
+
+
+@router.get("/predictions/fleet", response_model=Envelope[FleetPrediction])
+async def fleet_prediction(request: Request, user: CurrentUserDep, coord: CoordQuery = Coord.WGS84):
+    from app.services import fleet_prediction as fleet
+    from app.weather_model import current_model
+
+    return envelope(await fleet.ensure(request.app.state.http, current_model.get()), coord)

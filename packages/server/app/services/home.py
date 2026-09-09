@@ -183,7 +183,11 @@ async def build_home(
     if current_model.get() == "best_match":
         await alerts.scan_station(db, station, v.forecast)
     await db.commit()
+    from app.services import prediction
+
+    forecast_prediction = await asyncio.to_thread(prediction.compute, station, v.forecast)
     return HomeResponse(
+        prediction=forecast_prediction,
         has_station=True,
         station=v.summary,
         index=v.index,

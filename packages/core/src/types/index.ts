@@ -73,3 +73,5 @@ export type PublicStationListResponse = S['PublicStationListResponse']
 
 export type WindVector = S['WindVector']
 export type SatelliteHistoryResponse = S['SatelliteHistoryResponse']
+export type GenerationPrediction = S['GenerationPrediction']
+export type FleetPrediction = S['FleetPrediction']

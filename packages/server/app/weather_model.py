@@ -11,14 +11,16 @@ current_model: ContextVar[str] = ContextVar("weather_model", default="best_match
 def supports_selection(path: str) -> bool:
     path = "/v1/" + path.split("/v1/", 1)[-1]
     return (
-        path in {"/v1/home", "/v1/trends", "/v1/map/overview"}
+        path in {"/v1/home", "/v1/trends", "/v1/map/overview", "/v1/predictions/fleet"}
         or path.startswith("/v1/map/layers/")
         or (path.startswith("/v1/stations/") and path.endswith("/detail"))
     )
 
 
 async def middleware(request, call_next):
-    selected = request.headers.get("X-Weather-Model", "best_match")
+    selected = request.query_params.get("weather_model") or request.headers.get(
+        "X-Weather-Model", "best_match"
+    )
     if selected not in MODELS:
         return JSONResponse(
             status_code=400,

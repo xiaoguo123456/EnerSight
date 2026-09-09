@@ -1,6 +1,7 @@
 import Taro from '@tarojs/taro'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { LayerResponse, LayerType } from '@enersight/core/types'
+import { useWeatherModel } from '@/store/weatherModel'
 import { clientLog } from '@/api/debug'
 import { layersApi } from '@/api/layers'
 import { projectLayerImage } from '@enersight/core/map'
@@ -10,6 +11,7 @@ type Preview = { id: number; images: { url: string; style: Record<string, string
 
 /** 原生端贴图；模拟器按地图视野投影预览图片，加载完成才显示图例。 */
 export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean) {
+  const model = useWeatherModel(s => s.model)
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
   const [observedAt, setObservedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -117,7 +119,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     } catch (e) {
       fail(mine, String((e as any)?.errMsg ?? (e as Error)?.message ?? '图层加载失败'))
     }
-  }, [mapId, layer, active, isPreview, clear, fail, finish])
+  }, [mapId, layer, active, isPreview, clear, fail, finish, model])
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   useEffect(() => { void refresh(); return invalidate }, [refresh, invalidate])
