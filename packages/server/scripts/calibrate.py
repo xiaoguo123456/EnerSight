@@ -34,7 +34,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings  # noqa: E402
 from app.metrics import wind  # noqa: E402
-from app.metrics.index import PvInputs, pv_index, wind_index  # noqa: E402
+from app.metrics.index import pv_index, wind_index  # noqa: E402
+from app.models import Station  # noqa: E402
+from app.services import energy, weather  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "calibration"
@@ -147,53 +149,68 @@ def fetch_pvgis(http: httpx.Client, site: Site) -> dict | None:
 # ────────────────────────────── 模型 ──────────────────────────────
 
 
+def _station(site: Site, kind: str) -> Station:
+    """校准用的临时站点，不入库。参数与线上默认值一致。"""
+    return Station(
+        id=f"calib-{site.key}",
+        owner_id="calib",
+        name=site.name,
+        type=kind,
+        latitude=site.lat,
+        longitude=site.lon,
+        capacity_kw=PV_CAPACITY_KW if kind == "solar" else WIND_CAPACITY_KW,
+        tilt=None,
+        azimuth=None,
+        hub_height=None,
+    )
+
+
 def run_pv_days(site: Site, df: pd.DataFrame) -> pd.DataFrame:
+    """逐日跑指数。缺测处理走线上的 services.energy.prepare，脚本不再自己 fillna(0) ——
+    校准结论要能代表线上行为，两套预处理会让分布对不上（把缺测当 0 会多出一批低分日）。"""
+    fc = weather.Forecast(tz=TZ, hourly=df)
+    station = _station(site, "solar")
     rows = []
     for day, chunk in df.groupby(df.index.date):
         if len(chunk) < 24:
             continue
-        inp = PvInputs(
-            latitude=site.lat,
-            longitude=site.lon,
-            tz=TZ,
-            capacity_kw=PV_CAPACITY_KW,
-            tilt=abs(site.lat),
-            azimuth=180.0,
-            times=pd.DatetimeIndex(chunk.index),
-            ghi=chunk["shortwave_radiation"].fillna(0.0),
-            dni=chunk["direct_normal_irradiance"].fillna(0.0),
-            dhi=chunk["diffuse_radiation"].fillna(0.0),
-            temp_air=chunk["temperature_2m"].ffill().bfill(),
-            wind_speed=chunk["wind_speed_10m"].fillna(0.0),
-        )
-        r = pv_index(inp)
+        prep = energy.prepare(station, fc, day=day)
+        if not prep.complete:  # 线上这一天是「数据获取中」，不该算进分布
+            continue
+        r = pv_index(energy.pv_inputs(station, prep.frame, TZ))
         rows.append(
             {
                 "date": pd.Timestamp(day),
                 "score": r.score,
                 "actual_kwh": r.actual_kwh,
                 "ideal_kwh": r.ideal_kwh,
-                "ghi_sum": float(chunk["shortwave_radiation"].sum()),
+                "estimated": prep.estimated,
+                "ghi_sum": float(prep.frame["shortwave_radiation"].sum()),
                 "cloud_mean": float(chunk["cloud_cover"].mean()),
                 "precip": float(chunk["precipitation"].sum()),
-                "temp_mean": float(chunk["temperature_2m"].mean()),
+                "temp_mean": float(prep.frame["temperature_2m"].mean()),
             }
         )
     return pd.DataFrame(rows).set_index("date")
 
 
-def run_wind_days(df: pd.DataFrame, alpha: float) -> pd.DataFrame:
-    """本模型：10 m / 100 m 两层对数廓线插值到轮毂 + 场站损耗（与线上一致）；
-    旧方法：10 m 按固定 α 幂律外推、无损耗，作对照。"""
+def run_wind_days(site: Site, df: pd.DataFrame, alpha: float) -> pd.DataFrame:
+    """本模型：各层对数廓线插值到轮毂 + 场站损耗，缺测处理同样走 energy.prepare；
+    旧方法：10 m 按固定 α 幂律外推、无损耗，作对照。
+
+    ERA5 只有 10 m / 100 m 两层，线上是 10/80/100/120 m，插值逻辑相同。"""
+    fc = weather.Forecast(tz=TZ, hourly=df)
+    station = _station(site, "wind")
     hub = wind.default_hub_height()
     rows = []
     for day, chunk in df.groupby(df.index.date):
         if len(chunk) < 24:
             continue
-        v10 = chunk["wind_speed_10m"].fillna(0.0)
-        v100 = chunk["wind_speed_100m"].fillna(0.0)
-        v_hub, _ = wind.hub_wind_speed({10.0: v10, 100.0: v100}, hub)
-        daily = float(wind.plant_power(v_hub, WIND_CAPACITY_KW).sum())
+        prep = energy.prepare(station, fc, day=day)
+        if not prep.complete or prep.v_hub is None:
+            continue
+        daily = float(wind.plant_power(prep.v_hub, WIND_CAPACITY_KW).sum())
+        v10 = prep.frame["wind_speed_10m"].astype(float)
         v_old = v10 * (hub / 10.0) ** alpha
         daily_old = float(wind.power_curve(v_old, WIND_CAPACITY_KW).sum())
         rows.append(
@@ -203,6 +220,7 @@ def run_wind_days(df: pd.DataFrame, alpha: float) -> pd.DataFrame:
                 "score_old": wind_index(daily_old, WIND_CAPACITY_KW).score,
                 "daily_kwh": daily,
                 "daily_kwh_old": daily_old,
+                "estimated": prep.estimated,
                 "v10_mean": float(v10.mean()),
                 "v100_mean": float(chunk["wind_speed_100m"].mean()),
             }
@@ -322,7 +340,7 @@ def main() -> int:
     alpha_fit = fit_shear_alpha(list(wind_raw.values()))
     print(f"\n幂律指数：拟合 α = {alpha_fit:.3f}，本轮使用 α = {alpha_used}")
     for site in WIND_SITES:
-        wd = run_wind_days(wind_raw[site.key], alpha_used)
+        wd = run_wind_days(site, wind_raw[site.key], alpha_used)
         wd["level"] = classify_with(wd["score"], th)
         all_wind[site.key] = wd
         cf_year = float(wd["daily_kwh"].sum()) / (WIND_CAPACITY_KW * 24 * len(wd))
@@ -352,6 +370,8 @@ def main() -> int:
         f"风电 {WIND_CAPACITY_KW:.0f} kW，轮毂 {hub:.0f} m（10 m / 100 m 对数廓线插值），"
         f"场站损耗 {settings.wind_losses:.0%}，切入/额定/切出 "
         f"{settings.wind_v_in}/{settings.wind_v_rated}/{settings.wind_v_out} m/s。\n",
+        "缺测处理复用线上的 `services.energy.prepare`：短缺口插值、长缺口判不可算，"
+        "不可算的日子不计入分布。\n",
         "方法与判据见 [07 §八](../07-metrics.md)。脚本 `packages/server/scripts/calibrate.py`，"
         "改参数后重跑即可复现。\n",
         "## 1. 发电量准确度（光伏）\n",

@@ -40,6 +40,14 @@ def _pv_inputs(times: pd.DatetimeIndex, *, cloudy: float = 1.0, temp: float = 25
 
 
 class TestDaylight:
+    def test_返回的是所问那一天(self):
+        """pvlib 按 UTC 日期取日序，东八区的当地 00:00 还落在前一个 UTC 日 ——
+        直接传当地零点会整体算成前一天的日出日落。"""
+        for day in (date(2026, 9, 9), date(2026, 1, 1), date(2026, 6, 21)):
+            rise, set_ = solar.daylight_window(LAT, LON, TZ, day)
+            assert rise.date() == day and set_.date() == day
+            assert rise < set_
+
     def test_夏至日照长于冬至(self):
         _, summer_set = solar.daylight_window(LAT, LON, TZ, date(2026, 6, 21))
         summer_rise, _ = solar.daylight_window(LAT, LON, TZ, date(2026, 6, 21))
@@ -181,6 +189,23 @@ class TestHubWind:
         v, fb = wind.hub_wind_speed(self._levels(5.0, nan, nan, nan), 100.0)
         assert v.iloc[0] == pytest.approx(wind.extrapolate_wind(pd.Series([5.0]), 100.0).iloc[0])
         assert fb.iloc[0]
+
+    def test_轮毂低于最低有效层时向下外推而不是钳制(self):
+        """10 m 缺测、轮毂 50 m：np.interp 会直接返回 80 m 的风速，系统性高估"""
+        nan = float("nan")
+        levels = self._levels(nan, 8.0, 10.0, 11.0)
+        v, _ = wind.hub_wind_speed(levels, 50.0)
+        assert 0.0 <= v.iloc[0] < 8.0
+        # 仍在同一条对数廓线上：50 m 与 80 m 的差应与 80 m 到 100 m 的斜率一致
+        import math
+
+        slope = (10.0 - 8.0) / (math.log(100.0) - math.log(80.0))
+        assert v.iloc[0] == pytest.approx(8.0 + slope * (math.log(50.0) - math.log(80.0)))
+
+    def test_向下外推不为负(self):
+        nan = float("nan")
+        v, _ = wind.hub_wind_speed(self._levels(nan, 1.0, 9.0, 10.0), 12.0)
+        assert v.iloc[0] == 0.0
 
     def test_全部缺测为NaN(self):
         nan = float("nan")

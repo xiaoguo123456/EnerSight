@@ -31,15 +31,14 @@ def _delta(now: float | None, yesterday: float | None) -> float | None:
 
 async def _summary(db: AsyncSession, station: Station, today_kwh: float, day: date) -> dict:
     """数据摘要四项，均带昨日环比。算出来的，不经过模型。docs/08 §4.1"""
+    # 严格取昨日。拿「最近一条更早记录」冒充昨日会把「较昨日」说成较三天前；
+    # 昨日缺记录时按 docs/07 §3.3 隐藏环比。
     y = (
         await db.execute(
-            select(DailyGeneration.kwh)
-            .where(
+            select(DailyGeneration.kwh).where(
                 DailyGeneration.station_id == station.id,
-                DailyGeneration.day < day,
+                DailyGeneration.day == day - timedelta(days=1),
             )
-            .order_by(DailyGeneration.day.desc())
-            .limit(1)
         )
     ).scalar()
     cap = station.capacity_kw or 1.0

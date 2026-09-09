@@ -10,6 +10,7 @@
 """
 
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,15 @@ import pandas as pd
 from app.metrics import pv, solar, wind
 from app.metrics.index import IndexResult, PvInputs, pv_index, wind_index
 from app.models import Station
+from app.schemas.common import IndexLevel
 from app.services.weather import Forecast
+
+_SUMMARY = {
+    IndexLevel.EXCELLENT: "今日发电条件优秀",
+    IndexLevel.GOOD: "今日适宜发电",
+    IndexLevel.FAIR: "今日发电条件一般",
+    IndexLevel.POOR: "今日发电条件较差，建议关注",
+}
 
 RADIATION_COLUMNS = ["shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation"]
 # 主要因子只补短缺口：辐射 2 小时、风速 3 小时；再长就是不可算，不用昨日冒充
@@ -51,9 +60,35 @@ class EnergySnapshot:
     )
 
 
+def _hours_for(fc: Forecast, day: date) -> pd.DatetimeIndex:
+    """某一天的 24 个逐时标签（区间末标注）。"""
+    return pd.date_range(pd.Timestamp(day, tz=fc.tz), periods=24, freq="h")
+
+
 def _day_hours(fc: Forecast, day_offset: int) -> pd.DatetimeIndex:
     day = fc.current_hour().normalize() + pd.Timedelta(days=day_offset)
     return pd.date_range(day, periods=24, freq="h")
+
+
+def current_label(fc: Forecast, station_type: str) -> pd.Timestamp:
+    """当前出力对应的逐时标签。
+
+    光伏出力由小时均值辐射算出，取包含当前时刻的区间末标签；
+    风电出力由瞬时风速算出，取当前整点。两者口径不同，不能统一。
+    """
+    return fc.current_interval() if station_type == "solar" else fc.current_hour()
+
+
+def _at_label(hourly_kw: pd.Series, label: pd.Timestamp) -> float | None:
+    """按标签取值。23:00–24:00 的区间末标签落在次日 00:00（今日帧外），
+    退到当日最后一个区间 —— 那一小时光伏出力必为 0，不该显示成缺测。"""
+    if label in hourly_kw.index:
+        v = float(hourly_kw.loc[label])
+    elif len(hourly_kw) and label > hourly_kw.index[-1]:
+        v = float(hourly_kw.iloc[-1])
+    else:
+        return None
+    return None if not np.isfinite(v) else v
 
 
 def _interp_short_gaps(s: pd.Series, limit_hours: int) -> pd.Series:
@@ -86,9 +121,11 @@ def _fill_from_forecast(
     return filled, bool(filled.notna().to_numpy()[missing.to_numpy()].any())
 
 
-def prepare(station: Station, fc: Forecast, *, day_offset: int = 0) -> Prepared:
-    """day_offset=1 为明日（留档用）。"""
-    hours = _day_hours(fc, day_offset)
+def prepare(
+    station: Station, fc: Forecast, *, day_offset: int = 0, day: date | None = None
+) -> Prepared:
+    """day_offset=1 为明日（留档用）；day 直接指定日期，供历史校准复用同一套缺测处理。"""
+    hours = _hours_for(fc, day) if day is not None else _day_hours(fc, day_offset)
     frame = fc.hourly.loc[hours[0] : hours[-1]].reindex(hours).copy()
     estimated = False
 
@@ -186,7 +223,6 @@ def hourly_power(station: Station, prep: Prepared, tz: str) -> pd.Series:
 def compute(station: Station, fc: Forecast) -> EnergySnapshot:
     """同步、CPU 密集。"""
     prep = prepare(station, fc)
-    now_ts = fc.current_hour()
     if not prep.complete:
         return EnergySnapshot(
             index=None,
@@ -205,7 +241,7 @@ def compute(station: Station, fc: Forecast) -> EnergySnapshot:
         hourly_kw = _hourly(station, prep, fc.tz)
         result = wind_index(float(hourly_kw.sum()), station.capacity_kw)
 
-    current = float(hourly_kw.loc[now_ts]) if now_ts in hourly_kw.index else None
+    current = _at_label(hourly_kw, current_label(fc, station.type))
     return EnergySnapshot(
         index=result,
         daily_kwh=result.actual_kwh,
@@ -220,15 +256,8 @@ def summary_text(result: IndexResult | None, station_type: str) -> str:
     """规则模板的一句话结论。AI 接入前的兜底，接入后也是降级路径。docs/08 §六"""
     if result is None:
         return "气象数据获取中，指数暂不可算"
-    s = result.score
-    if s >= 85:
-        base = "今日发电条件优秀"
-    elif s >= 70:
-        base = "今日适宜发电"
-    elif s >= 55:
-        base = "今日发电条件一般"
-    else:
-        base = "今日发电条件较差，建议关注"
+    # 文案跟着 classify 的分档走，不另写一套阈值 —— 否则改配置会出现「82 分 · 条件较差」
+    base = _SUMMARY[result.level]
 
     if station_type == "solar":
         rad = next((a for a in result.attribution if a.factor.value == "radiation"), None)

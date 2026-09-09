@@ -82,3 +82,29 @@ class TestReplay:
             await archive.archive_frame(None, t, "visible", BBOX)
         st = replay.evaluate(times, "visible", BBOX, LAT, LON, svc.CLOUD_THRESHOLD["visible"])
         assert st.predictions == 0 and st.misses == 0 and st.false_alarms == 0
+
+
+class TestBackfill:
+    def test_回补最近若干帧(self):
+        times = [utc(3, 0) + timedelta(minutes=10 * i) for i in range(10)]
+        assert archive.backfill_frames(times, 3) == times[-3:]
+        assert archive.backfill_frames(times, 0) == times[-1:]  # 至少一帧
+        assert archive.backfill_frames(times[:2], 6) == times[:2]
+        assert archive.backfill_frames([], 6) == []
+
+    async def test_最新帧未就绪时上一帧仍被归档(self, monkeypatch):
+        """JMA 的时刻列表先于瓦片更新：只归档 latest 会把这一帧永久漏掉"""
+        prev, latest = utc(3, 0), utc(3, 10)
+        FakeSky().add(prev, [(LON + 0.5, LAT + 0.5, 0.3)]).add(latest, missing=True).install(
+            monkeypatch
+        )
+        times = await himawari.available_times(None)
+        written = 0
+        for when in archive.backfill_frames(times, 2):
+            try:
+                written += await archive.archive_frame(None, when, "visible", BBOX)
+            except himawari.UpstreamUnavailable:
+                continue
+        assert written > 0
+        assert archive.load_mosaic(prev, "visible", BBOX) is not None
+        assert archive.load_mosaic(latest, "visible", BBOX) is None

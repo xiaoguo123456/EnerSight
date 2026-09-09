@@ -16,6 +16,24 @@ from app.services.weather_text import describe
 PERIODS = [("morning", "上午", 6, 12), ("afternoon", "下午", 12, 18), ("evening", "晚间", 18, 24)]
 
 
+def _mode(series: pd.Series) -> float | None:
+    """众数。全缺测时 mode() 返回空 Series，直接取 iloc[0] 会抛 IndexError。"""
+    m = series.dropna().mode()
+    return float(m.iloc[0]) if not m.empty else None
+
+
+def _mean(series: pd.Series) -> float | None:
+    """均值。全缺测返回 None，不用 0 冒充 —— 0 会被当成真实读数写进报告与数值校验集。"""
+    if series.empty:
+        return None
+    v = float(series.mean())
+    return None if pd.isna(v) else v
+
+
+def _fmt(value: float | None, unit: str) -> str:
+    return "—" if value is None else f"{value:.0f}{unit}"
+
+
 @dataclass
 class ReportInput:
     station_name: str
@@ -45,7 +63,7 @@ class ReportInput:
         for p in self.periods:
             lines.append(
                 f"  {p['label']} {p['range']}  {p['weather']}  "
-                f"平均辐射 {p['avg_radiation']:.0f} W/m²  云量 {p['avg_cloud']:.0f}%"
+                f"平均辐射 {_fmt(p['avg_radiation'], ' W/m²')}  云量 {_fmt(p['avg_cloud'], '%')}"
             )
         lines += [
             "",
@@ -87,19 +105,24 @@ def build_input(
     alert: AlertSummary | None,
     capacity_note: str | None = None,
 ) -> ReportInput:
-    today = fc.today()
+    day = fc.current_hour().normalize()
     periods = []
     for key, label, h0, h1 in PERIODS:
-        seg = today[(today.index.hour >= h0) & (today.index.hour < h1)]
-        code = seg["weather_code"].mode().iloc[0] if not seg.empty else None
+        # 瞬时量（weather_code、云量）标注时刻即观测时刻：[h0, h1) 取整点 h0 … h1-1
+        inst = fc.hourly.loc[day + pd.Timedelta(hours=h0) : day + pd.Timedelta(hours=h1 - 1)]
+        # 区间均值量（辐射）标在区间末：同一段墙钟时间对应标签 h0+1 … h1
+        mean_seg = fc.hourly.loc[day + pd.Timedelta(hours=h0 + 1) : day + pd.Timedelta(hours=h1)]
+        code = _mode(inst["weather_code"]) if "weather_code" in inst else None
         periods.append(
             {
                 "key": key,
                 "label": label,
                 "range": f"{h0:02d}:00–{h1:02d}:00",
-                "weather": describe(int(code)) if code is not None and not pd.isna(code) else "—",
-                "avg_radiation": float(seg["shortwave_radiation"].mean()) if not seg.empty else 0.0,
-                "avg_cloud": float(seg["cloud_cover"].mean()) if not seg.empty else 0.0,
+                "weather": describe(int(code)) if code is not None else "—",
+                "avg_radiation": _mean(mean_seg["shortwave_radiation"])
+                if "shortwave_radiation" in mean_seg
+                else None,
+                "avg_cloud": _mean(inst["cloud_cover"]) if "cloud_cover" in inst else None,
             }
         )
 

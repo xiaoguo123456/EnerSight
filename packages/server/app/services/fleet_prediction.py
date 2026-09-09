@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 from sqlalchemy import select
 
+from app.config import settings
 from app.db import SessionLocal
 from app.metrics import wind
 from app.models import CatalogPlant, Station
@@ -70,7 +71,8 @@ def blank(model: str, day: str) -> FleetPrediction:
         status="queued",
         assumptions=[
             "区域近似：1°气象网格，按场站容量与能源类型估算",
-            "已区分分期交直流容量，容配比假设 1.2、系统损耗 14%（含逆变器）并按交流容量限幅；"
+            f"已区分分期交直流容量，容配比假设 {settings.pv_dc_ac_ratio:g}、"
+            f"系统损耗 {settings.pv_losses:.0%}（含逆变器）并按交流容量限幅；"
             "未知容量类型不计入预测",
             "采用默认设备参数，未计入限电、检修及故障影响",
             "统一北京时间；仅汇总平台运营目录，非全国实测电量",
@@ -212,8 +214,6 @@ async def build(http, model: str, day: str, plants) -> None:
         missing = [k for k in batch if f"{k[0]},{k[1]}" not in raw_cache]
         if missing:
             try:
-                from app.config import settings
-
                 r = await http.get(
                     f"{settings.open_meteo_base}/forecast",
                     params={
@@ -273,9 +273,12 @@ async def build(http, model: str, day: str, plants) -> None:
             break
         await asyncio.sleep(0.4)
     out.failed_count = out.eligible_count - out.covered_count
+    # 「算完了」与「覆盖了整个目录」是两件事。重复、字段非法、容量口径未核验的场站
+    # 被主动排除，永远不会进入 covered，拿 total_count 判断会让状态永远停在 partial。
+    # 覆盖程度由 covered_count / total_count 与 covered_capacity_kw / total_capacity_kw 表达。
     out.status = (
         "ready"
-        if out.covered_count == out.total_count
+        if out.eligible_count and not out.failed_count
         else "partial"
         if out.covered_count
         else "error"
@@ -305,14 +308,8 @@ async def ensure(http, model: str) -> FleetPrediction:
             datetime.now(UTC).timestamp()
             - datetime.fromisoformat(saved["generated_at"]).timestamp()
         )
-        if (
-            (
-                saved["status"] == "ready"
-                or (saved["status"] == "partial" and not saved.get("failed_count"))
-            )
-            and age < 43200
-            or saved["status"] in ("partial", "error")
-            and age < 1800
+        if (saved["status"] == "ready" and age < 43200) or (
+            saved["status"] in ("partial", "error") and age < 1800
         ):
             return FleetPrediction.model_validate(saved)
     initial = blank(model, day)

@@ -30,8 +30,21 @@ class Forecast:
         return datetime.now(ZoneInfo(self.tz))
 
     def current_hour(self) -> pd.Timestamp:
-        """当前所在的整点"""
+        """瞬时量的当前标签。
+
+        气温、湿度、风速、云量、weather_code 标注时刻即观测时刻，取已过去的整点。
+        """
         return pd.Timestamp(self.now()).floor("h")
+
+    def current_interval(self) -> pd.Timestamp:
+        """区间均值量的当前标签：包含当前时刻的那一小时区间。
+
+        辐射（以及由辐射推出的光伏出力、晴空指数）是前一小时均值标在区间末，
+        13:00 的值覆盖 12:00–13:00。用 floor 取会拿到已经过去的那一小时 ——
+        日出后一小时内低估、日落后一小时内高估，早晚各差几倍。
+        整点时刻 floor 与 ceil 相同，取到的是刚结束的完整区间。
+        """
+        return pd.Timestamp(self.now()).ceil("h")
 
     def today(self) -> pd.DataFrame:
         """今日 00:00 – 23:00，24 点"""

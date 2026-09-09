@@ -9,6 +9,7 @@ from app.ai import generate as ai
 from app.ai.input import ReportInput, extract_numbers
 from app.ai.schema import AIReport, ReportPeriod
 from app.config import settings
+from app.main import app
 from app.services import weather
 from tests.fixtures_forecast import TZ, make_forecast
 
@@ -228,3 +229,130 @@ class TestReferenceWording:
         assert "次日请查看新预报" in report.periods[2].generation_impact
         assert "满负荷" not in " ".join(report.suggestions)
         assert "不代表设备健康" in report.verdict_detail
+
+
+def _fc(**kw):
+    return weather.parse_forecast(make_forecast(start_date=_yesterday_midnight(), **kw))
+
+
+def _station_model():
+    from app.models import Station
+
+    return Station(
+        id="s1",
+        owner_id="u",
+        name="苏州光伏站",
+        type="solar",
+        latitude=31.3,
+        longitude=120.62,
+        capacity_kw=500,
+    )
+
+
+def _index():
+    from app.metrics.index import IndexResult
+    from app.schemas.common import IndexLevel
+
+    return IndexResult(
+        score=80.0, level=IndexLevel.GOOD, actual_kwh=1000.0, ideal_kwh=1250.0, attribution=[]
+    )
+
+
+class TestReportInput:
+    def test_天气码全缺测不崩也不写出nan(self):
+        """mode() 在全缺测时是空 Series，直接取 iloc[0] 会抛 IndexError，整份报告生不出来"""
+        from app.ai.input import build_input
+
+        fc = _fc()
+        for col in ("weather_code", "shortwave_radiation", "cloud_cover"):
+            fc.hourly[col] = float("nan")
+        inp = build_input(_station_model(), fc, _index(), 1000.0, None)
+        assert [p["weather"] for p in inp.periods] == ["—"] * 3
+        assert all(p["avg_radiation"] is None and p["avg_cloud"] is None for p in inp.periods)
+        assert "nan" not in inp.render().lower()
+
+    def test_缺测时规则模板照样出报告(self):
+        from app.ai.input import build_input
+        from app.ai.rule_provider import render
+
+        fc = _fc()
+        for col in ("weather_code", "shortwave_radiation", "cloud_cover"):
+            fc.hourly[col] = float("nan")
+        report = render(build_input(_station_model(), fc, _index(), 1000.0, None))
+        assert len(report.periods) == 3
+
+    def test_分时段辐射按区间末标签(self):
+        """上午 06:00–12:00 的辐射是区间均值，对应标签 07:00 … 12:00；
+        按整点 06 … 11 取会把最亮的一小时漏掉、把天亮前那格算进来。"""
+        import pandas as pd
+
+        from app.ai.input import build_input
+
+        fc = _fc()
+        inp = build_input(_station_model(), fc, _index(), 1000.0, None)
+        day = fc.current_hour().normalize()
+        rad = fc.hourly["shortwave_radiation"]
+
+        def mean(h0, h1):
+            return float(
+                rad.loc[day + pd.Timedelta(hours=h0) : day + pd.Timedelta(hours=h1)].mean()
+            )
+
+        assert inp.periods[0]["avg_radiation"] == pytest.approx(mean(7, 12))
+        assert inp.periods[0]["avg_radiation"] != pytest.approx(mean(6, 11))
+
+    def test_云量仍按瞬时整点(self):
+        import pandas as pd
+
+        from app.ai.input import build_input
+
+        fc = _fc()
+        day = (
+            weather.parse_forecast(make_forecast(start_date=_yesterday_midnight()))
+            .current_hour()
+            .normalize()
+        )
+        fc.hourly["cloud_cover"] = range(len(fc.hourly))
+        inp = build_input(_station_model(), fc, _index(), 1000.0, None)
+        expect = float(
+            fc.hourly["cloud_cover"]
+            .loc[day + pd.Timedelta(hours=6) : day + pd.Timedelta(hours=11)]
+            .mean()
+        )
+        assert inp.periods[0]["avg_cloud"] == pytest.approx(expect)
+
+
+class TestSummaryDelta:
+    async def _insert(self, client, sid, days_ago: int, kwh: float):
+        from datetime import date
+
+        from app.db import get_session
+        from app.models import DailyGeneration
+
+        gen = app.dependency_overrides[get_session]()
+        db = await gen.__anext__()
+        try:
+            db.add(
+                DailyGeneration(
+                    station_id=sid, day=date.today() - timedelta(days=days_ago), kwh=kwh
+                )
+            )
+            await db.commit()
+        finally:
+            await gen.aclose()
+
+    async def test_昨日无记录时不拿更早的一天冒充(self, client: AsyncClient, open_meteo):
+        sid = (await client.post("/v1/stations", json=SUZHOU)).json()["data"]["id"]
+        await self._insert(client, sid, 3, 100.0)
+        s = (await client.get(f"/v1/reports/{sid}")).json()["data"]["summary"]
+        assert s["generation"]["delta_percent"] is None
+
+    async def test_有昨日记录才给环比(self, client: AsyncClient, open_meteo):
+        sid = (await client.post("/v1/stations", json=SUZHOU)).json()["data"]["id"]
+        await self._insert(client, sid, 3, 100.0)
+        await self._insert(client, sid, 1, 200.0)
+        s = (await client.get(f"/v1/reports/{sid}")).json()["data"]["summary"]
+        g = s["generation"]["value"]
+        assert s["generation"]["delta_percent"] == pytest.approx(
+            round((g - 200.0) / 200.0 * 100, 1)
+        )

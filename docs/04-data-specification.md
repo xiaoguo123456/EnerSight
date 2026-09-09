@@ -185,6 +185,30 @@ forecast 接口追加 past_days=1
 晴空基准也取同一区间的均值（07 §2.1）。瞬时值另有 `*_instant` 字段，本项目不用。
 
 
+### 区间均值量与瞬时量
+
+**同一份 hourly 里两种时间语义并存，取「当前」时不是同一格。**
+
+| 语义 | 字段 | 标签含义 | 「当前」取哪一格 |
+| --- | --- | --- | --- |
+| 区间均值 | `shortwave_radiation`、`direct_radiation`、`diffuse_radiation`、`direct_normal_irradiance` | 前一小时均值，标在区间末 | 包含当前时刻的区间，即 `ceil` |
+| 瞬时 | `temperature_2m`、`apparent_temperature`、`relative_humidity_2m`、各层 `wind_speed_*`、`wind_direction_10m`、`cloud_cover*`、`weather_code` | 标注时刻的瞬时值 | 当前整点，即 `floor` |
+
+由辐射推出的量（光伏逐时出力、晴空指数 kt）跟随辐射走；
+由瞬时风速推出的量（风电逐时出力、强风预警）跟随瞬时值走。
+
+实现见 `services/weather.Forecast.current_hour()` 与 `current_interval()`：
+
+```
+06:30  →  current_hour() = 06:00     气温 / 风速 / 云量
+          current_interval() = 07:00  辐射 / 光伏出力 / kt
+```
+
+整点时两者相同，取到的是刚结束的完整区间。
+统一用 `floor` 会拿已经过去的那一小时当「当前」：北京夏至日 06:30 的光伏出力
+会报成 19 kW 而不是 84 kW，日落后一小时则反向高估。
+
+
 用途：
 
 分析太阳能资源、估算光伏发电量。

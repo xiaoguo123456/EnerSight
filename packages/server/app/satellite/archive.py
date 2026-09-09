@@ -79,6 +79,17 @@ def load_mosaic(
     )
 
 
+def backfill_frames(times: list[datetime], count: int | None = None) -> list[datetime]:
+    """本轮要归档的帧：可用时刻里最近的 count 帧。
+
+    只取最新一帧会永久漏帧 —— JMA 的 `targetTimes_fd.json` 先于瓦片更新，最新帧常常
+    还没就绪，等下一轮时 latest 已经换了，而 JMA 只留 35 小时。已落盘的瓦片不重复出网，
+    稳态下每轮仍只新增一帧。
+    """
+    n = max(1, settings.archive_backfill_frames if count is None else count)
+    return list(times[-n:])
+
+
 def archived_times(band: str, day: datetime) -> list[datetime]:
     """某天归档过的时刻（该波段任意瓦片存在即算）。"""
     day_dir = archive_dir() / day.astimezone(UTC).strftime("%Y%m%d")

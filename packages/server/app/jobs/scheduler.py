@@ -1,11 +1,14 @@
 """定时任务。APScheduler 进程内，V1 不需要独立 worker。docs/05 §五
 
 任务清单：
-- accumulate_generation  每小时     逐日发电累积（docs/07 §3.1）
-- scan_alerts            每 30 分钟  扫描预警规则（docs/07 §五）
-- generate_reports       每日 08:00  预生成 AI 报告（docs/08 §3.2）
-- backfill_address       每小时     给缺地址的站点补逆地理编码
-后续加入：预渲染图层、预生成 AI 报告、扫描预警。
+- accumulate_generation  每小时      逐日发电累积（docs/07 §3.1）
+- scan_alerts            每 15 分钟   扫描预警规则（docs/07 §五）
+- archive_cloud          每 10 分钟   归档云图帧，含最近几帧回补（docs/07 §八）
+- sync_catalog           每日检查     按 catalog_sync_days 间隔同步公开目录（docs/04 §七）
+- generate_reports       每日 08:00   预生成 AI 报告（docs/08 §3.2）
+- backfill_address       每小时      给缺地址的站点补逆地理编码
+- fleet_prediction       每日 0/12 点 预热全目录汇总
+- fleet_history          每 10 分钟   归档全目录日快照
 """
 
 import asyncio
@@ -94,7 +97,12 @@ def _make_generate_reports(app: FastAPI):
 
 
 def _make_archive_cloud(app: FastAPI):
-    """每 10 分钟归档各站点周边的分析波段瓦片；JMA 只留 35 小时，回放校准要自己攒。"""
+    """每 10 分钟归档各站点周边的分析波段瓦片；JMA 只留 35 小时，回放校准要自己攒。
+
+    回补最近 `archive_backfill_frames` 帧，不只归档最新帧：最新帧的瓦片常常还没就绪
+    （`targetTimes_fd.json` 先于瓦片更新），只取 latest 时这一帧会被永久跳过，
+    35 小时后就再也补不回来。已落盘的瓦片不会重复出网，稳态下每轮只新增一帧。
+    """
 
     async def job() -> None:
         from app.satellite import archive
@@ -103,23 +111,35 @@ def _make_archive_cloud(app: FastAPI):
         async with SessionLocal() as db:
             stations = (await db.execute(select(Station))).scalars().all()
         try:
-            latest = await himawari.latest_time(app.state.http)
+            times = await himawari.available_times(app.state.http)
         except Exception:  # noqa: BLE001
             log.warning("archive_cloud: satellite times unavailable")
             return
-        written, seen = 0, set()
-        for s in stations:
-            bbox = sat_svc.station_bbox(s.latitude, s.longitude)
-            band = sat_svc.analysis_band(s.latitude, s.longitude, latest)
-            if (bbox, band) in seen:
-                continue
-            seen.add((bbox, band))
-            try:
-                written += await archive.archive_frame(app.state.http, latest, band, bbox)
-            except Exception:  # noqa: BLE001
-                log.warning("archive_cloud failed: station=%s", s.id, exc_info=True)
+        frames = archive.backfill_frames(times)
+        written = missing = 0
+        for when in frames:
+            seen: set = set()
+            for s in stations:
+                bbox = sat_svc.station_bbox(s.latitude, s.longitude)
+                # 波段按各站自身的太阳高度角定，与在线分析口径一致，回放才对得上
+                band = sat_svc.analysis_band(s.latitude, s.longitude, when)
+                if (bbox, band) in seen:
+                    continue
+                seen.add((bbox, band))
+                try:
+                    written += await archive.archive_frame(app.state.http, when, band, bbox)
+                except Exception:  # noqa: BLE001  该帧未就绪，下一轮再补
+                    missing += 1
+                    log.debug("archive_cloud pending: %s %s", when, bbox, exc_info=True)
         removed = archive.prune()
-        log.info("archive_cloud: %s, %d tiles written, %d days pruned", latest, written, removed)
+        log.info(
+            "archive_cloud: %d frames up to %s, %d tiles written, %d pending, %d days pruned",
+            len(frames),
+            frames[-1] if frames else None,
+            written,
+            missing,
+            removed,
+        )
 
     return job
 

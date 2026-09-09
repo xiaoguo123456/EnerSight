@@ -45,6 +45,7 @@ def hub_wind_speed(
     每个时刻按当时有效的高度层：
     - 轮毂在两层之间：对数廓线（风速对 ln z 线性）插值
     - 轮毂高于最高层：用最高两层的对数廓线斜率外推，不低于 0
+    - 轮毂低于最低有效层：用最低两层的斜率向下外推，不低于 0
     - 只有一层有效：从该层按幂律外推（`wind_shear_alpha`），标记为降级
     - 一层都没有：NaN
 
@@ -67,6 +68,11 @@ def hub_wind_speed(
         if n == 1:
             out[i] = v[0] * (hub_height / heights[ok][0]) ** settings.wind_shear_alpha
             fallback[i] = True
+        elif ln_h < z[0]:
+            # 轮毂低于最低有效层：按最低两层的对数廓线斜率向下外推。
+            # np.interp 会钳制到最低层，把 50 m 轮毂直接当成 80 m 风速，系统性高估。
+            slope = (v[1] - v[0]) / (z[1] - z[0])
+            out[i] = max(0.0, v[0] + slope * (ln_h - z[0]))
         elif ln_h <= z[-1]:
             out[i] = float(np.interp(ln_h, z, v))
         else:

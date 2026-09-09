@@ -35,7 +35,7 @@ function FleetSummary({ data, onClick }: { data: FleetPrediction | null; onClick
   const coverage = data?.total_capacity_kw ? Math.min(100, data.covered_capacity_kw / data.total_capacity_kw * 100) : 0
   const v = energy(data?.energy_kwh)
   return <View className="fleet-short" onClick={onClick}>
-    <View><Text className="forecast-title">{data?.status === 'ready' ? '全目录今日预测合计' : '全目录预测 · 已覆盖合计'}</Text><Text className="forecast-muted">{data ? `装机容量覆盖 ${coverage.toFixed(1)}%` : '正在准备汇总'} · 查看全部场站</Text></View>
+    <View><Text className="forecast-title">{data && data.covered_count === data.total_count ? '全目录今日预测合计' : '全目录预测 · 已覆盖合计'}</Text><Text className="forecast-muted">{data ? `装机容量覆盖 ${coverage.toFixed(1)}%` : '正在准备汇总'} · 查看全部场站</Text></View>
     <Text className="fleet-short__value">{v.value} {v.unit} ›</Text>
   </View>
 }
@@ -111,7 +111,7 @@ export default function Home() {
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Text>正在读取 {weatherModelLabel(model)} 汇总…</Text><Skeleton height={180} /></View> : <>
           <View className="home__card forecast-main">
-            <View className="forecast-row"><Text className="forecast-title">{f.status === 'ready' ? '今日发电潜力合计' : '已覆盖场站预测合计'}</Text><View onClick={info} className="forecast-help">口径 ⓘ</View></View>
+            <View className="forecast-row"><Text className="forecast-title">{f.covered_count === f.total_count ? '今日发电潜力合计' : '已覆盖场站预测合计'}</Text><View onClick={info} className="forecast-help">口径 ⓘ</View></View>
             <Value value={f.energy_kwh} /><Text className="forecast-note">平台运营目录 · 未计入限电、检修</Text>
             <View className="forecast-split"><View><Text className="forecast-muted">已覆盖光伏</Text><Text>{energy(f.energy_kwh == null ? null : f.solar_kwh).value} {energy(f.energy_kwh == null ? null : f.solar_kwh).unit}</Text></View><View><Text className="forecast-muted">已覆盖风电</Text><Text>{energy(f.energy_kwh == null ? null : f.wind_kwh).value} {energy(f.energy_kwh == null ? null : f.wind_kwh).unit}</Text></View></View>
             <View className="forecast-coverage"><View className="forecast-row"><Text>目录申报容量计算覆盖率</Text><Text>{coverage.toFixed(1)}%</Text></View><View className="forecast-progress"><View style={{ width: `${coverage}%` }} /></View><Text className="forecast-muted">已计算 {thousands(f.covered_count)} / {thousands(f.total_count)} 座 · 非全国覆盖率或准确率</Text></View>

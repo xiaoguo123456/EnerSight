@@ -28,8 +28,11 @@ def daylight_window(
 
     日间时段不是固定的 06:00–18:00 —— 固定窗口在高纬度和冬季会把夜间
     数据算进日间平均。见 docs/07 §1.7
+
+    取当地正午作为输入：pvlib 按 UTC 日期取日序，东八区的当地 00:00 还落在前一个
+    UTC 日，直接传当地零点会整体算成前一天的日出日落。
     """
-    times = pd.DatetimeIndex([pd.Timestamp(day, tz=tz)])
+    times = pd.DatetimeIndex([pd.Timestamp(day, tz=tz) + pd.Timedelta(hours=12)])
     res = pvlib.solarposition.sun_rise_set_transit_spa(times, latitude, longitude)
     # 秒级精度足够 —— 用于确定聚合窗口，不是天文计算
     sunrise = res["sunrise"].iloc[0].round("s").to_pydatetime()

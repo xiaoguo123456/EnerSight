@@ -195,3 +195,72 @@ async def test_地图内存磁盘和图片按模型隔离(client, open_meteo):
     assert paths[0] == paths[2] and paths[0] != paths[1]
     assert open_meteo.call_count == 2
     assert {c.request.url.params["models"] for c in open_meteo.calls} == {"ecmwf_ifs", "gfs_global"}
+
+
+async def test_云图部分块拿不到卫星时整层退回预报(client, open_meteo, monkeypatch):
+    """卫星是亮度拉伸的相对强度、预报是云量百分比，混在一个响应里同一个图例解释不了"""
+    from app.services import layers as svc
+
+    seen = []
+
+    async def only_first(_http, block, _base_url):
+        seen.append(block.lon0)
+        return (
+            ("http://x/tiles/cloud-sat/a.png", "2026-09-09T04:00", False)
+            if len(seen) == 1
+            else None
+        )
+
+    monkeypatch.setattr(svc, "_ensure_satellite_tile", only_first)
+    d = (await client.get("/v1/map/layers/cloud", params={"bbox": "118.5,28.5,125.5,29.5"})).json()[
+        "data"
+    ]
+    assert len(seen) >= 2  # 确实跨了多块
+    assert d["legend"]["title"] == "云量预报"
+    urls = [i["url"] for f in d["frames"] for i in f["images"]]
+    assert urls and all("cloud-sat" not in u for u in urls)
+
+
+async def test_云图全部块拿到卫星时用实况图例(client, open_meteo, monkeypatch):
+    from app.services import layers as svc
+
+    async def always(_http, block, _base_url):
+        return (f"http://x/tiles/cloud-sat/{block.lon0}.png", "2026-09-09T04:00", False)
+
+    monkeypatch.setattr(svc, "_ensure_satellite_tile", always)
+    d = (await client.get("/v1/map/layers/cloud", params={"bbox": "118.5,28.5,125.5,29.5"})).json()[
+        "data"
+    ]
+    assert d["legend"]["title"] == SCALES["cloud"].title
+    assert all("cloud-sat" in i["url"] for f in d["frames"] for i in f["images"])
+
+
+class TestCurrentHourIndex:
+    """辐射是区间均值量，其余图层是瞬时量，「当前」不是同一格。docs/04 §二"""
+
+    def _freeze(self, monkeypatch, hour: int, minute: int):
+        from app.services import layers as svc
+
+        fixed = datetime(2026, 9, 9, hour, minute, tzinfo=UTC)
+
+        class _Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed
+
+        monkeypatch.setattr(svc, "datetime", _Clock)
+        return svc, [f"2026-09-09T{h:02d}:00" for h in range(24)]
+
+    def test_辐射取包含当前时刻的区间其余取整点(self, monkeypatch):
+        svc, times = self._freeze(monkeypatch, 6, 30)
+        assert svc._current_hour_index(times, "radiation") == 7
+        assert svc._current_hour_index(times, "temperature") == 6
+        assert svc._current_hour_index(times) == 6
+
+    def test_整点时两者相同(self, monkeypatch):
+        svc, times = self._freeze(monkeypatch, 6, 0)
+        assert svc._current_hour_index(times, "radiation") == 6
+
+    def test_日末退到最后一格(self, monkeypatch):
+        svc, times = self._freeze(monkeypatch, 23, 30)
+        assert svc._current_hour_index(times, "radiation") == 23

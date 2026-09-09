@@ -6,6 +6,7 @@ AI 挂掉不能让页面白屏。模板的输入与 AI 完全一致（都来自 
 
 from app.ai.input import ReportInput
 from app.ai.schema import AIReport, ReportPeriod
+from app.config import settings
 
 
 class RuleProvider:
@@ -16,17 +17,19 @@ class RuleProvider:
 
 
 def _verdict(score: float) -> str:
-    if score >= 85:
+    """分档阈值统一取 settings，不另写一套 —— 否则改配置会出现「82 分 · 条件较差」。"""
+    if score >= settings.index_excellent:
         return "当前气象条件优秀"
-    if score >= 70:
+    if score >= settings.index_good:
         return "当前气象适宜发电"
-    if score >= 55:
+    if score >= settings.index_fair:
         return "当前气象条件一般"
     return "当前气象条件较差"
 
 
 def _period_level(p: dict, alert_level: str | None) -> str:
-    if p["avg_cloud"] >= 60:
+    cloud = p["avg_cloud"]
+    if cloud is not None and cloud >= 60:
         return "warning"
     return "good"
 
@@ -40,9 +43,12 @@ def _impact(p: dict, station_type: str) -> str:
         )
     if station_type == "wind":
         return "结合风速趋势与设备条件评估出力"
-    if p["avg_radiation"] >= 400:
+    rad = p["avg_radiation"]
+    if rad is None:
+        return "该时段辐射数据暂缺，请以最新预报为准"
+    if rad >= 400:
         return "发电条件良好"
-    if p["avg_radiation"] >= 200:
+    if rad >= 200:
         return "辐射资源中等，非设备效率评价"
     return "辐射偏弱"
 
@@ -77,7 +83,7 @@ def render(inp: ReportInput) -> AIReport:
             "结合现场监测与调度要求评估影响，不直接依据本报告调整设备。",
             "查看最新预报，及时复核当前风险是否仍然有效。",
         ]
-    elif inp.score < 55:
+    elif inp.score < settings.index_fair:
         suggestions = [
             "当前气象条件较弱，请结合实测出力评估影响。",
             "设备检修与清洗应遵循现场规程，不仅依据气象评分安排。",

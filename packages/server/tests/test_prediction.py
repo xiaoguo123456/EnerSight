@@ -113,7 +113,9 @@ async def test_汇总去重覆盖与贡献相加(tmp_path, monkeypatch):
         async with httpx.AsyncClient() as c:
             await fleet.build(c, "gfs_global", fleet.day_key(), plants)
     out = fleet.load(tmp_path / f"gfs_global-{fleet.day_key()}.json")
-    assert out["status"] == "partial"
+    # status 说的是「该算的都算完了」；重复与非法记录是主动排除的，永远不会被覆盖，
+    # 拿它们判断会让状态永远停在 partial。覆盖程度由 covered_count / total_count 表达。
+    assert out["status"] == "ready" and out["failed_count"] == 0
     assert out["duplicate_count"] == 1 and out["invalid_count"] == 1
     assert out["covered_count"] == 2 and out["total_count"] == 3
     assert out["covered_capacity_kw"] == 3000 and out["total_capacity_kw"] == 3500
@@ -153,3 +155,31 @@ async def test_同模型任务去重且切换模型独立(tmp_path, monkeypatch)
         )
     finally:
         await fleet.shutdown()
+
+
+async def test_有场站算不出时状态为partial(tmp_path, monkeypatch):
+    """一个网格算失败：不能宣称算完，也不能把失败的场站记成零发电"""
+    monkeypatch.setattr(fleet, "directory", lambda: tmp_path)
+    from app.render import tiles
+
+    monkeypatch.setattr(tiles, "_TILE_DIR", tmp_path / "tiles")
+    raw = forecast()
+    plants = [plant("a"), plant("c", lat=40.3)]
+    real = fleet.calculate_cell
+
+    def flaky(cell_plants, raw_, model, day):
+        if cell_plants[0].id == "c":
+            raise RuntimeError("气象缺口")
+        return real(cell_plants, raw_, model, day)
+
+    monkeypatch.setattr(fleet, "calculate_cell", flaky)
+    with respx.mock:
+        respx.get(url__regex=r".*open-meteo.*").mock(
+            return_value=httpx.Response(200, json=[raw, raw])
+        )
+        async with httpx.AsyncClient() as c:
+            await fleet.build(c, "gfs_global", fleet.day_key(), plants)
+    out = fleet.load(tmp_path / f"gfs_global-{fleet.day_key()}.json")
+    assert out["status"] == "partial"
+    assert out["eligible_count"] == 2 and out["covered_count"] == 1 and out["failed_count"] == 1
+    assert out["covered_capacity_kw"] == 1000 and out["total_capacity_kw"] == 2000

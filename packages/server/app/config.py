@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     himawari_zoom: int = 5  # 最高级别，256px/瓦片，约 4–5 km/px
     # 云图帧归档：JMA 只留 35 小时，光流精度校准要自己攒历史。每站每帧几十 KB
     enable_archive: bool = True
+    # 每轮回补最近几帧：最新帧瓦片常未就绪，只归档 latest 会永久漏帧（JMA 只留 35 小时）
+    archive_backfill_frames: int = 6
     archive_dir: str = "data/archive/himawari"
     archive_retention_days: int = 60
 

@@ -320,3 +320,34 @@ class TestApi:
     async def test_无站点404(self, client: AsyncClient):
         r = await client.get("/v1/alerts/current")
         assert r.status_code == 404
+
+
+def _solar_station():
+    from app.models import Station
+
+    return Station(
+        id="s1",
+        owner_id="u",
+        name="x",
+        type="solar",
+        latitude=31.3,
+        longitude=120.62,
+        capacity_kw=500,
+    )
+
+
+def _kinds(fc, kind):
+    return [d for d in alerts.detect_weather(fc, _solar_station()) if d.kind == kind]
+
+
+def test_高温低温取严格不等号():
+    """docs/07 §5.2 写的是 > 38℃ / < −10℃，恰好等于阈值不触发"""
+    fc = parse_forecast(make_forecast(start_date=_yesterday_midnight()))
+    fc.hourly["temperature_2m"] = 38.0
+    assert not _kinds(fc, "heat")
+    fc.hourly["temperature_2m"] = 38.5
+    assert _kinds(fc, "heat")
+    fc.hourly["temperature_2m"] = -10.0
+    assert not _kinds(fc, "cold")
+    fc.hourly["temperature_2m"] = -10.5
+    assert _kinds(fc, "cold")

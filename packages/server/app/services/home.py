@@ -57,10 +57,19 @@ def build_current_weather(fc: weather.Forecast) -> CurrentWeather | None:
         return None
     y_row = fc.at(now_ts - pd.Timedelta(days=1))
     later = fc.at(now_ts + pd.Timedelta(hours=6))
+    # 辐射是前一小时均值标在区间末，要取包含当前时刻的那一格；其余字段是瞬时值，用整点
+    rad_ts = fc.current_interval()
+    rad_row = fc.at(rad_ts)
+    rad_y_row = fc.at(rad_ts - pd.Timedelta(days=1))
 
     def m(col: str) -> MetricWithDelta:
         v = _num(row.get(col))
         y = _num(y_row.get(col)) if y_row is not None else None
+        return MetricWithDelta(value=v, delta_percent=_delta(v, y))
+
+    def interval_m(col: str) -> MetricWithDelta:
+        v = _num(rad_row.get(col)) if rad_row is not None else None
+        y = _num(rad_y_row.get(col)) if rad_y_row is not None else None
         return MetricWithDelta(value=v, delta_percent=_delta(v, y))
 
     return CurrentWeather(
@@ -70,7 +79,7 @@ def build_current_weather(fc: weather.Forecast) -> CurrentWeather | None:
         wind_speed=m("wind_speed_10m"),
         wind_direction=_num(row.get("wind_direction_10m")),
         cloud_cover=m("cloud_cover"),
-        radiation=m("shortwave_radiation"),
+        radiation=interval_m("shortwave_radiation"),
         weather_text=describe_transition(
             _num(row.get("weather_code")),
             _num(later.get("weather_code")) if later is not None else None,

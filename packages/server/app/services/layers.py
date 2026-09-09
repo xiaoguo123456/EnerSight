@@ -42,12 +42,23 @@ def _bounds(block: g.Block, coord: Coord) -> Bounds:
     return Bounds(sw=pt(block.lat0, block.lon0), ne=pt(block.lat1, block.lon1))
 
 
-def _current_hour_index(times: list[str]) -> int:
-    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:00")
+# 区间均值量：辐射是前一小时均值标在区间末，「当前」是包含此刻的那一格。docs/04 §二
+# 其余图层（气温、风速、云量）是瞬时值，取当前整点。
+_INTERVAL_MEAN_LAYERS = {LayerType.RADIATION.value}
+
+
+def _current_hour_index(times: list[str], layer: str = "") -> int:
+    """当前时刻在网格时间轴（UTC 整点）上的位置。
+
+    网格只有当天 24 点，日末的区间末标签落在次日 —— 退到当日最后一格。
+    """
+    now = datetime.now(UTC)
+    shift = 1 if layer in _INTERVAL_MEAN_LAYERS and (now.minute or now.second) else 0
+    hour = now.hour + shift
     try:
-        return times.index(now)
+        return times.index(f"{now:%Y-%m-%d}T{hour:02d}:00")
     except ValueError:
-        return min(datetime.now(UTC).hour, len(times) - 1)
+        return min(hour, len(times) - 1)
 
 
 async def _ensure_tile(
@@ -55,7 +66,7 @@ async def _ensure_tile(
 ) -> tuple[str, str, bool]:
     """返回 (url, observed_at)。已渲染的直接给路径。"""
     data = await g.fetch_block(http, block)
-    hi = _current_hour_index(data.times)
+    hi = _current_hour_index(data.times, layer)
     time_key = data.times[hi].replace(":", "")
     path = tiles.tile_path(layer, f"{current_model.get()}_{block.key}", time_key)
     if not path.exists():
@@ -107,23 +118,26 @@ async def build_layer(
     w, s, e, n = bbox
     span = max(4, math.ceil(max(e - w, n - s) / 4) * 4)
     blocks = g.blocks_for_bbox(w, s, e, n, span)  # 一屏最多几块，防止恶意 bbox 拉爆
+    # 云图先整层试卫星实况：只要有一块拿不到就整层退回预报云量。
+    # 卫星是亮度拉伸的相对强度、预报是云量百分比，两种量混在一个响应里，
+    # 同一个图例解释不了，observed_at 也会一半是观测时刻一半是预报时刻。
+    sat_tiles: list[tuple[str, str, bool]] = []
+    if layer == LayerType.CLOUD and span <= 8:
+        for b in blocks:
+            tile = await _ensure_satellite_tile(http, b, base_url)
+            if tile is None:
+                sat_tiles = []
+                break
+            sat_tiles.append(tile)
+    actual_cloud = bool(sat_tiles)
     # 串行拉块：并发多块会触发 Open-Meteo 限流；块级缓存后只有冷块才真的回源
-    results = []
-    actual_cloud = []
-    for b in blocks:
-        sat = (
-            await _ensure_satellite_tile(http, b, base_url)
-            if layer == LayerType.CLOUD and span <= 8
-            else None
-        )
-        actual_cloud.append(sat is not None)
-        results.append(sat or await _ensure_tile(http, layer.value, b, base_url))
+    results = sat_tiles or [await _ensure_tile(http, layer.value, b, base_url) for b in blocks]
 
     vectors = []
     if layer == LayerType.WIND:
         for block in blocks:
             data = await g.fetch_block(http, block)
-            hour = _current_hour_index(data.times)
+            hour = _current_hour_index(data.times)  # 风速是瞬时量
             for i in range(g.N):
                 for j in range(g.N):
                     speed = data.fields["wind"][hour, i, j]
@@ -147,7 +161,7 @@ async def build_layer(
     if layer in (LayerType.TEMPERATURE, LayerType.RADIATION):
         for block in blocks:
             data = await g.fetch_block(http, block)
-            hour = _current_hour_index(data.times)
+            hour = _current_hour_index(data.times, layer.value)
             # 以视野内均匀的九个位置采样，双线性插值避免放大后无网格点可读。
             for fy in (1 / 6, 1 / 2, 5 / 6):
                 for fx in (1 / 6, 1 / 2, 5 / 6):
@@ -182,7 +196,7 @@ async def build_layer(
         observed_at=results[0][1] if results else datetime.now(UTC).isoformat(),
         unit=scale.unit,
         legend=Legend(
-            title="云量预报" if layer == LayerType.CLOUD and not all(actual_cloud) else scale.title,
+            title="云量预报" if layer == LayerType.CLOUD and not actual_cloud else scale.title,
             type="scale" if scale.labels is None else "gradient",
             stops=None if scale.labels else scale.stops,
             labels=list(scale.labels) if scale.labels else None,

@@ -34,7 +34,7 @@ SEVERE_DROP = settings.alert_drop_severe
 MIN_KT_NOW = 0.35  # 当前晴空指数太低（本来就阴）不谈「下降」
 MIN_CLEAR_GHI = 100.0  # 晴空小时均值低于此（日出日落边缘）不参与比较：kt 噪声大且对发电无关紧要
 WIND_MODERATE, WIND_SEVERE = 15.0, 25.0
-HEAT, COLD = 38.0, -10.0
+HEAT, COLD = 38.0, -10.0  # 严格大于 / 小于，与 docs/07 §5.2 一致
 RAIN_CODES = {65, 67, 82, 95, 96, 99}
 
 
@@ -52,7 +52,9 @@ class Detected:
 
 def detect_cloud_drop(fc: Forecast, latitude: float, longitude: float) -> Detected | None:
     """未来 6 小时内晴空指数相对当前的最大降幅。docs/07 §4.3、§5.1"""
-    now_ts = fc.current_hour()
+    # 辐射与晴空基准都是小时均值标在区间末，起点取包含当前时刻的那一格。
+    # 用整点会拿已经过去的一小时当「当前」，日出后一小时的 kt_now 系统性偏低。
+    now_ts = fc.current_interval()
     end = now_ts + pd.Timedelta(hours=LOOKAHEAD_HOURS)
     window = fc.hourly.loc[now_ts:end]
     if len(window) < 2:
@@ -153,7 +155,7 @@ def detect_weather(fc: Forecast, station: Station | None = None) -> list[Detecte
         )
 
     t = window["temperature_2m"].astype(float)
-    if t.max() >= HEAT:
+    if t.max() > HEAT:
         out.append(
             Detected(
                 "heat",
@@ -162,7 +164,7 @@ def detect_weather(fc: Forecast, station: Station | None = None) -> list[Detecte
                 "高温使光伏组件效率下降，并加大设备散热压力。",
             )
         )
-    if t.min() <= COLD:
+    if t.min() < COLD:
         out.append(
             Detected(
                 "cold",
