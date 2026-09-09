@@ -115,7 +115,7 @@ bash scripts/rollback.sh
 - [生产部署工作流](https://github.com/xiaoguo123456/EnerSight/actions/runs/34300643803) 已成功，代码版本 `e8c567a4a3ae`。实际镜像见下方；服务器 `.release.env` 保存当前完整摘要。
 - API 容器健康，Nginx 语法检查通过，ALB 已接入独立网关组。公网 `/enersight/ready` 与 `/gateway-health` 返回 200；New API 首页与切换前内容一致。
 - 未更改安全组，未重启其他业务容器。现有 New API、steward、weishen 容器运行状态正常；未使用真实用户令牌进行流式请求或微信真机验收。
-- 微信 AppID 已配置，AppSecret 尚未提供，真实登录仍待启用。缺少配置时登录接口返回 503，不签发开发用户令牌。
+- 微信 AppID 和 AppSecret 已配置到生产环境，后端容器已重建并加载配置。公网就绪检查返回 200，使用无效登录 code 验证时返回 400 / INVALID_CODE，微信凭证校验链路已接通；真实用户登录仍需小程序真机联调。示例文件仅保留空密钥项。
 
 生产镜像：
 
