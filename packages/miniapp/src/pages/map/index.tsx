@@ -151,7 +151,7 @@ export default function MapPage() {
               longitude: station.longitude,
               width: 24, height: 24,
               callout: {
-                content: station.name, color: '#ffffff', bgColor: '#1677FF',
+                content: '当前电站', color: '#ffffff', bgColor: '#1677FF',
                 padding: 6, borderRadius: 6, display: 'ALWAYS',
                 fontSize: 12, textAlign: 'center',
               },

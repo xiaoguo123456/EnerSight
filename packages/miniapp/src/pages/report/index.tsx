@@ -1,7 +1,7 @@
 import { View, Text } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import {
-  formatCo2, formatCoordinate, formatCurrency, formatEnergy, formatHours,
+  formatCo2, formatCurrency, formatEnergy, formatHours,
 } from '@enersight/core/format'
 import { homeApi } from '@/api/home'
 import { reportsApi } from '@/api/reports'
@@ -11,13 +11,14 @@ import {
 } from '@/components'
 import type { SummaryCell } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
+import { decodeRouteParam } from '@/route'
 import { useStationStore } from '@/store'
 import './index.scss'
 
 export default function Report() {
   const { params } = useRouter()
   const currentId = useStationStore((st) => st.currentId)
-  const routeId = params.id ?? currentId ?? ''
+  const routeId = decodeRouteParam(params.id) || currentId || ''
 
   // 没带 id 时先取默认站点再拉报告
   const req = useRequest(async () => {
@@ -67,52 +68,31 @@ export default function Report() {
 
       <View className="report__body">
         <View className="report__meta">
-          <View className="report__station">
-            <View className="report__thumb">
-              <Icon name={r.station.type === 'wind' ? 'wind' : 'sun'} size={18} color="#ffffff" />
-            </View>
-            <View className="report__station-text">
-              <Text className="report__station-name">{r.station.name}</Text>
-              <View className="report__station-addr">
-                <Icon name="mapPin" size={10} color="#9ca3af" />
-                <Text className="report__station-addr-text">
-                  {r.station.address ?? '—'}（{formatCoordinate(r.station.latitude, r.station.longitude)}）
-                </Text>
-              </View>
-            </View>
-          </View>
-          <View className="report__dates">
-            <Text className="report__date">{r.method === 'ai' ? 'AI 辅助分析' : '规则分析'} · 气象模型估算，非实测</Text>
-            <Text className="report__date">报告日期：{r.report_date}</Text>
-            <Text className="report__date">生成时间：{r.generated_at}</Text>
-          </View>
+          <Text className="report__eyebrow">每日气象分析 · {r.report_date}</Text>
+          <Text className="report__station-name">{r.station.name}</Text>
+          {r.station.address && <Text className="report__station-addr-text">{r.station.address}</Text>}
+          <Text className="report__method">{r.method === 'ai' ? 'AI 辅助分析' : '规则分析'} · 气象模型估算，非实测</Text>
         </View>
 
-        {/* 综合判断：与首页指数卡同一视觉语言 */}
+        {/* 先给结论，再提供风险与分时依据。 */}
         <View className="report__verdict">
           <View className="report__verdict-head">
             <Text className="report__verdict-label">综合判断</Text>
-
           </View>
           <Text className="report__verdict-title">{r.verdict_title}</Text>
           <Text className="report__verdict-detail">{r.verdict_detail}</Text>
         </View>
 
-        <View className="report__card">
-          <SectionHeader icon="barChart" title="今日情况" action="查看详细分析" />
-          <TimelineAnalysis periods={r.periods} />
-        </View>
-
         {r.risk_title && (
           <View className="report__risk">
             <View className="report__risk-head">
-              <Icon name="alertTriangle" size={16} color="#f59e0b" />
+              <Icon name="alertTriangle" size={16} color="#a16207" />
               <Text className="report__risk-label">风险提醒</Text>
               <View
                 className="report__risk-more"
                 onClick={() => Taro.switchTab({ url: '/pages/alert/index' })}
               >
-                <Text>查看更多</Text>
+                <Text>查看预警</Text>
                 <Icon name="chevronRight" size={12} color="#9ca3af" />
               </View>
             </View>
@@ -122,15 +102,21 @@ export default function Report() {
         )}
 
         <View className="report__card">
-          <SectionHeader icon="clipboard" iconColor="#16a34a" title="运营建议" />
+          <SectionHeader icon="barChart" title="分时分析" />
+          <TimelineAnalysis periods={r.periods} />
+        </View>
+
+        <View className="report__card">
+          <SectionHeader icon="clipboard" iconColor="#64748b" title="运营建议" />
           <SuggestionList items={r.suggestions} />
         </View>
 
         <View className="report__card">
-          <SectionHeader icon="barChart" title="估算数据" action="查看更多" />
+          <SectionHeader icon="barChart" title="估算数据" />
           <DataSummaryGrid cells={cells} />
           <Text className="report__data-note">发电量与收益为模型估算，收益采用电价假设，非实际结算。</Text>
         </View>
+        <Text className="report__generated">生成时间：{r.generated_at}</Text>
       </View>
     </View>
   )

@@ -1,34 +1,19 @@
 .layer-ctrl {
-  position: absolute;
-  right: 10px;
-  top: 58px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 14px;
-  background: var(--color-surface);
-  box-shadow: var(--shadow-float);
-
-  &__item {
-    width: 46px;
-    height: 46px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    border-radius: 11px;
-
-    &--active {
-      background: var(--color-primary);
-      .layer-ctrl__label { color: #fff; }
-    }
-  }
-
-  &__label {
-    font-size: 10px;
-    line-height: 1;
-    color: var(--color-text-sub);
-  }
+  position: absolute; right: 10px; top: 58px;
+  width: 44px; height: 48px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-float);
+  &__label { font-size: 11px; color: var(--color-text-sub); }
+  // 同层地图中的模态层覆盖工具、图例和站点摘要，避免误触。
+  &__modal { position: absolute; inset: 0; z-index: 20; background: rgba(15, 23, 42, .28); display: flex; align-items: flex-end; }
+  &__panel { width: 100%; box-sizing: border-box; padding: 8px 16px 20px; border-radius: 16px 16px 0 0; background: var(--color-surface); }
+  &__head { display: flex; align-items: center; justify-content: space-between; }
+  &__title { font-size: 17px; font-weight: 600; }
+  &__close { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+  &__hint { display: block; margin-bottom: 16px; font-size: 12px; line-height: 1.6; color: var(--color-text-sub); }
+  &__scroll { max-height: 210px; }
+  &__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  &__option { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 12px; border-radius: 10px; background: var(--color-bg); font-size: 14px; color: #475569; }
+  &__option--active { background: #eaf3ff; color: #1264d6; }
+  &__selected { margin-left: auto; font-size: 11px; }
 }

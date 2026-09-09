@@ -1,17 +1,16 @@
 import { useState } from 'react'
-import { View, Text } from '@tarojs/components'
+import { View, Text, ScrollView } from '@tarojs/components'
 import { Icon, type IconName } from '../Icon'
 import './index.scss'
 
 export type MapLayer = 'cloud' | 'wind' | 'temperature' | 'radiation' | 'station'
 
-// fill: 闭合形状可填充；wind 是三条开放线，填充无意义
-const LAYERS: { value: MapLayer; label: string; icon: IconName; fill: boolean }[] = [
-  { value: 'cloud', label: '云图', icon: 'cloud', fill: true },
-  { value: 'wind', label: '风场', icon: 'wind', fill: false },
-  { value: 'temperature', label: '温度', icon: 'thermometer', fill: true },
-  { value: 'radiation', label: '辐射', icon: 'sun', fill: true },
-  { value: 'station', label: '站点', icon: 'mapPin', fill: true },
+const LAYERS: { value: MapLayer; label: string; icon: IconName }[] = [
+  { value: 'cloud', label: '云图', icon: 'cloud' },
+  { value: 'wind', label: '风场', icon: 'wind' },
+  { value: 'temperature', label: '温度', icon: 'thermometer' },
+  { value: 'radiation', label: '辐射', icon: 'sun' },
+  { value: 'station', label: '站点', icon: 'mapPin' },
 ]
 
 /**
@@ -26,30 +25,39 @@ export function MapLayerControl({
 }: { value: MapLayer; onChange: (l: MapLayer) => void }) {
   const [open, setOpen] = useState(false)
   return (
-    <View className="layer-ctrl">
-      <View className="layer-ctrl__item" onClick={() => setOpen(!open)}>
+    <>
+      <View className="layer-ctrl" onClick={() => setOpen(true)}>
         <Icon name="layers" size={20} color="#334155" />
-        <Text className="layer-ctrl__label">{open ? '收起' : '图层'}</Text>
+        <Text className="layer-ctrl__label">图层</Text>
       </View>
-      {open && LAYERS.map((l) => {
-        const active = l.value === value
-        return (
-          <View
-            key={l.value}
-            className={`layer-ctrl__item ${active ? 'layer-ctrl__item--active' : ''}`}
-            onClick={() => { onChange(l.value); setOpen(false) }}
-          >
-            <Icon
-              name={l.icon}
-              size={20}
-              color={active ? '#ffffff' : '#64748b'}
-              fill={false}
-              strokeWidth={1.75}
-            />
-            <Text className="layer-ctrl__label">{l.label}</Text>
+      {open && (
+        <View className="layer-ctrl__modal" catchMove onClick={() => setOpen(false)}>
+          <View className="layer-ctrl__panel" onClick={(e) => e.stopPropagation()}>
+            <View className="layer-ctrl__head">
+              <Text className="layer-ctrl__title">地图图层</Text>
+              <View className="layer-ctrl__close" aria-label="关闭图层选择" onClick={() => setOpen(false)}>
+                <Icon name="x" size={20} color="#64748b" />
+              </View>
+            </View>
+            <Text className="layer-ctrl__hint">选择要查看的气象数据，电站位置始终保留</Text>
+            <ScrollView scrollY className="layer-ctrl__scroll">
+              <View className="layer-ctrl__options">
+                {LAYERS.map((l) => {
+                  const active = l.value === value
+                  return (
+                    <View key={l.value} className={`layer-ctrl__option ${active ? 'layer-ctrl__option--active' : ''}`}
+                      onClick={() => { onChange(l.value); setOpen(false) }}>
+                      <Icon name={l.icon} size={20} color={active ? '#1677ff' : '#64748b'} strokeWidth={1.75} />
+                      <Text>{l.value === 'station' ? '仅看电站' : l.label}</Text>
+                      {active && <Text className="layer-ctrl__selected">已选</Text>}
+                    </View>
+                  )
+                })}
+              </View>
+            </ScrollView>
           </View>
-        )
-      })}
-    </View>
+        </View>
+      )}
+    </>
   )
 }

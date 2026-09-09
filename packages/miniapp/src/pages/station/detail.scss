@@ -1,69 +1,25 @@
 .detail {
-  min-height: 100vh;
-  background: var(--color-bg);
-
-  &__body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-group);
-    padding: 4px var(--space-page) calc(var(--space-page) + var(--space-tabbar));
-  }
-
-  // 站点信息 + 天气 + 指数编成一组
-  &__group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-card-gap);
-  }
-
-  &__card {
-    background: var(--color-surface);
-    border-radius: var(--radius-card);
-    padding: 14px;
-
-    // MetricGrid 自带卡片样式，嵌套时去掉内层的底与内边距
-    .metric-grid { padding: 0; background: transparent; }
-    .quick-entry { padding: 0; }
-  }
-
-  &__station {
-    display: flex; gap: 10px;
-    background: var(--color-surface);
-    border-radius: var(--radius-card);
-    padding: 14px;
-  }
-  &__thumb {
-    width: 48px; height: 48px;
-    border-radius: var(--radius-thumb);
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-
-    &--solar { background: linear-gradient(135deg, #ffc978, #f59e0b); }
-    &--wind  { background: linear-gradient(135deg, #7fc4f5, #1677ff); }
-  }
-  &__station-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  &__station-row { display: flex; align-items: center; gap: 6px; }
-  &__station-name { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); }
-  &__station-addr { display: flex; align-items: center; gap: 3px; min-width: 0; }
-  &__station-addr-text {
-    font-size: 10.5px; color: var(--color-text-sub);
-    @include ellipsis;
-  }
-  &__station-spec { display: flex; align-items: center; gap: 4px; }
-  &__spec-text { font-size: 11px; color: var(--color-text-sub); }
-  &__spec-divider {
-    width: 1px; height: 10px;
-    background: var(--color-divider);
-    margin: 0 4px;
-  }
-
-  &__weather-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    .section-header { margin-bottom: 10px; }
-  }
-  &__updated { font-size: 10px; color: var(--color-text-weak); }
-
-  &__chart { margin-top: 10px; }
+  .page-header { position: sticky; top: 0; z-index: 10; }
+  min-height: 100vh; background: var(--color-bg);
+  &__body { display: flex; flex-direction: column; gap: 16px; padding: 4px 16px calc(24px + env(safe-area-inset-bottom)); }
+  &__group { display: flex; flex-direction: column; gap: 12px; }
+  &__card { background: var(--color-surface); border-radius: 16px; padding: 16px; }
+  &__station { padding: 16px; border-radius: 16px; background: var(--color-surface); }
+  &__station-spec { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-text-sub); .status-badge { margin-left: auto; } }
+  &__station-name { display: block; margin-top: 12px; font-size: 20px; line-height: 1.5; font-weight: 650; color: var(--color-text); overflow-wrap: anywhere; }
+  &__capacity { display: flex; align-items: baseline; gap: 12px; margin-top: 16px; }
+  &__capacity-label { font-size: 12px; color: var(--color-text-sub); }
+  &__capacity-value { font-size: 24px; font-weight: 600; @include numeric; }
+  &__capacity-unit { font-size: 13px; font-weight: 400; color: var(--color-text-sub); }
+  &__actions { display: flex; gap: 10px; margin-top: 18px; }
+  &__action { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border-radius: 10px; font-size: 13px; color: #475569; background: var(--color-bg); }
+  &__action--primary { background: #eaf3ff; color: #1264d6; }
+  &__weather-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; .section-header { margin-bottom: 16px; } }
+  &__updated { font-size: 11px; color: var(--color-text-sub); }
+  &__chart { margin-top: 14px; }
+  &__info-row { display: flex; gap: 16px; padding: 10px 0; font-size: 13px; line-height: 1.6; }
+  &__info-label { width: 56px; flex-shrink: 0; color: var(--color-text-sub); }
+  &__info-value { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--color-text); }
+  &__note { display: block; padding-top: 12px; margin-top: 8px; border-top: 1px solid var(--color-divider); font-size: 12px; line-height: 1.7; color: var(--color-text-sub); }
+  .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; padding: 0; background: transparent; > view + view { border-left: 0; } }
 }
-
-.detail .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; > view + view { border-left: 0; } }

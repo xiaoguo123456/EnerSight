@@ -29,14 +29,17 @@ const THEME: ChartTheme = {
  * - H5：给的是 <taro-canvas-core> 自定义元素，真实 canvas 在其内部
  */
 function resolveCanvas(node: any, id: string): any {
-  if (node?.getContext) return node
-  if (node?.querySelector) {
+  if (typeof node?.getContext === 'function') return node
+  // 小程序的 document 是运行时模拟节点，不支持浏览器 DOM 查询。
+  if (process.env.TARO_ENV !== 'h5') return null
+  if (typeof node?.querySelector === 'function') {
     const inner = node.querySelector('canvas')
     if (inner) return inner
   }
   if (typeof document !== 'undefined') {
     const el = document.getElementById(id)
-    if (el) return (el as any).getContext ? el : el.querySelector('canvas')
+    if (typeof (el as any)?.getContext === 'function') return el
+    if (typeof el?.querySelector === 'function') return el.querySelector('canvas')
   }
   return null
 }

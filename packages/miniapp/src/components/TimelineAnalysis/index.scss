@@ -1,36 +1,12 @@
 .timeline {
-  &__cards { display: flex; gap: 8px; }
-  &__card {
-    flex: 1; min-width: 0;
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
-    padding: 10px 6px;
-    border-radius: var(--radius-thumb);
-
-    &--good    { background: rgba(22, 119, 255, .07); }
-    &--warning { background: rgba(245, 158, 11, .09); }
-    &--risk    { background: rgba(239, 68, 68, .07); }
-  }
-  &__label { font-size: 12px; font-weight: 600; color: var(--color-text); }
-  &__range { font-size: 9px; color: var(--color-text-weak); }
-
-  &__track {
-    display: flex;
-    align-items: center;
-    padding: 10px 0 8px;
-  }
-  &__seg { flex: 1; display: flex; align-items: center; }
-  &__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  &__line { flex: 1; height: 2px; opacity: .35; }
-
-  &__texts { display: flex; gap: 8px; }
-  &__text {
-    flex: 1; min-width: 0;
-    display: flex; flex-direction: column; gap: 1px;
-    align-items: center;
-  }
-  &__weather { font-size: 11px; color: var(--color-text); text-align: center; }
-  &__impact {
-    font-size: 10px; color: var(--color-text-sub);
-    text-align: center; line-height: 1.35;
-  }
+  &__row { display: flex; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--color-divider); }
+  &__row:last-child { border-bottom: 0; padding-bottom: 0; }
+  &__row:first-child { padding-top: 0; }
+  &__time { width: 92px; flex-shrink: 0; }
+  &__label { display: block; font-size: 14px; font-weight: 600; color: var(--color-text); }
+  &__range { display: block; margin-top: 4px; font-size: 11px; color: var(--color-text-sub); }
+  &__content { flex: 1; min-width: 0; }
+  &__weather-row { display: flex; align-items: center; gap: 6px; }
+  &__weather { font-size: 14px; color: var(--color-text); }
+  &__impact { display: block; margin-top: 4px; font-size: 13px; line-height: 1.65; color: var(--color-text-sub); }
 }

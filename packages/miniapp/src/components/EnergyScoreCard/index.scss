@@ -1,74 +1,16 @@
 .hero {
-  position: relative;
-  padding: 16px 16px 14px;
-  border-radius: var(--radius-module);
-  overflow: hidden;
-  // 渐变只做底色氛围，不做装饰。等级不同底色不同，一眼分辨好坏
-  background: #edf7f0;
-
-  &--fair { background: #fff8e8; }
-  &--poor { background: #fff1f0; }
-
-  &__head { display: flex; align-items: center; gap: 4px; }
-  &__label {
-    font-size: var(--font-caption);
-    font-weight: 600;
-    letter-spacing: .02em;
-    color: var(--color-text-sub);
-  }
-
-  &__score {
-    display: flex;
-    align-items: baseline;
-    gap: 3px;
-    margin-top: 2px;
-  }
-  &__num {
-    @include numeric;
-    font-size: var(--font-hero);
-    font-weight: 800;
-    line-height: 1;
-    color: var(--color-energy);
-  }
-  &__unit {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-energy);
-    margin-right: 8px;
-  }
-  &--fair .hero__num, &--fair .hero__unit { color: #d97706; }
-  &--poor .hero__num, &--poor .hero__unit { color: var(--color-danger); }
-
-  &__level {
-    padding: 1px 8px;
-    border-radius: var(--radius-pill);
-    background: rgba(22, 163, 74, .12);
-    color: var(--color-energy);
-    font-size: var(--font-caption);
-    font-weight: 600;
-    transform: translateY(-3px);
-  }
-  &--fair .hero__level { background: rgba(217, 119, 6, .12); color: #d97706; }
-  &--poor .hero__level { background: rgba(239, 68, 68, .12); color: var(--color-danger); }
-
-  &__empty { font-size: 20px; color: var(--color-text-weak); padding: 10px 0; }
-
-  &__summary {
-    display: block;
-    margin-top: 6px;
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--color-text);
-    max-width: 100%;
-  }
-
-  // 右侧大叶子水印，压得很淡，只做质感不抢戏
-  &__deco {
-    position: absolute;
-    right: -12px;
-    bottom: -16px;
-    pointer-events: none;
-  }
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  &__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  &__head { display: flex; align-items: center; gap: 5px; min-height: 32px; }
+  &__label { font-size: 13px; color: var(--color-text-sub); }
+  &__score { display: flex; align-items: baseline; gap: 3px; flex-shrink: 0; }
+  &__num { @include numeric; font-size: 26px; font-weight: 650; line-height: 1.2; color: var(--color-text); }
+  &__unit { font-size: 12px; color: var(--color-text-sub); }
+  &__level { margin-left: 7px; font-size: 12px; color: #15803d; }
+  &--fair .hero__level { color: #a16207; }
+  &--poor .hero__level { color: #b91c1c; }
+  &__empty { font-size: 12px; color: var(--color-text-sub); }
+  &__summary { display: block; margin-top: 4px; font-size: 13px; line-height: 1.6; color: var(--color-text-sub); }
 }
-
-.hero--unknown { background: #f1f5f9; }
