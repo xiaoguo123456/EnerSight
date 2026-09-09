@@ -51,7 +51,7 @@ export function WindParticles({ vectors, region }: { vectors: WindVector[]; regi
     return () => { cancelled = true; clearTimeout(timer) }
   }, [vectors, region, playing, visible])
   return <>
-    <Canvas type="2d" id="wind-particles" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
+    <Canvas type="2d" id="wind-particles" style={{ position: 'absolute', zIndex: 1, inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
     <View className="map-page__wind-play" onClick={() => setPlaying((v) => !v)}><Text>{playing ? '暂停风场' : '播放风场'} · 风向与相对风速</Text></View>
   </>
 }

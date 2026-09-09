@@ -174,3 +174,7 @@
 }
 .map-page__preview-image { position: absolute; max-width: none; pointer-events: none; }
 .map-page__wind-play { position: absolute; top: 120px; left: 12px; padding: 8px; border-radius: 6px; background: rgba(255,255,255,.94); color: #365477; font-size: 11px; }
+// 原生 Canvas 同层渲染时显式排列，粒子不能穿过搜索框、图例和详情。
+.map-page__search, .map-page__coverage, .map-page__data-state,
+.map-page__legend, .map-page__tools, .map-page__sheet,
+.map-page__picked, .map-page__wind-play, .map-page .layer-ctrl { z-index: 2; }
