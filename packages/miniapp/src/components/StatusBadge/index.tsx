@@ -3,7 +3,7 @@ import type { StationStatus } from '@enersight/core/types'
 import './index.scss'
 
 const LABEL: Record<StationStatus, string> = {
-  normal: '目录运营中',
+  normal: '公开资料：已投运',
   standby: '状态待确认',
   fault: '状态待核实',
 }

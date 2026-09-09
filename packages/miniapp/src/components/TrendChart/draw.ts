@@ -110,7 +110,7 @@ export function draw(
     ctx.moveTo(x0, y)
     ctx.lineTo(x0 + iw, y)
     ctx.stroke()
-    ctx.fillText(fmtTick(Math.round(v)), x0 - 6, y)
+    ctx.fillText(fmtTick(Number(v.toFixed(max < 10 ? 2 : 0))), x0 - 6, y)
   }
   ctx.setLineDash?.([])
 
@@ -204,7 +204,7 @@ export function draw(
 
   // 气泡：两行（时刻 / 数值+单位），贴边时自动收进画布内
   const title = hhmm(active)
-  const value = `${av} ${data.unit}`
+  const value = `${Number(av.toFixed(2))} ${data.unit}`
   ctx.font = '11px sans-serif'
   const tw = Math.max(ctx.measureText(title).width, ctx.measureText(value).width)
   const bw = tw + 14

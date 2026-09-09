@@ -88,15 +88,17 @@ export default function Home() {
             <View className="forecast-row"><Text className="forecast-title">今日预测发电量</Text><View onClick={info} className="forecast-help">预测口径 ⓘ</View></View>
             <Value value={p?.energy_kwh} />
             <Text className="forecast-note">气象条件下估算 · 未计入限电、检修</Text>
-            <View className="forecast-row forecast-meta"><Text>装机 {formatPower(station?.capacity).value} {formatPower(station?.capacity).unit}</Text><Text onClick={() => station && Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>场站资料 ›</Text></View>
+            <View className="forecast-row forecast-meta"><Text>{station?.type === 'wind' ? '风电' : station?.type === 'solar' ? '光伏' : '场站'} · 装机 {formatPower(station?.capacity).value} {formatPower(station?.capacity).unit}</Text><Text onClick={() => station && Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>场站资料 ›</Text></View>
             {p?.energy_kwh != null && <PowerCurve prediction={p} id={`power-${model}-${version}`} />}
+            {p?.energy_kwh != null && station?.type === 'wind' && <Text className="forecast-note">按轮毂高度风速估算，低于切入或高于切出风速时预测功率为零。全天 {p.power_kw.filter(point => point.value === 0).length} 小时预测为零，不代表实测停机。</Text>}
+            {p?.energy_kwh != null && station?.type === 'solar' && <Text className="forecast-note">光伏主要在白天发电，夜间预测功率为零；曲线为气象模型估算。</Text>}
             {p?.energy_kwh == null && <Text className="forecast-note">{!p ? '预测服务暂未就绪，请稍后刷新。' : '全天气象数据或场站参数不完整，暂不估算日总量。'}</Text>}
             {home.refreshError && <Text className="forecast-warning" onClick={home.reload}>刷新失败，当前保留上次预测 · 点击重试</Text>}
           </View>
           {weather && <View className="home__card"><SectionHeader icon="cloudSun" title="气象依据" /><MetricGrid>
             <MetricCard icon="cloudSun" label="天气" metric={formatTemperature(weather.temperature.value)} caption={weather.weather_text ?? undefined} />
             <MetricCard icon="sun" label="辐射" metric={formatRadiation(weather.radiation.value)} />
-            <MetricCard icon="wind" iconFill={false} label="风速" metric={formatWindSpeed(weather.wind_speed.value)} />
+            <MetricCard icon="wind" iconFill={false} label="10米风速" metric={formatWindSpeed(weather.wind_speed.value)} />
             <MetricCard icon="cloud" label="云量" metric={formatPercent(weather.cloud_cover.value)} />
           </MetricGrid><Text className="forecast-muted">{d.index?.summary}</Text></View>}
           <FleetSummary data={f} onClick={() => setScope('fleet')} />
