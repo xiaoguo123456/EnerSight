@@ -179,3 +179,19 @@ async def test_放大视野仍有插值数值且无额外回源(client, open_met
     assert all(120.51 < p["longitude"] < 120.61 and 28.51 < p["latitude"] < 28.61 for p in samples)
     assert all(20.5 <= p["value"] <= 20.6 for p in samples)
     assert open_meteo.call_count == 1
+
+
+async def test_地图内存磁盘和图片按模型隔离(client, open_meteo):
+    paths = []
+    for model in ["ecmwf_ifs", "gfs_global", "ecmwf_ifs"]:
+        grid.clear_cache()
+        r = await client.get(
+            "/v1/map/layers/temperature",
+            params={"bbox": "120.5,28.5,121.5,29.5"},
+            headers={"X-Weather-Model": model},
+        )
+        assert r.status_code == 200
+        paths.append(r.json()["data"]["frames"][0]["images"][0]["url"])
+    assert paths[0] == paths[2] and paths[0] != paths[1]
+    assert open_meteo.call_count == 2
+    assert {c.request.url.params["models"] for c in open_meteo.calls} == {"ecmwf_ifs", "gfs_global"}

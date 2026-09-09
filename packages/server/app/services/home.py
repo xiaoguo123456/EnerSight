@@ -178,7 +178,10 @@ async def build_home(
 
     v = await build_station_view(http, station, coord, db)
     # 首页也顺手扫一次预警，保证首次打开就有；常态刷新靠定时任务
-    await alerts.scan_station(db, station, v.forecast)
+    from app.weather_model import current_model
+
+    if current_model.get() == "best_match":
+        await alerts.scan_station(db, station, v.forecast)
     await db.commit()
     return HomeResponse(
         has_station=True,

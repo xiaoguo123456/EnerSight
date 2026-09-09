@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import ratelimit
+from app import ratelimit, weather_model
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
 from app.jobs import scheduler
@@ -77,6 +77,7 @@ if settings.debug:
     )
 
 app.middleware("http")(ratelimit.middleware)
+app.middleware("http")(weather_model.middleware)
 app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 app.include_router(health.router)

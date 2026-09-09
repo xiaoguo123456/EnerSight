@@ -870,6 +870,8 @@ export interface components {
             coord: components["schemas"]["Coord"];
             /** Server Time */
             server_time: string;
+            /** Weather Model */
+            weather_model: string;
         };
         /**
          * MetricWithDelta

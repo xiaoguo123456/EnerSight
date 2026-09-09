@@ -220,3 +220,43 @@ class TestDetailAndMap:
     async def test_地图概览无站点404(self, client: AsyncClient, open_meteo):
         r = await client.get("/v1/map/overview")
         assert r.status_code == 404
+
+
+async def test_模型并发隔离且切回命中缓存(client, open_meteo):
+    import asyncio
+
+    sid = await _create(client, SUZHOU)
+
+    async def read(model):
+        return await client.get(
+            "/v1/trends", params={"station_id": sid}, headers={"X-Weather-Model": model}
+        )
+
+    results = await asyncio.gather(read("ecmwf_ifs"), read("gfs_global"))
+    assert [r.json()["meta"]["weather_model"] for r in results] == ["ecmwf_ifs", "gfs_global"]
+    assert {c.request.url.params["models"] for c in open_meteo.calls} == {"ecmwf_ifs", "gfs_global"}
+    await read("ecmwf_ifs")
+    assert open_meteo.call_count == 2
+    response = await client.get("/v1/trends", params={"station_id": sid})
+    assert response.json()["meta"]["weather_model"] == "best_match"
+    assert open_meteo.call_count == 3
+
+
+async def test_个人模型不扫描写入公共预警(client, open_meteo, monkeypatch):
+    from app.services import alerts
+
+    async def forbidden(*args):
+        raise AssertionError("个人模型不得修改公共预警")
+
+    monkeypatch.setattr(alerts, "scan_station", forbidden)
+    sid = await _create(client, SUZHOU)
+    response = await client.get(
+        "/v1/home", params={"station_id": sid}, headers={"X-Weather-Model": "icon_global"}
+    )
+    assert response.status_code == 200
+    assert response.json()["meta"]["weather_model"] == "icon_global"
+
+
+async def test_拒绝任意模型字符串(client):
+    response = await client.get("/v1/home", headers={"X-Weather-Model": "../unexpected"})
+    assert response.status_code == 400

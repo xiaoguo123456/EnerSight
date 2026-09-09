@@ -26,6 +26,7 @@ from app.schemas.layer import (
     WindVector,
 )
 from app.services import satellite
+from app.weather_model import current_model
 
 # 渲染上限：气象网格 0.25°，再放大没有信息量。docs/05 §6.5
 MAX_ZOOM = 8
@@ -56,7 +57,7 @@ async def _ensure_tile(
     data = await g.fetch_block(http, block)
     hi = _current_hour_index(data.times)
     time_key = data.times[hi].replace(":", "")
-    path = tiles.tile_path(layer, block.key, time_key)
+    path = tiles.tile_path(layer, f"{current_model.get()}_{block.key}", time_key)
     if not path.exists():
         loop = asyncio.get_running_loop()
         png = await loop.run_in_executor(None, tiles.render_png, data, layer, hi)

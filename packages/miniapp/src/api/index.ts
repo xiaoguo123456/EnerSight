@@ -5,6 +5,8 @@
 import Taro from '@tarojs/taro'
 import { createClient, type HttpAdapter, type TokenStore } from '@enersight/core/api'
 
+import { useWeatherModel } from '@/store/weatherModel'
+
 const TOKEN_KEY = 'enersight_token'
 
 const adapter: HttpAdapter = {
@@ -18,7 +20,7 @@ const adapter: HttpAdapter = {
       url: qs ? `${url}?${qs}` : url,
       method,
       data: body as Record<string, unknown> | undefined,
-      header: { 'Content-Type': 'application/json', ...headers },
+      header: { 'Content-Type': 'application/json', ...headers, 'X-Weather-Model': useWeatherModel.getState().model },
       timeout: timeoutMs,
     })
     return { status: res.statusCode, body: res.data }

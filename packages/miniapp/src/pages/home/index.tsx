@@ -14,6 +14,7 @@ import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
 import { StationTrend } from '@/components/StationTrend'
 import { DataFreshness } from '@/components/DataFreshness'
+import { useWeatherModel, weatherModelLabel } from '@/store/weatherModel'
 import './index.scss'
 
 const ENTRIES: QuickEntry[] = [
@@ -40,6 +41,7 @@ export default function Home() {
   // 切换电站时首页可能隐藏；显示后重建画布，避免在零尺寸布局上初始化。
   const [chartVersion, setChartVersion] = useState(0)
   useDidShow(() => setChartVersion((v) => v + 1))
+  const model = useWeatherModel(s => s.model)
   const currentId = useStationStore((s) => s.currentId)
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId])
 
@@ -96,7 +98,7 @@ export default function Home() {
       />
 
       <View className="home__body">
-        <DataFreshness time={weather?.observed_at} refreshing={home.refreshing} failed={!!home.refreshError} onRefresh={home.reload} />
+        <DataFreshness label={`气象预报 · ${weatherModelLabel(model)}`} time={weather?.observed_at} refreshing={home.refreshing} failed={!!home.refreshError} onRefresh={home.reload} />
         {!currentId && <Text className="home__data-note" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>当前为目录示例电站，点击选择关注的电站</Text>}
         <View className="home__detail-link" onClick={() => Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>查看完整电站资料 ›</View>
         <View className="home__group">

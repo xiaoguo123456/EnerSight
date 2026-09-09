@@ -18,6 +18,7 @@ from app.cache import AsyncTTLCache
 from app.config import settings
 from app.errors import ApiError, UpstreamUnavailable
 from app.render.colormap import FIELD
+from app.weather_model import current_model
 
 BLOCK_DEG = 4.0
 # 固定 5×5 采样，大范围只提供粗分辨率气象参考。
@@ -92,7 +93,9 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
         from app.render import tiles
 
         path = (
-            tiles.tile_dir().parent / "grid-cache" / f"{block.key}_{datetime.now(UTC):%Y%m%d}.npz"
+            tiles.tile_dir().parent
+            / "grid-cache"
+            / f"{current_model.get()}_{block.key}_{datetime.now(UTC):%Y%m%d}.npz"
         )
         cached = None
         if path.exists():
@@ -124,6 +127,7 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
             "longitude": ",".join(str(p[1]) for p in pts),
             "hourly": ",".join(sorted(set(FIELD.values()) | {"wind_direction_10m"})),
             "forecast_days": 1,
+            "models": current_model.get(),
             "timezone": "UTC",
             "wind_speed_unit": "ms",
         }
@@ -170,7 +174,9 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
                 old.unlink(missing_ok=True)
         return GridData(block=block, times=times, fields=fields)
 
-    return await _cache.get_or_load(f"grid:{block.key}:{datetime.now(UTC):%Y%m%d}", _load)
+    return await _cache.get_or_load(
+        f"grid:{current_model.get()}:{block.key}:{datetime.now(UTC):%Y%m%d}", _load
+    )
 
 
 def clear_cache() -> None:

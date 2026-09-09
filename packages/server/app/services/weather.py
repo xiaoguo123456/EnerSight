@@ -14,6 +14,7 @@ import pandas as pd
 from app.cache import AsyncTTLCache, grid_key
 from app.config import settings
 from app.providers.open_meteo import OpenMeteoProvider
+from app.weather_model import current_model
 
 _cache = AsyncTTLCache(maxsize=2048, ttl_seconds=settings.ttl_current_weather)
 
@@ -65,7 +66,7 @@ def parse_forecast(raw: dict) -> Forecast:
 
 async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: float) -> Forecast:
     """按 0.1° 网格缓存 10 分钟。相邻站点命中同一份。"""
-    key = grid_key(latitude, longitude)
+    key = f"{current_model.get()}:{grid_key(latitude, longitude)}"
 
     async def _load() -> Forecast:
         raw = await OpenMeteoProvider(http).forecast(latitude, longitude)

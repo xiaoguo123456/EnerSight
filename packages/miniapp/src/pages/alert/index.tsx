@@ -42,7 +42,7 @@ export default function AlertCenter() {
           <Text className="alerts__station">{cur.data.station.name}</Text>
           <Text className="alerts__checked">切换电站 · {formatBeijingTime(cur.data.checked_at)} 检查（北京时间）</Text>
         </View>}
-        {cur.status === 'success' && <DataFreshness label="规则检查" time={cur.data.checked_at} staleMinutes={15} refreshing={cur.refreshing || list.refreshing} failed={!!cur.refreshError || !!list.refreshError} onRefresh={() => { void cur.reload(); void list.reload() }} />}
+        {cur.status === 'success' && <DataFreshness label="规则检查 · 自动模型" time={cur.data.checked_at} staleMinutes={15} refreshing={cur.refreshing || list.refreshing} failed={!!cur.refreshError || !!list.refreshError} onRefresh={() => { void cur.reload(); void list.reload() }} />}
         {cur.status === 'loading' && <Skeleton height={120} lines={3} />}
 
         {noStation && (

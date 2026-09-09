@@ -78,7 +78,7 @@ export default function Report() {
           <Text className="report__method">{r.method === 'ai' ? 'AI 辅助分析' : '规则分析'} · 气象模型估算，非实测</Text>
         </View>
 
-        <DataFreshness label="报告生成" time={r.generated_at_iso} staleMinutes={20} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
+        <DataFreshness label="报告生成 · 自动模型" time={r.generated_at_iso} staleMinutes={20} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
         {r.data_as_of && <Text className="report__data-note">气象数据截至 {formatBeijingTime(r.data_as_of)}（北京时间）</Text>}
         {/* 先给结论，再提供风险与分时依据。 */}
         <View className="report__verdict">

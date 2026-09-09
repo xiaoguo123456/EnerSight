@@ -2,9 +2,24 @@ import { View, Text, Button } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Icon, PageTitleBar } from '@/components'
 import { useStationStore } from '@/store'
+import { useWeatherModel, WEATHER_MODELS, weatherModelLabel } from '@/store/weatherModel'
 import './index.scss'
 
 export default function Mine() {
+  const { model, setModel } = useWeatherModel()
+  const chooseModel = async () => {
+    let tapIndex: number
+    try { ({ tapIndex } = await Taro.showActionSheet({ itemList: WEATHER_MODELS.map(m => `${m.id === model ? '✓ ' : ''}${m.label} · ${m.description}`) })) } catch { return }
+    const next = WEATHER_MODELS[tapIndex]!.id
+    if (next === model) return
+    try {
+      setModel(next)
+      await Taro.reLaunch({ url: '/pages/home/index' })
+    } catch {
+      setModel(model)
+      void Taro.showToast({ title: '切换失败，请重试', icon: 'none' })
+    }
+  }
   const { recent, clearRecent } = useStationStore()
   const info = (kind: string) => Taro.navigateTo({ url: `/pages/info/index?kind=${kind}` })
   const clear = async () => {
@@ -21,6 +36,9 @@ export default function Mine() {
   const copyContext = () => Taro.setClipboardData({ data: `产品：晴川观象\n版本：${version}\n当前电站：${useStationStore.getState().currentId || '目录示例电站'}\n时间：${new Date().toISOString()}\n问题描述：` })
   return <View className="mine"><PageTitleBar title="设置" /><View className="mine__body">
     <View className="mine__identity"><Text className="mine__brand">晴川观象</Text><Text className="mine__description">公开电站 · 气象趋势 · 卫星观测</Text></View>
+    <View><Text className="mine__group-title">气象预报</Text><View className="mine__card">
+      <View className="mine__row" onClick={chooseModel}><Text className="mine__row-label">预报模型</Text><Text className="mine__row-value">{weatherModelLabel(model)}</Text><Icon name="chevronRight" size={16} color="#64748b" /></View>
+    </View><Text className="mine__note">用于首页、趋势、站点详情及地图。切换后返回首页更新；仅保存在本机。公共预警与分析报告使用自动选择，卫星云图不受影响。</Text></View>
     <View><Text className="mine__group-title">使用帮助</Text><View className="mine__card">
       {row('使用指南与常见问题', () => info('help'))}
       {row('复制问题反馈信息', copyContext)}

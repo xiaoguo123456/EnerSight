@@ -6,6 +6,7 @@ import httpx
 
 from app.config import settings
 from app.errors import DataUnavailable, UpstreamUnavailable
+from app.weather_model import current_model
 
 # 逐小时字段。新增字段前先更新 docs/04
 HOURLY_FIELDS = [
@@ -58,6 +59,7 @@ class OpenMeteoProvider:
             "past_days": past_days,
             "wind_speed_unit": "ms",
         }
+        params["models"] = current_model.get()
         return await self._get(f"{settings.open_meteo_base}/forecast", params)
 
     async def archive(self, latitude: float, longitude: float, start: date, end: date) -> dict:

@@ -14,6 +14,7 @@ import { useMapLayer } from '@/hooks/useMapLayer'
 import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
 import { useMapStore, useStationStore } from '@/store'
+import { useWeatherModel, weatherModelLabel } from '@/store/weatherModel'
 import './index.scss'
 import { WindParticles } from '@/components/WindParticles'
 
@@ -31,6 +32,7 @@ const PLACE_ICON: Record<GeoPlace['type'], 'mapPin' | 'navigation' | 'sun' | 'la
 }
 
 export default function MapPage() {
+  const model = useWeatherModel(s => s.model)
   const activeLayer = useMapStore((s) => s.activeLayer)
   const saveLayer = useMapStore((s) => s.setActiveLayer)
   const [layer, setLayer] = useState<MapLayer>(activeLayer)
@@ -256,7 +258,7 @@ export default function MapPage() {
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
             <MapLegend
               spec={{
-                title: `${overlay.legend.title}${overlay.samples.length ? ' · 区域预报' : ''}`,
+                title: `${overlay.legend.title} · ${layer === 'cloud' && overlay.legend.title !== '云量预报' ? '卫星观测' : weatherModelLabel(model)}`,
                 colors: overlay.legend.colors,
                 stops: overlay.legend.stops ?? undefined,
                 labels: overlay.legend.labels ? [overlay.legend.labels[0]!, overlay.legend.labels[1]!] : undefined,

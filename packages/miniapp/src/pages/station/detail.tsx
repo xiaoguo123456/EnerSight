@@ -14,6 +14,7 @@ import {
 import { useRequest } from '@/hooks/useRequest'
 import { decodeRouteParam } from '@/route'
 import { StationTrend } from '@/components/StationTrend'
+import { useWeatherModel, weatherModelLabel } from '@/store/weatherModel'
 import { DataFreshness } from '@/components/DataFreshness'
 import './detail.scss'
 
@@ -95,7 +96,7 @@ export default function StationDetail() {
           />
         </View>
 
-        <DataFreshness time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
+        <DataFreshness label={`气象预报 · ${weatherModelLabel(useWeatherModel.getState().model)}`} time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
         <View className="detail__card"><StationTrend key={id} stationId={id} type={station.type} initial={req.data.trends} /></View>
 
         {weather && (
