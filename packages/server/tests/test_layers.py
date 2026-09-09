@@ -24,6 +24,7 @@ def _grid_response(n_points: int) -> list[dict]:
                     "shortwave_radiation": [float(i % 7) * 100 for _ in times],
                     "temperature_2m": [20.0 + i % 5 for _ in times],
                     "wind_speed_10m": [3.0 for _ in times],
+                    "wind_direction_10m": [270.0 for _ in times],
                     "cloud_cover": [40.0 for _ in times],
                 },
             }
@@ -86,9 +87,7 @@ class TestApi:
         )
         assert response.status_code == 200
         image = response.json()["data"]["frames"][0]["images"][0]
-        assert image["url"].startswith(
-            "https://platform.qhzhiyin.com/enersight/tiles/radiation/"
-        )
+        assert image["url"].startswith("https://platform.qhzhiyin.com/enersight/tiles/radiation/")
 
     async def test_返回块与图例并落盘(self, client: AsyncClient, open_meteo):
         r = await client.get(
@@ -129,10 +128,43 @@ class TestApi:
         r = await client.get("/v1/map/layers/radiation", params={"bbox": "100,20,140,60"})
         assert r.status_code == 400 and "过大" in r.json()["error"]["message"]
 
-    async def test_限流转502(self, client: AsyncClient):
+    async def test_限流转冷却状态(self, client: AsyncClient):
         with respx.mock:
             respx.get(url__regex=r".*open-meteo.*").mock(return_value=Response(429))
             r = await client.get(
                 "/v1/map/layers/radiation", params={"bbox": "120.5,28.5,121.5,29.5"}
             )
-        assert r.status_code == 502 and "限流" in r.json()["error"]["message"]
+        assert r.status_code == 429 and "冷却" in r.json()["error"]["message"]
+
+
+async def test_大视野全覆盖而不是截断六块(client, open_meteo):
+    response = await client.get("/v1/map/layers/radiation", params={"bbox": "80,34,94,51"})
+    assert response.status_code == 200
+    images = response.json()["data"]["frames"][0]["images"]
+    assert len(images) <= 4
+    assert min(i["bounds"]["sw"]["longitude"] for i in images) <= 80
+    assert max(i["bounds"]["ne"]["longitude"] for i in images) >= 94
+    assert max(i["bounds"]["ne"]["latitude"] for i in images) >= 51
+
+
+async def test_风矢量遵循气象来向约定(client, open_meteo):
+    response = await client.get("/v1/map/layers/wind", params={"bbox": "120.5,28.5,121.5,29.5"})
+    vectors = response.json()["data"]["wind_vectors"]
+    assert len(vectors) == grid.N**2
+    assert all(v["u"] == 3 and abs(v["v"]) < 0.001 for v in vectors)
+
+
+async def test_限流冷却避免重复回源(client):
+    with respx.mock as mock:
+        route = mock.get(url__regex=r".*open-meteo.*").mock(return_value=Response(429))
+        for box in ["120.5,28.5,121.5,29.5", "116.5,28.5,117.5,29.5"]:
+            response = await client.get("/v1/map/layers/wind", params={"bbox": box})
+            assert response.status_code == 429
+        assert route.call_count == 1
+
+
+async def test_重启缓存复用持久化网格(client, open_meteo):
+    await client.get("/v1/map/layers/wind", params={"bbox": "120.5,28.5,121.5,29.5"})
+    grid.clear_cache()
+    await client.get("/v1/map/layers/temperature", params={"bbox": "120.5,28.5,121.5,29.5"})
+    assert open_meteo.call_count == 1

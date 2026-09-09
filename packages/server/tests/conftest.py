@@ -60,3 +60,13 @@ def _no_satellite(monkeypatch: pytest.MonkeyPatch) -> None:
     himawari.clear_cache()
     # 只掐时刻列表：其余保持真实实现，卫星用例用 FakeSky 注入合成瓦片
     monkeypatch.setattr(himawari, "available_times", _unavailable)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_rate_limit():
+    """各用例独立计数，限流测试仍在单个用例内验证真实阈值。"""
+    from app import ratelimit
+
+    ratelimit.reset()
+    yield
+    ratelimit.reset()

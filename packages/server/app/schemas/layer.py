@@ -32,6 +32,13 @@ class Legend(BaseModel):
     colors: list[str]
 
 
+class WindVector(BaseModel):
+    latitude: float
+    longitude: float
+    u: float = Field(description="向东风速，m/s")
+    v: float = Field(description="向北风速，m/s")
+
+
 class LayerResponse(BaseModel):
     layer: LayerType
     observed_at: str = Field(description="数据观测时间，非请求时间")
@@ -39,3 +46,5 @@ class LayerResponse(BaseModel):
     legend: Legend
     frames: list[LayerFrame] = Field(description="静态图层长度为 1，风场为多帧")
     frame_interval_ms: int | None
+    wind_vectors: list[WindVector] | None = None
+    stale: bool = False

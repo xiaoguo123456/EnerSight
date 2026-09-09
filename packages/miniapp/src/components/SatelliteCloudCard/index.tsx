@@ -10,6 +10,8 @@ interface Props {
   satellite: SatelliteCloudResponse | null
   onFullscreen?: () => void
   onRetry?: () => void
+  onLoaded?: () => void
+  onImageError?: () => void
 }
 
 const BAND_LABEL: Record<SatelliteCloudResponse['band'], string> = {
@@ -23,7 +25,7 @@ const BAND_LABEL: Record<SatelliteCloudResponse['band'], string> = {
  * 图片由服务端重投影成等经纬度，站点标记按 bounds 线性定位即可。
  * 图例来自接口，客户端不硬编码色阶；波段由服务端按昼夜选择。docs/04 §四、docs/06 §7.3
  */
-export function SatelliteCloudCard({ satellite, onFullscreen, onRetry }: Props) {
+export function SatelliteCloudCard({ satellite, onFullscreen, onRetry, onLoaded, onImageError }: Props) {
   const [imageState, setImageState] = useState<{ url: string; status: 'loaded' | 'error' } | null>(null)
   const url = satellite?.image.url ?? ''
   const loaded = imageState?.url === url && imageState.status === 'loaded'
@@ -58,8 +60,8 @@ export function SatelliteCloudCard({ satellite, onFullscreen, onRetry }: Props) 
   return (
     <View className="sat-card">
       <Image key={url} className="sat-card__img" src={url} mode="aspectFill"
-        onLoad={() => setImageState({ url, status: 'loaded' })}
-        onError={() => setImageState({ url, status: 'error' })} />
+        onLoad={() => { setImageState({ url, status: 'loaded' }); onLoaded?.() }}
+        onError={() => { setImageState({ url, status: 'error' }); onImageError?.() }} />
       {!loaded && <View className="sat-card__canvas sat-card__fallback">
         <Text className="sat-card__placeholder">{failed ? '云图加载失败，暂时无法判断云况' : '正在加载卫星影像'}</Text>
         {failed && onRetry && <View className="sat-card__retry" onClick={onRetry}>重新加载</View>}

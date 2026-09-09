@@ -61,3 +61,9 @@ export const api = createClient({
   tokenStore,
   relogin,
 })
+
+/** 图层与历史影像允许较长计算时间，不自动重试，防止冷请求倍增。 */
+export const imageryApi = createClient({
+  baseUrl: process.env.TARO_APP_API_BASE ?? '', coord: 'gcj02', adapter, tokenStore, relogin,
+  timeoutMs: 40_000, maxRetries: 0,
+})

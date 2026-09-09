@@ -15,6 +15,7 @@ import httpx
 import numpy as np
 import pandas as pd
 
+from app.cache import AsyncTTLCache
 from app.geo import wgs84_to_gcj02
 from app.metrics import solar
 from app.models import Station
@@ -218,3 +219,62 @@ async def get_cloud(
 ) -> SatelliteCloudResponse:
     scene = await load_scene(http, station.latitude, station.longitude, base_url, need_prev=False)
     return to_response(scene, station, tz, coord)
+
+
+async def history_times(http: httpx.AsyncClient):
+    from datetime import timedelta
+
+    from app.schemas.satellite import SatelliteHistoryResponse
+
+    times = await himawari.available_times(http)
+    end = times[-1]
+    start = end - timedelta(hours=3)
+    return SatelliteHistoryResponse(
+        times=[t.isoformat() for t in times if start <= t <= end],
+        start_at=start.isoformat(),
+        end_at=end.isoformat(),
+    )
+
+
+_history_cache = AsyncTTLCache(256, 600)
+
+
+async def cloud_at(
+    http: httpx.AsyncClient, station: Station, when: datetime, coord: Coord, base_url: str
+):
+    from app.errors import ApiError
+
+    manifest = await history_times(http)
+    if when.isoformat() not in manifest.times:
+        raise ApiError("SATELLITE_FRAME_UNAVAILABLE", "该观测时刻不在近三小时可用帧中", 404)
+    bbox = station_bbox(station.latitude, station.longitude)
+    key = f"{_bbox_key(bbox)}:{when.isoformat()}"
+    path = tiles.tile_path("satellite-history", _bbox_key(bbox), f"{when:%Y%m%dT%H%M}_infrared")
+
+    async def render():
+        if not path.exists():
+            mosaic = await himawari.fetch_mosaic(http, when, "infrared", bbox)
+            rep = stretch_infrared(await _reproject(mosaic, bbox))
+            tiles.write_tile(path, to_png(rep.rgb))
+        return path
+
+    await _history_cache.get_or_load(key, render)
+    from app.schemas.layer import Bounds, LayerImage
+
+    w, s, e, n = bbox
+    return SatelliteCloudResponse(
+        band="infrared",
+        observed_at=when.isoformat(),
+        image=LayerImage(
+            url=f"{base_url}/tiles/{path.relative_to(tiles.tile_dir()).as_posix()}",
+            bounds=Bounds(sw=_latlng(s, w, coord), ne=_latlng(n, e, coord)),
+        ),
+        station_marker=_latlng(station.latitude, station.longitude, coord),
+        legend=Legend(
+            title="红外云图",
+            type="gradient",
+            stops=None,
+            labels=["低", "高"],
+            colors=["#111827", "#ffffff"],
+        ),
+    )

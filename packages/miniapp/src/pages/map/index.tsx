@@ -15,6 +15,7 @@ import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
 import { useMapStore, useStationStore } from '@/store'
 import './index.scss'
+import { WindParticles } from '@/components/WindParticles'
 
 // 底部面板高度，地图浮层的 bottom 要避开它
 const SHEET_HEIGHT = 172
@@ -188,6 +189,8 @@ export default function MapPage() {
             onError={() => overlay.imageError(overlay.preview!.id, '图层图片加载失败，请重试')} />)}
         </View>}
 
+        {overlay.wind && <WindParticles vectors={overlay.wind.vectors} region={overlay.wind.region} />}
+
         {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、站点与公开电站 */}
         <View className="map-page__search">
           <Icon name="search" size={15} color="#9ca3af" />
@@ -245,7 +248,7 @@ export default function MapPage() {
 
         <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>
         <MapLayerControl value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
-        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.isPreview ? "预览图层" : "图层"} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text></View>}
+        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.stale ? "缓存预报 · " : ""}${overlay.isPreview ? "预览图层" : "图层"} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text></View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>

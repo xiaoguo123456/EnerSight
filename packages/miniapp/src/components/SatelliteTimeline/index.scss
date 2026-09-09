@@ -1,0 +1,8 @@
+.sat-timeline { padding: 14px; background: #fff; border-radius: 16px; }
+.sat-timeline__head, .sat-timeline__range, .sat-timeline__controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sat-timeline__head { margin-bottom: 12px; font-size: 15px; font-weight: 600; }
+.sat-timeline__status { display: block; font-size: 12px; margin: 10px 0 0; color: #52647b; }
+.sat-timeline__range, .sat-timeline__muted { font-size: 11px; color: #6b7c91; font-weight: 400; line-height: 1.5; }
+.sat-timeline__controls { margin: 10px 0; }
+.sat-timeline__controls > view { padding: 12px 6px; text-align: center; flex: 1; color: #1677ff; background: #f3f7fc; border-radius: 8px; font-size: 13px; }
+.sat-timeline__loading { height: 190px; display: flex; align-items: center; justify-content: center; background: #edf2f7; border-radius: 12px; color: #61738a; font-size: 13px; }

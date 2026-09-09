@@ -5,13 +5,14 @@ import type { AlertLevel } from '@enersight/core/types'
 import { alertsApi } from '@/api/alerts'
 import {
   AlertCard, AlertRecordList, CloudMotionStats, EmptyState, ErrorState, PageTitleBar,
-  SatelliteCloudCard, SectionHeader, SegmentedTabs, Skeleton,
+  SectionHeader, SegmentedTabs, Skeleton,
 } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
-import { useMapStore, useStationStore } from '@/store'
+import { useStationStore } from '@/store'
 import { DataFreshness } from '@/components/DataFreshness'
 import { formatBeijingTime } from '@enersight/core/format'
 import './index.scss'
+import { SatelliteTimeline } from '@/components/SatelliteTimeline'
 
 type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
 
@@ -29,14 +30,6 @@ export default function AlertCenter() {
 
   usePullDownRefresh(async () => { await Promise.all([cur.reload(), list.reload()]); Taro.stopPullDownRefresh() })
   const noStation = cur.status === 'error' && cur.error.status === 404
-  const setActiveLayer = useMapStore((s) => s.setActiveLayer)
-
-  /** 全屏 = 去地图页看云图层，地图页会自动定位到当前站点 */
-  const openCloudMap = () => {
-    setActiveLayer('cloud')
-    Taro.switchTab({ url: '/pages/map/index' })
-  }
-
   return (
     <View className="alerts">
       <PageTitleBar
@@ -87,16 +80,7 @@ export default function AlertCenter() {
           )
         )}
 
-        {cur.status === 'success' && (
-          /* 无预警时云图仍展示；夜间是红外，satellite 为 null 只有上游故障一种情况。docs/06 §9.2 */
-          <SatelliteCloudCard
-            satellite={cur.data.satellite}
-            onRetry={cur.reload}
-            onFullscreen={cur.data.satellite ? openCloudMap : undefined}
-          />
-        )}
-
-        {cur.status === 'success' && cur.data.satellite && <DataFreshness label="卫星观测" time={cur.data.satellite.observed_at} staleMinutes={30} />}
+        {cur.status === 'success' && cur.data.station && <SatelliteTimeline key={cur.data.station.id} stationId={cur.data.station.id} />}
         {!noStation && (
           <View className="alerts__card">
             <SectionHeader icon="clipboard" title="预警记录" />

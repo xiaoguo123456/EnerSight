@@ -70,3 +70,6 @@ export interface ApiErrorBody {
 
 /** 所有用户共享的分页电站目录。 */
 export type PublicStationListResponse = S['PublicStationListResponse']
+
+export type WindVector = S['WindVector']
+export type SatelliteHistoryResponse = S['SatelliteHistoryResponse']

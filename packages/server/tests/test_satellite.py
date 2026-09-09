@@ -308,3 +308,41 @@ class TestMapCloudLayer:
             res = await client.get("/v1/map/layers/cloud?bbox=120,30,121,31&zoom=8")
         assert res.status_code == 200, res.text
         assert "/tiles/cloud/" in res.json()["data"]["frames"][0]["images"][0]["url"]
+
+
+async def test_历史时轴仅包含近三小时真实帧(client, monkeypatch):
+    sky = FakeSky().install(monkeypatch)
+    for minutes in [0, 10, 30, 180, 190]:
+        sky.add(DAY - timedelta(minutes=minutes))
+    result = await client.get("/v1/satellite/cloud/history")
+    assert result.status_code == 200
+    times = result.json()["data"]["times"]
+    assert len(times) == 4
+    assert times == sorted(times)
+    assert (DAY - timedelta(minutes=20)).isoformat() not in times
+
+
+async def test_历史云图统一红外且不伪造缺帧(client, monkeypatch):
+    from app.errors import ApiError
+    from app.models import Station
+    from app.schemas.common import Coord
+
+    sky = FakeSky().add(DAY, [(LON, LAT, 0.5)]).install(monkeypatch)
+    satellite._history_cache.clear()
+    station = Station(
+        id="history-test", name="历史云图测试", latitude=LAT, longitude=LON, type="solar"
+    )
+    async with AsyncClient() as http:
+        data = await satellite.cloud_at(http, station, DAY, Coord.WGS84, "http://test")
+        assert data.band == "infrared"
+        assert data.observed_at == DAY.isoformat()
+        assert all(band == "infrared" for _, band in sky.calls)
+        assert (
+            (tiles.tile_dir() / data.image.url.split("/tiles/")[1])
+            .read_bytes()
+            .startswith(b"\x89PNG")
+        )
+        with pytest.raises(ApiError):
+            await satellite.cloud_at(
+                http, station, DAY - timedelta(minutes=10), Coord.WGS84, "http://test"
+            )

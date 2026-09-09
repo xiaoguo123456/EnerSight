@@ -15,3 +15,10 @@ class SatelliteCloudResponse(BaseModel):
     image: LayerImage
     legend: Legend
     station_marker: LatLng = Field(description="已按 coord 转换")
+
+
+class SatelliteHistoryResponse(BaseModel):
+    times: list[str] = Field(description="近三小时可用卫星观测时刻，升序；缺帧不补造")
+    band: Literal["infrared"] = "infrared"
+    start_at: str
+    end_at: str

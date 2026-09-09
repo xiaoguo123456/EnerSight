@@ -15,6 +15,10 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [wind, setWind] = useState<{ vectors: NonNullable<LayerResponse["wind_vectors"]>; region: Region } | null>(null)
+  const regionRef = useRef<Region>()
+  const [stale, setStale] = useState(false)
+  const debounce = useRef<ReturnType<typeof setTimeout>>()
   const [preview, setPreview] = useState<Preview | null>(null)
   const [isPreview] = useState(() => Taro.getDeviceInfo().platform === 'devtools')
   const overlayIds = useRef<number[]>([])
@@ -26,7 +30,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const clear = useCallback(() => {
     if (timer.current) clearTimeout(timer.current)
     pending.current = null
-    setPreview(null)
+    setPreview(null); setWind(null)
     const ctx = Taro.createMapContext(mapId)
     for (const id of overlayIds.current) {
       try { void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined) } catch { /* 已移除 */ }
@@ -34,7 +38,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     overlayIds.current = []
     setLegend(null); setObservedAt(null)
   }, [mapId])
-  const invalidate = useCallback(() => { ++seq.current; clear(); setLoading(false) }, [clear])
+  const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; clear(); setLoading(false) }, [clear])
   const fail = useCallback((id: number, message: string) => {
     if (id !== seq.current) return
     ++seq.current
@@ -45,6 +49,8 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     if (id !== seq.current) return
     if (timer.current) clearTimeout(timer.current)
     pending.current = null
+    setStale(!!response.stale)
+    if (response.wind_vectors?.length && regionRef.current) setWind({ vectors: response.wind_vectors, region: regionRef.current })
     setLegend(response.legend); setObservedAt(response.observed_at); setLoading(false)
   }, [])
   const imageLoaded = useCallback((id: number, index: number) => {
@@ -54,7 +60,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     if (!p.remaining.size) finish(id, p.response)
   }, [finish])
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     const mine = ++seq.current
     clear(); setError(false); setErrorMessage('')
     if (!layer || !active) { setLoading(false); return }
@@ -64,6 +70,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     try {
       const region = await new Promise<Region>((resolve, reject) => ctx.getRegion({ success: resolve, fail: reject }))
       if (mine !== seq.current) return
+      regionRef.current = region
       const response = await layersApi.get(layer, {
         west: region.southwest.longitude, south: region.southwest.latitude,
         east: region.northeast.longitude, north: region.northeast.latitude,
@@ -97,6 +104,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     }
   }, [mapId, layer, active, isPreview, clear, fail, finish])
 
+  const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   useEffect(() => { void refresh(); return invalidate }, [refresh, invalidate])
-  return { legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
+  return { wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
 }

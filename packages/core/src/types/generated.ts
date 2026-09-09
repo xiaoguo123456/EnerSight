@@ -298,6 +298,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/satellite/cloud/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Satellite History */
+        get: operations["satellite_history_v1_satellite_cloud_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -629,6 +646,11 @@ export interface components {
             data: components["schemas"]["SatelliteCloudResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[SatelliteHistoryResponse] */
+        Envelope_SatelliteHistoryResponse_: {
+            data: components["schemas"]["SatelliteHistoryResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[StationDetailResponse] */
         Envelope_StationDetailResponse_: {
             data: components["schemas"]["StationDetailResponse"];
@@ -777,6 +799,13 @@ export interface components {
             frames: components["schemas"]["LayerFrame"][];
             /** Frame Interval Ms */
             frame_interval_ms: number | null;
+            /** Wind Vectors */
+            wind_vectors?: components["schemas"]["WindVector"][] | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
         };
         /**
          * LayerType
@@ -925,6 +954,24 @@ export interface components {
             legend: components["schemas"]["Legend"];
             /** @description 已按 coord 转换 */
             station_marker: components["schemas"]["LatLng"];
+        };
+        /** SatelliteHistoryResponse */
+        SatelliteHistoryResponse: {
+            /**
+             * Times
+             * @description 近三小时可用卫星观测时刻，升序；缺帧不补造
+             */
+            times: string[];
+            /**
+             * Band
+             * @default infrared
+             * @constant
+             */
+            band: "infrared";
+            /** Start At */
+            start_at: string;
+            /** End At */
+            end_at: string;
         };
         /** StationCounts */
         StationCounts: {
@@ -1101,6 +1148,23 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WindVector */
+        WindVector: {
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /**
+             * U
+             * @description 向东风速，m/s
+             */
+            u: number;
+            /**
+             * V
+             * @description 向北风速，m/s
+             */
+            v: number;
         };
     };
     responses: never;
@@ -1758,6 +1822,7 @@ export interface operations {
                 station_id?: string | null;
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
+                at?: string | null;
             };
             header?: {
                 authorization?: string | null;
@@ -1774,6 +1839,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_SatelliteCloudResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    satellite_history_v1_satellite_cloud_history_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_SatelliteHistoryResponse_"];
                 };
             };
             /** @description Validation Error */
