@@ -18,7 +18,7 @@ export function CloudMotionStats({
 }: Props) {
   const cells: { icon: IconName; tone: string; label: string; value: string; unit?: string; sub: string }[] = [
     { icon: 'cloud', tone: '#60a5fa', label: '云团距离',
-      value: String(distanceKm), unit: 'km', sub: referenceStation },
+      value: String(distanceKm), unit: 'km', sub: referenceStation ? '距所选电站' : '参考位置待确认' },
     { icon: 'navigation', tone: '#1677ff', label: '移动方向',
       value: direction, sub: directionDetail },
     { icon: 'clock', tone: '#f59e0b', label: '预计影响时间',
@@ -30,7 +30,7 @@ export function CloudMotionStats({
       {cells.map((c) => (
         <View className="cloud-motion__cell" key={c.label}>
           <View className="cloud-motion__icon">
-            <Icon name={c.icon} size={16} color={c.tone} fill strokeWidth={2.4} />
+            <Icon name={c.icon} size={16} color={c.tone} strokeWidth={1.75} />
           </View>
           <Text className="cloud-motion__label">{c.label}</Text>
           <View className="cloud-motion__value">
