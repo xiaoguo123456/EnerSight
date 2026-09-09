@@ -11,18 +11,18 @@
 | 生产 ECS | `39.105.228.11` |
 | API 部署目录 | `/opt/enersight` |
 | API 端口 | `127.0.0.1:8001` → 容器 `8000` |
-| 共用网关目录 | `/opt/platform-gateway`，预留端口 `8089` |
+| 共用网关目录 | `/opt/platform-gateway`，端口 `8089` |
 | RDS 实例 | `pgm-2zea7vqeqsie080i`，PostgreSQL 16，北京 |
 | 独立数据库 / 账号 | `enersight_prod` / `enersight_prod_app` |
 | ACR 镜像仓库 | `weishen/enersight-backend`，私有 |
-| GitHub 推送地址 | `hxtacr.qhzhiyin.com` |
+| GitHub 推送地址 | `prod-weishen-registry.cn-beijing.cr.aliyuncs.com` |
 | ECS 内网拉取地址 | `prod-weishen-registry-vpc.cn-beijing.cr.aliyuncs.com` |
 
-这些是部署目标；首次上线是否完成，以本文末尾实施记录和实际健康检查为准。
+以上资源已于 2026-09-09 上线，公网数据库就绪检查通过。
 
-`platform.qhzhiyin.com` 根路径已经运行 New API，现有 ALB HTTPS 规则指向服务器组 `sgp-2bta4zqj9hwh5hjhrd`（生产-new-api，端口 3001）。不能直接将整个域名替换成 EnerSight。
+`platform.qhzhiyin.com` 的 ALB HTTPS 规则 `rule-maeoh4pk2xiy5gopp2`（优先级 4000）已指向 `sgp-fngul7xm6tjm4xztmi`（platform-gateway-prod，端口 8089）。原服务器组 `sgp-2bta4zqj9hwh5hjhrd`（生产-new-api，端口 3001）保留用于回退。根路径仍由 New API 提供。
 
-目标流量：ALB HTTPS → 独立 platform 网关 → `/enersight/` 转至 EnerSight，其余路径仍转至 New API。网关不复用或覆盖 huahuadog、steward 的 Nginx。今后每个服务使用独立前缀和一个 `services/*.conf` 文件；业务工作流只更新自身容器，不能覆盖共享网关配置。
+实际流量：ALB HTTPS → 独立 platform 网关 → `/enersight/` 转至 EnerSight，其余路径仍转至 New API。网关不复用或覆盖 huahuadog、steward 的 Nginx。今后每个服务使用独立前缀和一个 `services/*.conf` 文件；业务工作流只更新自身容器，不能覆盖共享网关配置。
 
 ## 数据库首次准备
 
@@ -106,19 +106,33 @@ bash scripts/rollback.sh
 
 小程序生产 API 地址已改为 `https://platform.qhzhiyin.com/enersight`。微信后台 request / downloadFile 合法域名填写 `https://platform.qhzhiyin.com`，不填路径。另需完成真实微信登录、真机联调、备案、隐私声明和小程序审核。云端服务健康与小程序可发布是两个独立验收步骤。
 
-## 实施记录（2026-09-08）
+## 实施记录（2026-09-09）
 
-- 私有 GitHub 仓库已创建，项目基线已推送，首次 CI 通过。
-- 已编写生产发布工作流、PostgreSQL 兼容修正、独立网关配置。
-- 本地后端原有 160 项通过、1 项跳过；新增共享路径图片 URL 测试通过；核心包 19 项通过；TypeScript、Ruff、Actions 工作流语法检查通过。
-- 本地独立 PostgreSQL 16 容器已通过 6 次迁移、模型一致性和业务重复写入检查。
-- `/opt/enersight` 和 `/opt/platform-gateway` 已创建并上传部署文件，生产现有 Nginx 镜像已通过网关语法检查。未启动网关或切换 ALB。
-- 实际创建数据库、配置部署凭据、首次发布和 ALB 切换尚未完成，不能将上述目标表视为已上线资源。
-- 浏览器所见 RDS 账号 / 数据库页面加载异常；随后 Mac 锁屏，需要解锁才能继续控制台操作。
-- 自动审批拒绝向新 GitHub 仓库转存现有 SSH/ACR 凭据，已请求用户明确授权，未执行该转存。
+- 私有 GitHub 仓库已推送项目代码，8 项发布 Secrets 已配置；仅有一套生产部署环境。
+- 后端 169 项测试通过；核心包 19 项测试、TypeScript、Ruff、代码生成一致性检查通过。发布工作流中的 PostgreSQL 16 迁移及业务写入检查通过。
+- 已创建数据库 `enersight_prod` 和专属普通账号 `enersight_prod_app`，仅授予该库 DBOwner。生产实查 `rolsuper`、`rolcreatedb`、`rolcreaterole` 均为 false，迁移版本 `37c98398bf8c`。
+- 生产配置写入 `/opt/enersight/.env`，权限 `600`。数据库密码和 JWT 密钥未提交 Git、未输出到聊天。
+- [生产部署工作流](https://github.com/xiaoguo123456/EnerSight/actions/runs/34300643803) 已成功，代码版本 `e8c567a4a3ae`。实际镜像见下方；服务器 `.release.env` 保存当前完整摘要。
+- API 容器健康，Nginx 语法检查通过，ALB 已接入独立网关组。公网 `/enersight/ready` 与 `/gateway-health` 返回 200；New API 首页与切换前内容一致。
+- 未更改安全组，未重启其他业务容器。现有 New API、steward、weishen 容器运行状态正常；未使用真实用户令牌进行流式请求或微信真机验收。
+- 微信 AppID 已配置，AppSecret 尚未提供，真实登录仍待启用。缺少配置时登录接口返回 503，不签发开发用户令牌。
 
-## 继续实施（2026-09-09）
+生产镜像：
 
-- 用户确认仅部署一套生产服务，不另建服务器测试环境；CI 数据库仅是随任务销毁的验证容器。
-- 用户已授权凭据复用，8 项 GitHub Actions Secrets 配置完成。
-- 微信真实登录协议已实现并通过 7 项测试，AppSecret 待配置。
+```text
+prod-weishen-registry-vpc.cn-beijing.cr.aliyuncs.com/weishen/enersight-backend:e8c567a4a3ae@sha256:88bdc585909d4fdac0bfbf5bc39eeb07306de704cdac9873d1e739244946cb8a
+```
+
+### 网关应急回退
+
+在阿里云控制台，将 HTTPS 监听器 `lsn-6hw30xr2sartlc2gb8` 中规则 `rule-maeoh4pk2xiy5gopp2` 的转发组恢复到 `sgp-2bta4zqj9hwh5hjhrd`，权重 100。保持域名条件 `platform.qhzhiyin.com` 和优先级 4000。这会恢复 New API 直连，同时暂停该域名下 EnerSight 的访问，不回退数据库。
+
+Cloud Shell 的 CLI 对此 ALB 接口需要扁平参数；`--force` 用于跳过 CLI 本地旧参数模型校验，服务端权限与参数校验仍然生效：
+
+```sh
+aliyun alb UpdateRuleAttribute --region cn-beijing --force \
+  --RuleId rule-maeoh4pk2xiy5gopp2 \
+  --RuleActions.1.Type ForwardGroup --RuleActions.1.Order 1 \
+  --RuleActions.1.ForwardGroupConfig.ServerGroupTuples.1.ServerGroupId sgp-2bta4zqj9hwh5hjhrd \
+  --RuleActions.1.ForwardGroupConfig.ServerGroupTuples.1.Weight 100
+```
