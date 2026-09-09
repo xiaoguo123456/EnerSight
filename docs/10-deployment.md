@@ -46,7 +46,7 @@ ENERSIGHT_DB_MAX_OVERFLOW=1
 ENERSIGHT_WX_APPID=wx61a4a74de8bc126b
 ```
 
-AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志。当前微信登录业务仍有 `code2session` 待实现项；仅填写 AppSecret 不代表完整登录已完成。缺少登录时生产不会使用开发用户兜底。
+AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志。微信登录已接入 `code2session` 并验证异常响应、过期 code 和上游超时；配置 AppSecret 后还需真机联调。缺少配置时生产不会使用开发用户兜底。
 
 应用缓存和归档保存在 `/opt/enersight/data`，UID/GID 为 `10001`。部署预检负责创建目录。容器限制 1536 MB 内存、1.5 CPU、256 个进程/线程，日志最多 3 × 10 MB。单机科学计算任务量增长时须监控峰值内存、CPU 和数据库等待时间。
 
@@ -116,3 +116,9 @@ bash scripts/rollback.sh
 - 实际创建数据库、配置部署凭据、首次发布和 ALB 切换尚未完成，不能将上述目标表视为已上线资源。
 - 浏览器所见 RDS 账号 / 数据库页面加载异常；随后 Mac 锁屏，需要解锁才能继续控制台操作。
 - 自动审批拒绝向新 GitHub 仓库转存现有 SSH/ACR 凭据，已请求用户明确授权，未执行该转存。
+
+## 继续实施（2026-09-09）
+
+- 用户确认仅部署一套生产服务，不另建服务器测试环境；CI 数据库仅是随任务销毁的验证容器。
+- 用户已授权凭据复用，8 项 GitHub Actions Secrets 配置完成。
+- 微信真实登录协议已实现并通过 7 项测试，AppSecret 待配置。
