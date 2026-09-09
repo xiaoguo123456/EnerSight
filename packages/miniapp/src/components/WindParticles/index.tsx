@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { WindVector } from '@enersight/core/types'
 
 /** 使用真实东西/南北风速驱动粒子；画面速度经过放大，供观察方向与相对强弱。 */
-export function WindParticles({ vectors, region }: { vectors: WindVector[]; region: { southwest: WindVector | { latitude: number; longitude: number }; northeast: { latitude: number; longitude: number } } }) {
+export function WindParticles({ vectors, region, layoutVersion }: { layoutVersion: number; vectors: WindVector[]; region: { southwest: WindVector | { latitude: number; longitude: number }; northeast: { latitude: number; longitude: number } } }) {
   const [playing, setPlaying] = useState(true)
   const [visible, setVisible] = useState(true)
   useDidHide(() => setVisible(false)); useDidShow(() => setVisible(true))
@@ -12,10 +12,14 @@ export function WindParticles({ vectors, region }: { vectors: WindVector[]; regi
     if (!playing || !visible) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout>
-    const init = (tries = 0) => Taro.createSelectorQuery().select('#wind-particles').fields({ node: true, size: true }).exec((items) => {
+    const init = (tries = 0) => {
+      const query = Taro.createSelectorQuery().select('#wind-particles').fields({ node: true, size: true, rect: true })
+      for (const selector of ['.map-page__search', '.map-page__coverage', '.map-page__data-state', '.map-page__legend', '.map-page__tools', '.map-page__sheet', '.map-page__picked', '.map-page__wind-play', '.layer-ctrl']) query.select(selector).boundingClientRect()
+      query.exec((items) => {
       if (cancelled) return
       const item = items?.[0], canvas = item?.node
       if (!canvas || !item.width || !item.height) { if (tries < 10) timer = setTimeout(() => init(tries + 1), 100); return }
+      const masks = items.slice(1).filter(Boolean).map((r: { left: number; top: number; width: number; height: number }) => ({ x: r.left - item.left, y: r.top - item.top, w: r.width, h: r.height }))
       const w = item.width, h = item.height, dpr = Taro.getWindowInfo().pixelRatio || 1
       canvas.width = w * dpr; canvas.height = h * dpr
       const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr)
@@ -43,13 +47,15 @@ export function WindParticles({ vectors, region }: { vectors: WindVector[]; regi
           const x = p.x + f.u * .25, y = p.y - f.v * .25
           ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(x, y); ctx.stroke(); p.x = x; p.y = y
         })
+        for (const r of masks) ctx.clearRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2)
         timer = setTimeout(draw, 40)
       }
       draw()
-    })
+      })
+    }
     init()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [vectors, region, playing, visible])
+  }, [vectors, region, playing, visible, layoutVersion])
   return <>
     <Canvas type="2d" id="wind-particles" style={{ position: 'absolute', zIndex: 1, inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
     <View className="map-page__wind-play" onClick={() => setPlaying((v) => !v)}><Text>{playing ? '暂停风场' : '播放风场'} · 风向与相对风速</Text></View>

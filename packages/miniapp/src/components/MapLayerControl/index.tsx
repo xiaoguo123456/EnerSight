@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import { Icon, type IconName } from '../Icon'
 import './index.scss'
@@ -21,9 +21,10 @@ const LAYERS: { value: MapLayer; label: string; icon: IconName }[] = [
  * 上线前在 mp 后台把最低基础库设到支持同层渲染的版本。
  */
 export function MapLayerControl({
-  value, onChange,
-}: { value: MapLayer; onChange: (l: MapLayer) => void }) {
+  value, onChange, onOpenChange,
+}: { value: MapLayer; onChange: (l: MapLayer) => void; onOpenChange?: (open: boolean) => void }) {
   const [open, setOpen] = useState(false)
+  useEffect(() => { onOpenChange?.(open) }, [open, onOpenChange])
   return (
     <>
       <View className="layer-ctrl" onClick={() => setOpen(true)}>

@@ -34,6 +34,7 @@ export default function MapPage() {
   const activeLayer = useMapStore((s) => s.activeLayer)
   const saveLayer = useMapStore((s) => s.setActiveLayer)
   const [layer, setLayer] = useState<MapLayer>(activeLayer)
+  const [layerPanelOpen, setLayerPanelOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const sheetHeight = collapsed ? 68 : SHEET_HEIGHT
   useEffect(() => setLayer(activeLayer), [activeLayer])
@@ -189,7 +190,7 @@ export default function MapPage() {
             onError={() => overlay.imageError(overlay.preview!.id, '图层图片加载失败，请重试')} />)}
         </View>}
 
-        {overlay.wind && <WindParticles vectors={overlay.wind.vectors} region={overlay.wind.region} />}
+        {overlay.wind && !layerPanelOpen && <WindParticles layoutVersion={sheetHeight} vectors={overlay.wind.vectors} region={overlay.wind.region} />}
 
         {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、站点与公开电站 */}
         <View className="map-page__search">
@@ -247,7 +248,7 @@ export default function MapPage() {
         )}
 
         <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>
-        <MapLayerControl value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
+        <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
         {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.stale ? "缓存预报 · " : ""}${overlay.isPreview ? "预览图层" : "图层"} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text></View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
