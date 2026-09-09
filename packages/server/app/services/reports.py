@@ -125,6 +125,7 @@ def to_response(row: Report, station_summary, tz: str) -> AIReportResponse:
         report_date=row.day.strftime("%Y年%-m月%-d日"),
         generated_at=generated.strftime("%Y年%-m月%-d日 %H:%M"),
         is_fallback=row.is_fallback,
+        method="rule" if row.provider == "rule" else "ai",
         verdict_title=report.verdict_title,
         verdict_detail=report.verdict_detail,
         periods=[

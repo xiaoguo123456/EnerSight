@@ -26,7 +26,7 @@ interface Props {
  * 不用 emoji：emoji 的字形随系统变化，颜色、粗细、基线都不可控。
  */
 export function Icon({
-  name, size = 24, color = 'currentColor', fill = false, strokeWidth = 2.25, className,
+  name, size = 24, color = 'currentColor', fill = false, strokeWidth = 1.75, className,
 }: Props) {
   const fillAttr =
     fill === true

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { View, Text } from '@tarojs/components'
 import { Icon, type IconName } from '../Icon'
 import './index.scss'
@@ -23,22 +24,27 @@ const LAYERS: { value: MapLayer; label: string; icon: IconName; fill: boolean }[
 export function MapLayerControl({
   value, onChange,
 }: { value: MapLayer; onChange: (l: MapLayer) => void }) {
+  const [open, setOpen] = useState(false)
   return (
     <View className="layer-ctrl">
-      {LAYERS.map((l) => {
+      <View className="layer-ctrl__item" onClick={() => setOpen(!open)}>
+        <Icon name="layers" size={20} color="#334155" />
+        <Text className="layer-ctrl__label">{open ? '收起' : '图层'}</Text>
+      </View>
+      {open && LAYERS.map((l) => {
         const active = l.value === value
         return (
           <View
             key={l.value}
             className={`layer-ctrl__item ${active ? 'layer-ctrl__item--active' : ''}`}
-            onClick={() => onChange(l.value)}
+            onClick={() => { onChange(l.value); setOpen(false) }}
           >
             <Icon
               name={l.icon}
               size={20}
-              color={active ? '#ffffff' : '#1677ff'}
-              fill={l.fill && (active ? 'rgba(255,255,255,0.35)' : true)}
-              strokeWidth={2.4}
+              color={active ? '#ffffff' : '#64748b'}
+              fill={false}
+              strokeWidth={1.75}
             />
             <Text className="layer-ctrl__label">{l.label}</Text>
           </View>

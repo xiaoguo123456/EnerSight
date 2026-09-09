@@ -3,9 +3,9 @@ import type { StationStatus } from '@enersight/core/types'
 import './index.scss'
 
 const LABEL: Record<StationStatus, string> = {
-  normal: '运行正常',
-  standby: '设备待机',
-  fault: '设备异常',
+  normal: '目录运营中',
+  standby: '状态待确认',
+  fault: '状态待核实',
 }
 
 export function StatusBadge({ status }: { status: StationStatus }) {

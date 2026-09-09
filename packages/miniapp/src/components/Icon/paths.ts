@@ -8,6 +8,8 @@
  * 新增图标：到 lucide.dev 找到图标，复制其 <path>/<circle> 等内容贴到这里。
  */
 export const ICON_PATHS = {
+  chevronUp: '<path d="m6 15 6-6 6 6"/>',
+  x: '<path d="m6 6 12 12M18 6 6 18"/>',
   // 气象
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   cloudSun:

@@ -11,7 +11,7 @@
   // 上升红、下降绿：表示变化方向不是好坏。用较柔和的色值，别抢主数值
   &__value {
     font-weight: 600;
-    &--up   { color: #dc2626; }
-    &--down { color: #15803d; }
+    &--up   { color: #64748b; }
+    &--down { color: #64748b; }
   }
 }

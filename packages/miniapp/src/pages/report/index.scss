@@ -33,7 +33,7 @@
   &__station-name { font-size: 15px; font-weight: 700; color: var(--color-text); }
   &__station-addr { display: flex; align-items: center; gap: 3px; min-width: 0; }
   &__station-addr-text {
-    font-size: 10px; color: var(--color-text-sub);
+    font-size: 12px; color: var(--color-text-sub);
     @include ellipsis;
   }
   &__dates {
@@ -47,7 +47,7 @@
   &__verdict {
     padding: 14px;
     border-radius: var(--radius-module);
-    background: linear-gradient(115deg, #e8f7ee 0%, #f1faf4 60%, #e4f4ec 100%);
+    background: #f1f5f9;
   }
   &__verdict-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
   &__verdict-label { font-size: 13px; font-weight: 600; color: var(--color-text); }
@@ -56,7 +56,7 @@
     display: block;
     font-size: 21px; font-weight: 800; line-height: 1.35;
     letter-spacing: -0.01em;
-    color: var(--color-energy);
+    color: var(--color-text);
     margin-bottom: 8px;
   }
   &__verdict-detail {
@@ -92,3 +92,5 @@
     color: var(--color-text-sub);
   }
 }
+
+.report__data-note { display: block; margin-top: 16px; font-size: 12px; line-height: 1.7; color: var(--color-text-sub); }

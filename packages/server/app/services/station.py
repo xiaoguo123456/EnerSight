@@ -115,7 +115,14 @@ def from_catalog(p: CatalogPlant) -> Station:
 
 
 async def list_public_stations(
-    db: AsyncSession, coord: Coord, type_: str | None, keyword: str, limit: int, offset: int
+    db: AsyncSession,
+    coord: Coord,
+    type_: str | None,
+    keyword: str,
+    limit: int,
+    offset: int,
+    province: str = "",
+    sort: str = "capacity",
 ) -> PublicStationListResponse:
     active = CatalogPlant.status == "operating"
     count_rows = (
@@ -125,6 +132,8 @@ async def list_public_stations(
     ).all()
     counts = dict(count_rows)
     filters = [active]
+    if province:
+        filters.append(CatalogPlant.province == province)
     if type_:
         filters.append(CatalogPlant.type == type_)
     if keyword.strip():
@@ -151,9 +160,26 @@ async def list_public_stations(
             await db.execute(
                 select(CatalogPlant)
                 .where(*filters)
-                .order_by(CatalogPlant.capacity_kw.desc(), CatalogPlant.id)
+                .order_by(
+                    func.coalesce(CatalogPlant.name_local, CatalogPlant.name)
+                    if sort == "name"
+                    else CatalogPlant.capacity_kw.desc(),
+                    CatalogPlant.id,
+                )
                 .offset(offset)
                 .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    regions = (
+        (
+            await db.execute(
+                select(CatalogPlant.province)
+                .where(active, CatalogPlant.province.is_not(None), CatalogPlant.province != "")
+                .distinct()
+                .order_by(CatalogPlant.province)
             )
         )
         .scalars()
@@ -164,6 +190,7 @@ async def list_public_stations(
         counts=StationCounts(
             all=sum(counts.values()), solar=counts.get("solar", 0), wind=counts.get("wind", 0)
         ),
+        regions=list(regions),
         total=total,
         has_more=offset + len(plants) < total,
     )

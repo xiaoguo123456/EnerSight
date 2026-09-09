@@ -13,7 +13,7 @@ import { useCatalogMarkers } from '@/hooks/useCatalogMarkers'
 import { useMapLayer } from '@/hooks/useMapLayer'
 import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
-import { useStationStore } from '@/store'
+import { useMapStore, useStationStore } from '@/store'
 import './index.scss'
 
 // 底部面板高度，地图浮层的 bottom 要避开它
@@ -30,7 +30,12 @@ const PLACE_ICON: Record<GeoPlace['type'], 'mapPin' | 'navigation' | 'sun' | 'la
 }
 
 export default function MapPage() {
-  const [layer, setLayer] = useState<MapLayer>('cloud')
+  const activeLayer = useMapStore((s) => s.activeLayer)
+  const saveLayer = useMapStore((s) => s.setActiveLayer)
+  const [layer, setLayer] = useState<MapLayer>(activeLayer)
+  const [collapsed, setCollapsed] = useState(false)
+  const sheetHeight = collapsed ? 68 : SHEET_HEIGHT
+  useEffect(() => setLayer(activeLayer), [activeLayer])
   // 卫星影像底图。docs/01 §四：全球地图 / 行政地图 / 卫星影像底图
   const [satellite, setSatellite] = useState(false)
   const [scale, setScale] = useState(9)
@@ -54,7 +59,7 @@ export default function MapPage() {
   const dataLayer = layer === 'station' ? null : layer
   const overlay = useMapLayer('main-map', dataLayer, req.status === 'success')
   // 公开电站 marker：任何图层下都显示，视野内最多 100 个
-  const catalog = useCatalogMarkers('main-map', true)
+  const catalog = useCatalogMarkers('main-map', true, scale)
   useEffect(() => { if (req.status !== 'loading') void catalog.refresh() }, [req.status])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 搜索：300ms 防抖，空串清空
@@ -78,6 +83,13 @@ export default function MapPage() {
 
   const onMarkerTap = (e: any) => {
     const id = Number(e?.detail?.markerId ?? e?.markerId)
+    const cluster = catalog.clusterByMarkerId(id)
+    if (cluster) {
+      setFocus({ latitude: cluster.latitude, longitude: cluster.longitude })
+      setScale((v) => Math.min(18, v + 2))
+      setTimeout(() => { void catalog.refresh() }, 400)
+      return
+    }
     const p = catalog.byMarkerId(id)
     if (p) setPicked(p)
   }
@@ -111,7 +123,7 @@ export default function MapPage() {
       >
         <View className="map-page__station" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>
           <View className="map-page__station-thumb">
-            <Icon name="sun" size={14} color="#fff" />
+            <Icon name={station?.type === 'wind' ? 'wind' : 'sun'} size={14} color="#fff" />
           </View>
           <Text className="map-page__station-name">{station?.name ?? '选择站点'}</Text>
           <Icon name="chevronDown" size={13} color="#6b7280" />
@@ -191,7 +203,7 @@ export default function MapPage() {
         )}
 
         {picked && (
-          <View className="map-page__picked" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
+          <View className="map-page__picked" style={{ bottom: `${sheetHeight + 12}px` }}>
             <View className="map-page__picked-text">
               <Text className="map-page__picked-name">{picked.name}</Text>
               <Text className="map-page__picked-meta">
@@ -210,10 +222,11 @@ export default function MapPage() {
           </View>
         )}
 
-        <MapLayerControl value={layer} onChange={setLayer} />
+        <MapLayerControl value={layer} onChange={(value) => { setLayer(value); if (value !== 'station') saveLayer(value) }} />
+        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? '图层暂不可用 · 点击重试' : overlay.observedAt ? `图层数据 ${overlay.observedAt.slice(5, 16).replace('T', ' ')}` : '等待图层数据'}</Text></View>}
 
         {overlay.legend && !picked && (
-          <View className="map-page__legend" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
+          <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
             <MapLegend
               spec={{
                 title: overlay.legend.title,
@@ -225,7 +238,7 @@ export default function MapPage() {
           </View>
         )}
 
-        <View className="map-page__tools" style={{ bottom: `${SHEET_HEIGHT + 12}px` }}>
+        <View className="map-page__tools" style={{ bottom: `${sheetHeight + 12}px` }}>
           <View
             className={`map-page__tool ${satellite ? 'map-page__tool--on' : ''}`}
             onClick={() => setSatellite((v) => !v)}
@@ -249,8 +262,8 @@ export default function MapPage() {
         </View>
 
         {/* 底部面板叠在地图上 */}
-        <View className="map-page__sheet" style={{ height: `${SHEET_HEIGHT}px` }}>
-          <View className="map-page__handle" />
+        <View className="map-page__sheet" style={{ height: `${sheetHeight}px` }}>
+          <View className="map-page__collapse" onClick={() => setCollapsed((v) => !v)}><Text>{collapsed ? '展开气象详情' : '收起详情'}</Text><Icon name={collapsed ? 'chevronUp' : 'chevronDown'} size={14} color="#64748b" /></View>
           {req.status === 'loading' && <Skeleton height={120} lines={2} />}
           {req.status === 'error' && (
             <EmptyState
@@ -274,22 +287,22 @@ export default function MapPage() {
                 <Icon name="chevronRight" size={15} color="#9ca3af" />
               </View>
 
-              <MetricGrid>
+              {!collapsed && <MetricGrid>
                 <MetricCard icon="leaf" iconColor="#16a34a" label="环境指数"
                   metric={{ value: index?.score != null ? String(Math.round(index.score)) : '—', unit: '分' }}
                   caption={LEVEL_TEXT[index?.level ?? ''] ?? '—'} />
                 <MetricCard icon="cloudSun" label="天气"
-                  metric={formatTemperature(weather?.temperature.value ?? 0)}
+                  metric={formatTemperature(weather?.temperature.value)}
                   caption={weather?.weather_text ?? undefined} />
                 <MetricCard icon="wind" iconFill={false} label="风速"
-                  metric={formatWindSpeed(weather?.wind_speed.value ?? 0)}
+                  metric={formatWindSpeed(weather?.wind_speed.value)}
                   deltaPercent={weather?.wind_speed.delta_percent ?? null} />
                 <MetricCard icon="sun" label="辐射"
-                  metric={formatRadiation(weather?.radiation.value ?? 0)}
+                  metric={formatRadiation(weather?.radiation.value)}
                   deltaPercent={weather?.radiation.delta_percent ?? null} />
-              </MetricGrid>
+              </MetricGrid>}
 
-              {req.data.ai_hint && (
+              {!collapsed && req.data.ai_hint && (
                 <View
                   className="map-page__hint"
                   onClick={() => Taro.navigateTo({ url: '/pages/report/index' })}

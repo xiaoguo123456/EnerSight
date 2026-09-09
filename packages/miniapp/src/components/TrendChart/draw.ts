@@ -100,7 +100,7 @@ export function draw(
   ctx.lineWidth = 1
   ctx.strokeStyle = t.grid
   ctx.fillStyle = t.axisText
-  ctx.font = '10px sans-serif'
+  ctx.font = '11px sans-serif'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
   for (let g = 0; g <= GRID_LINES; g++) {
@@ -172,7 +172,7 @@ export function draw(
 
   // ── 横轴刻度：每 4 小时 ──
   ctx.fillStyle = t.axisText
-  ctx.font = '10px sans-serif'
+  ctx.font = '11px sans-serif'
   ctx.textBaseline = 'top'
   for (let i = 0; i < n; i += 4) {
     ctx.textAlign = i === 0 ? 'left' : i === n - 1 ? 'right' : 'center'
@@ -205,7 +205,7 @@ export function draw(
   // 气泡：两行（时刻 / 数值+单位），贴边时自动收进画布内
   const title = hhmm(active)
   const value = `${av} ${data.unit}`
-  ctx.font = '10px sans-serif'
+  ctx.font = '11px sans-serif'
   const tw = Math.max(ctx.measureText(title).width, ctx.measureText(value).width)
   const bw = tw + 14
   const bh = 30

@@ -16,10 +16,10 @@ export function SectionHeader({
   return (
     <View className="section-header">
       <View className="section-header__left">
-        <Icon name={icon} size={15} color={iconColor} strokeWidth={2.2} />
+        <Icon name={icon} size={15} color={iconColor} strokeWidth={1.75} />
         <Text className="section-header__title">{title}</Text>
       </View>
-      {action && (
+      {action && onAction && (
         <View className="section-header__action" onClick={onAction}>
           <Text>{action}</Text>
           <Icon name="chevronRight" size={12} color="#9ca3af" />

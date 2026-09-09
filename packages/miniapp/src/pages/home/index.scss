@@ -24,3 +24,6 @@
 
   &__chart { margin-top: 8px; }
 }
+
+.home__data-note { font-size: 12px; line-height: 1.5; color: var(--color-text-sub); }
+.home .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; padding: 18px 10px; > view + view { border-left: 0; } }

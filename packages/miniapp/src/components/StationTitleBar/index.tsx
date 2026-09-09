@@ -30,7 +30,7 @@ export function StationTitleBar({ name, status, address, onSwitch }: Props) {
     >
       <View className="station-title__row" hoverClass="pressed" hoverStayTime={80} onClick={onSwitch}>
         <Text className="station-title__name">{name}</Text>
-        <Icon name="chevronDown" size={16} color="#6b7280" strokeWidth={2.5} />
+        <Icon name="chevronDown" size={16} color="#6b7280" strokeWidth={1.75} />
       </View>
       <View className="station-title__sub">
         <StatusBadge status={status} />

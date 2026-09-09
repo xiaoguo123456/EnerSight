@@ -6,6 +6,7 @@ const PAGES = [
   'pages/mine/index',
   'pages/station/detail',
   'pages/report/index',
+  'pages/info/index',
 ]
 
 // 开发期切换启动页：TARO_APP_LAUNCH=map pnpm build:weapp
@@ -41,7 +42,7 @@ export default defineAppConfig({
       { pagePath: 'pages/station/index', text: '站点',
         iconPath: 'assets/tabbar/chart.png',
         selectedIconPath: 'assets/tabbar/chart-active.png' },
-      { pagePath: 'pages/mine/index', text: '我的',
+      { pagePath: 'pages/mine/index', text: '设置',
         iconPath: 'assets/tabbar/user.png',
         selectedIconPath: 'assets/tabbar/user-active.png' },
     ],

@@ -9,7 +9,7 @@ import type {
 import { api } from './index'
 
 export const stationsApi = {
-  list: (params?: { type?: StationType; keyword?: string; limit?: number; offset?: number }) =>
+  list: (params?: { type?: StationType; keyword?: string; limit?: number; offset?: number; province?: string; sort?: 'capacity' | 'name' }) =>
     api.get<PublicStationListResponse>('/v1/stations/public', params),
 
   create: (body: CreateStationRequest) =>

@@ -1,4 +1,4 @@
-import { View } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
 import {
@@ -21,7 +21,7 @@ const ENTRIES: QuickEntry[] = [
     onTap: () => Taro.switchTab({ url: '/pages/map/index' }) },
   { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary',
     onTap: () => Taro.switchTab({ url: '/pages/alert/index' }) },
-  { icon: 'fileText', title: 'AI分析报告', subtitle: '智能生成专业分析', tone: 'purple',
+  { icon: 'fileText', title: '分析报告', subtitle: '查看气象分析', tone: 'purple',
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
   { icon: 'settings', title: '电站目录', subtitle: '浏览全部公开电站', tone: 'cyan',
     onTap: () => Taro.switchTab({ url: '/pages/station/index' }) },
@@ -122,6 +122,7 @@ export default function Home() {
       />
 
       <View className="home__body">
+        <Text className="home__data-note">气象估算 · {weather?.observed_at ? `${weather.observed_at.slice(5, 16).replace('T', ' ')} 更新` : '暂无更新时间'}</Text>
         <View className="home__group">
           <EnergyScoreCard
             score={index?.score ?? null}
@@ -131,16 +132,16 @@ export default function Home() {
           {weather && (
             <MetricGrid>
               <MetricCard icon="cloudSun" label="天气"
-                metric={formatTemperature(weather.temperature.value ?? 0)}
+                metric={formatTemperature(weather.temperature.value)}
                 caption={weather.weather_text ?? undefined} />
               <MetricCard icon="wind" iconFill={false} label="风速"
-                metric={formatWindSpeed(weather.wind_speed.value ?? 0)}
+                metric={formatWindSpeed(weather.wind_speed.value)}
                 deltaPercent={weather.wind_speed.delta_percent} />
               <MetricCard icon="cloud" label="云量"
-                metric={formatPercent(weather.cloud_cover.value ?? 0)}
+                metric={formatPercent(weather.cloud_cover.value)}
                 deltaPercent={weather.cloud_cover.delta_percent} />
               <MetricCard icon="sun" label="辐射"
-                metric={formatRadiation(weather.radiation.value ?? 0)}
+                metric={formatRadiation(weather.radiation.value)}
                 deltaPercent={weather.radiation.delta_percent} />
             </MetricGrid>
           )}

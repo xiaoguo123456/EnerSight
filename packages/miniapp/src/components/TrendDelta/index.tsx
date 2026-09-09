@@ -10,7 +10,7 @@ interface Props {
 }
 
 // 上升红、下降绿：表示变化方向不是好坏，不要按涨跌习惯反转。docs/02 §二
-const COLOR = { up: '#dc2626', down: '#15803d' } as const
+const COLOR = { up: '#64748b', down: '#64748b' } as const
 
 export function TrendDelta({ deltaPercent, label = '较昨日' }: Props) {
   const d = formatDelta(deltaPercent)
@@ -21,7 +21,7 @@ export function TrendDelta({ deltaPercent, label = '较昨日' }: Props) {
       <Icon
         name={d.direction === 'up' ? 'arrowUp' : 'arrowDown'}
         size={9}
-        strokeWidth={3}
+        strokeWidth={1.75}
         color={COLOR[d.direction]}
       />
       <Text className={`trend-delta__value trend-delta__value--${d.direction}`}>

@@ -1,4 +1,4 @@
-import { View } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { useState } from 'react'
 import Taro from '@tarojs/taro'
 import type { AlertLevel } from '@enersight/core/types'
@@ -42,6 +42,10 @@ export default function AlertCenter() {
       />
 
       <View className="alerts__body">
+        {cur.status === 'success' && cur.data.station && <View className="alerts__context" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>
+          <Text className="alerts__station">{cur.data.station.name}</Text>
+          <Text className="alerts__checked">切换电站 · {new Date(cur.data.checked_at).toLocaleTimeString('zh-CN', { hour12: false })} 检查</Text>
+        </View>}
         {cur.status === 'loading' && <Skeleton height={120} lines={3} />}
 
         {noStation && (
@@ -71,7 +75,8 @@ export default function AlertCenter() {
             </View>
           ) : (
             <View className="alerts__calm">
-              <EmptyState icon="checkCircle" title="当前无预警" description="发电条件正常，未来 24 小时无异常天气" />
+              <Text className="alerts__calm-title">当前未触发预警</Text>
+              <Text className="alerts__calm-note">本次检查未命中监测规则，不代表发电条件良好。请结合气象趋势判断。</Text>
             </View>
           )
         )}
@@ -100,7 +105,7 @@ export default function AlertCenter() {
             {list.status === 'loading' && <Skeleton height={80} lines={2} />}
             {list.status === 'error' && <ErrorState error={list.error} onRetry={list.reload} />}
             {list.status === 'success' && list.data.alerts.length === 0 && (
-              <EmptyState icon="clipboard" title="暂无记录" />
+              <Text className="alerts__calm-note">暂无匹配记录，触发预警后将在这里展示。</Text>
             )}
             {list.status === 'success' && list.data.alerts.length > 0 && (
               <AlertRecordList

@@ -4,10 +4,10 @@
   border-radius: var(--radius-module);
   overflow: hidden;
   // 渐变只做底色氛围，不做装饰。等级不同底色不同，一眼分辨好坏
-  background: linear-gradient(135deg, #e6f6ec 0%, #f2fbf5 100%);
+  background: #edf7f0;
 
-  &--fair { background: linear-gradient(135deg, #fff4dd 0%, #fffaf0 100%); }
-  &--poor { background: linear-gradient(135deg, #fde8e8 0%, #fff5f5 100%); }
+  &--fair { background: #fff8e8; }
+  &--poor { background: #fff1f0; }
 
   &__head { display: flex; align-items: center; gap: 4px; }
   &__label {
@@ -59,7 +59,7 @@
     font-size: 13px;
     line-height: 1.5;
     color: var(--color-text);
-    max-width: 78%;
+    max-width: 100%;
   }
 
   // 右侧大叶子水印，压得很淡，只做质感不抢戏

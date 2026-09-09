@@ -29,7 +29,7 @@ export default function Report() {
   if (req.status === 'loading') {
     return (
       <View className="report">
-        <PageHeader title="AI分析报告" />
+        <PageHeader title="分析报告" />
         <View className="report__body">
           <Skeleton height={90} lines={2} />
           <Skeleton height={130} lines={3} />
@@ -41,7 +41,7 @@ export default function Report() {
   if (req.status === 'error') {
     return (
       <View className="report">
-        <PageHeader title="AI分析报告" />
+        <PageHeader title="分析报告" />
         <View className="report__body"><ErrorState error={req.error} onRetry={req.reload} /></View>
       </View>
     )
@@ -52,24 +52,24 @@ export default function Report() {
 
   const cells: SummaryCell[] = [
     { icon: 'zap', tone: 'energy', label: '发电量',
-      metric: formatEnergy(s.generation.value ?? 0), deltaPercent: s.generation.delta_percent },
+      metric: formatEnergy(s.generation.value), deltaPercent: s.generation.delta_percent },
     { icon: 'clock', tone: 'primary', label: '等效利用小时',
-      metric: formatHours(s.equivalent_hours.value ?? 0), deltaPercent: s.equivalent_hours.delta_percent },
+      metric: formatHours(s.equivalent_hours.value), deltaPercent: s.equivalent_hours.delta_percent },
     { icon: 'leaf', tone: 'purple', label: 'CO₂减排',
-      metric: formatCo2(s.co2_reduction.value ?? 0), deltaPercent: s.co2_reduction.delta_percent },
+      metric: formatCo2(s.co2_reduction.value), deltaPercent: s.co2_reduction.delta_percent },
     { icon: 'coins', tone: 'warning', label: '收益预估',
-      metric: formatCurrency(s.estimated_revenue.value ?? 0), deltaPercent: s.estimated_revenue.delta_percent },
+      metric: formatCurrency(s.estimated_revenue.value), deltaPercent: s.estimated_revenue.delta_percent },
   ]
 
   return (
     <View className="report">
-      <PageHeader title="AI分析报告" />
+      <PageHeader title="分析报告" />
 
       <View className="report__body">
         <View className="report__meta">
           <View className="report__station">
             <View className="report__thumb">
-              <Icon name="sun" size={18} color="#ffffff" />
+              <Icon name={r.station.type === 'wind' ? 'wind' : 'sun'} size={18} color="#ffffff" />
             </View>
             <View className="report__station-text">
               <Text className="report__station-name">{r.station.name}</Text>
@@ -82,6 +82,7 @@ export default function Report() {
             </View>
           </View>
           <View className="report__dates">
+            <Text className="report__date">{r.method === 'ai' ? 'AI 辅助分析' : '规则分析'} · 气象模型估算，非实测</Text>
             <Text className="report__date">报告日期：{r.report_date}</Text>
             <Text className="report__date">生成时间：{r.generated_at}</Text>
           </View>
@@ -91,7 +92,7 @@ export default function Report() {
         <View className="report__verdict">
           <View className="report__verdict-head">
             <Text className="report__verdict-label">综合判断</Text>
-            <Icon name="helpCircle" size={12} color="#9ca3af" />
+
           </View>
           <Text className="report__verdict-title">{r.verdict_title}</Text>
           <Text className="report__verdict-detail">{r.verdict_detail}</Text>
@@ -126,8 +127,9 @@ export default function Report() {
         </View>
 
         <View className="report__card">
-          <SectionHeader icon="barChart" title="数据摘要" action="查看更多" />
+          <SectionHeader icon="barChart" title="估算数据" action="查看更多" />
           <DataSummaryGrid cells={cells} />
+          <Text className="report__data-note">发电量与收益为模型估算，收益采用电价假设，非实际结算。</Text>
         </View>
       </View>
     </View>

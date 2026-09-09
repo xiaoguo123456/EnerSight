@@ -27,7 +27,7 @@ export interface PlantMarker {
  * 视野内的公开电站 marker。由地图页在 regionchange(end, 用户手势) 时调用 refresh。
  * 数据与 useMapLayer 一样来自服务端 bbox 查询，客户端不缓存全量目录。
  */
-export function useCatalogMarkers(mapId: string, enabled: boolean) {
+export function useCatalogMarkers(mapId: string, enabled: boolean, scale = 9) {
   const [plants, setPlants] = useState<CatalogPlant[]>([])
   const seq = useRef(0)
 
@@ -51,17 +51,30 @@ export function useCatalogMarkers(mapId: string, enabled: boolean) {
     }
   }, [mapId, enabled])
 
-  const markers: PlantMarker[] = plants.map((p, i) => ({
-    id: BASE_ID + i,
-    latitude: p.latitude,
-    longitude: p.longitude,
-    iconPath: ICON[p.type],
-    width: 22,
-    height: 22,
-    anchor: { x: 0.5, y: 0.5 },
-  }))
-
-  const byMarkerId = (id: number): CatalogPlant | undefined => plants[id - BASE_ID]
-
-  return { plants, markers, refresh, byMarkerId }
+  // 小比例尺按经纬网格合并标记；放大后恢复单站，避免密集区域互相遮挡。
+  const groups = new Map<string, CatalogPlant[]>()
+  const cell = 360 / 2 ** scale * 0.15
+  for (const plant of plants) {
+    const key = scale >= 14 ? plant.id : `${Math.floor(plant.longitude / cell)},${Math.floor(plant.latitude / cell)}`
+    groups.set(key, [...(groups.get(key) ?? []), plant])
+  }
+  const entries = [...groups.values()]
+  const markers = entries.map((group, i) => {
+    const p = group[0]!
+    const clustered = group.length > 1
+    return {
+      id: BASE_ID + i,
+      latitude: group.reduce((n, item) => n + item.latitude, 0) / group.length,
+      longitude: group.reduce((n, item) => n + item.longitude, 0) / group.length,
+      iconPath: ICON[p.type], width: clustered ? 30 : 22, height: clustered ? 30 : 22,
+      anchor: { x: 0.5, y: 0.5 },
+      ...(clustered ? { callout: { content: `${group.length} 座`, display: 'ALWAYS', color: '#334155', bgColor: '#ffffff', padding: 5, borderRadius: 6, fontSize: 12 } } : {}),
+    }
+  })
+  const byMarkerId = (id: number) => {
+    const group = entries[id - BASE_ID]
+    return group?.length === 1 ? group[0] : undefined
+  }
+  const clusterByMarkerId = (id: number) => entries[id - BASE_ID]?.length! > 1 ? markers[id - BASE_ID] : undefined
+  return { plants, markers, byMarkerId, clusterByMarkerId, refresh }
 }

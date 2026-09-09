@@ -157,3 +157,6 @@
     @include ellipsis;
   }
 }
+
+.map-page__collapse { display: flex; justify-content: center; align-items: center; gap: 6px; min-height: 28px; font-size: 11px; color: var(--color-text-sub); }
+.map-page__data-state { position: absolute; left: 12px; top: 60px; max-width: 220px; background: #fff; border-radius: 6px; padding: 6px 8px; font-size: 11px; color: #475569; }

@@ -24,7 +24,8 @@ export function thousands(n: number, fractionDigits = 0): string {
 }
 
 /** 功率：≥ 1000 kW 进位为 MW。320 kW / 1.8 MW */
-export function formatPower(kw: number): Formatted {
+export function formatPower(kw: number | null | undefined): Formatted {
+  if (kw == null || !Number.isFinite(kw)) return { value: '—', unit: 'kW' }
   if (Math.abs(kw) >= 1000) {
     return { value: thousands(kw / 1000, 1), unit: 'MW' }
   }
@@ -35,7 +36,8 @@ export function formatPower(kw: number): Formatted {
  * 电量：≥ 1000 MWh（即 1e6 kWh）进位为 GWh，否则保持 kWh。
  * 2,400 kWh / 1.26 GWh —— 设计中不出现 MWh。docs/04 §十
  */
-export function formatEnergy(kwh: number): Formatted {
+export function formatEnergy(kwh: number | null | undefined): Formatted {
+  if (kwh == null || !Number.isFinite(kwh)) return { value: '—', unit: 'kWh' }
   if (Math.abs(kwh) >= 1_000_000) {
     return { value: thousands(kwh / 1_000_000, 2), unit: 'GWh' }
   }
@@ -43,7 +45,8 @@ export function formatEnergy(kwh: number): Formatted {
 }
 
 /** 减排量：API 传 kg，展示为吨。< 100 吨保留 1 位小数，否则取整 */
-export function formatCo2(kg: number): Formatted {
+export function formatCo2(kg: number | null | undefined): Formatted {
+  if (kg == null || !Number.isFinite(kg)) return { value: '—', unit: '吨' }
   const t = kg / 1000
   return Math.abs(t) < 100
     ? { value: thousands(t, 1), unit: '吨' }
@@ -51,32 +54,39 @@ export function formatCo2(kg: number): Formatted {
 }
 
 /** 金额：整数元 */
-export function formatCurrency(yuan: number): Formatted {
+export function formatCurrency(yuan: number | null | undefined): Formatted {
+  if (yuan == null || !Number.isFinite(yuan)) return { value: '—', unit: '元' }
   return { value: thousands(yuan), unit: '元' }
 }
 
 /** 温度：整数 */
-export function formatTemperature(celsius: number): Formatted {
+export function formatTemperature(celsius: number | null | undefined): Formatted {
+  if (celsius == null || !Number.isFinite(celsius)) return { value: '—', unit: '℃' }
   return { value: thousands(Math.round(celsius)), unit: '℃' }
 }
 
 /** 风速：1 位小数 */
-export function formatWindSpeed(ms: number): Formatted {
+export function formatWindSpeed(ms: number | null | undefined): Formatted {
+  if (ms == null || !Number.isFinite(ms)) return { value: '—', unit: 'm/s' }
   return { value: thousands(ms, 1), unit: 'm/s' }
 }
 
 /** 辐射：整数 */
-export function formatRadiation(wm2: number): Formatted {
+export function formatRadiation(wm2: number | null | undefined): Formatted {
+  if (wm2 == null || !Number.isFinite(wm2)) return { value: '—', unit: 'W/m²' }
   return { value: thousands(Math.round(wm2)), unit: 'W/m²' }
 }
 
 /** 百分比（云量、SOC 等）：整数 */
-export function formatPercent(v: number): Formatted {
+export function formatPercent(v: number | null | undefined): Formatted {
+  if (v == null || !Number.isFinite(v)) return { value: '—', unit: '%' }
   return { value: thousands(Math.round(v)), unit: '%' }
 }
 
 /** 等效利用小时：1 位小数 */
-export function formatHours(h: number): Formatted {
+export function formatHours(h: number | null | undefined): Formatted {
+  if (h == null || !Number.isFinite(h)) return { value: '—', unit: 'h' }
+  if (h > 0 && h < 0.1) return { value: '<0.1', unit: 'h' }
   return { value: thousands(h, 1), unit: 'h' }
 }
 

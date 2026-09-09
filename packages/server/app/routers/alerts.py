@@ -1,6 +1,6 @@
 """预警接口。docs/06 §九"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -15,7 +15,7 @@ from app.schemas.envelope import CoordQuery, Envelope, envelope
 from app.services import alerts as svc
 from app.services import satellite, weather
 from app.services.home import default_station
-from app.services.station import get_station
+from app.services.station import get_station, to_summary
 
 router = APIRouter(prefix="/v1/alerts", tags=["alerts"])
 DbDep = Annotated[AsyncSession, Depends(get_session)]
@@ -84,6 +84,8 @@ async def current_alert(
             cloud_motion = satellite.to_cloud_motion(est, station, scene.observed_at, fc.tz)
     return envelope(
         CurrentAlertResponse(
+            station=to_summary(station, coord),
+            checked_at=datetime.now(UTC).isoformat(),
             alert=alert,
             cloud_motion=cloud_motion,
             satellite=satellite.to_response(scene, station, fc.tz, coord) if scene else None,

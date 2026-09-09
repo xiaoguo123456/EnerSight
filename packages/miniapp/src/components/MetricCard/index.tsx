@@ -17,12 +17,12 @@ interface Props {
 }
 
 export function MetricCard({
-  icon, iconColor = '#64748b', iconFill = true, label, metric, deltaPercent, caption,
+  icon, iconColor = '#64748b', iconFill = false, label, metric, deltaPercent, caption,
 }: Props) {
   return (
     <View className="metric-card">
       <View className="metric-card__head">
-        <Icon name={icon} size={14} color={iconColor} fill={iconFill} strokeWidth={2.2} />
+        <Icon name={icon} size={14} color={iconColor} fill={iconFill} strokeWidth={1.75} />
         <Text className="metric-card__label">{label}</Text>
       </View>
       <View className="metric-card__value">

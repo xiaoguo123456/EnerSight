@@ -94,3 +94,18 @@ describe('formatDelta', () => {
     expect(formatDelta(NaN)).toBeNull()
   })
 })
+
+describe('缺测与微小值', () => {
+  it('缺测不伪装成零，真实零值保留', () => {
+    for (const format of [formatPower, formatEnergy, formatCo2, formatCurrency, formatTemperature, formatWindSpeed, formatRadiation, formatPercent, formatHours]) {
+      expect(format(null).value).toBe('—')
+      expect(format(undefined).value).toBe('—')
+      expect(format(NaN).value).toBe('—')
+      expect(format(0).value).not.toBe('—')
+    }
+  })
+  it('少量等效小时不舍入成零', () => {
+    expect(formatHours(0.015).value).toBe('<0.1')
+    expect(formatHours(0).value).toBe('0.0')
+  })
+})

@@ -65,3 +65,5 @@
 
   &__chart { margin-top: 10px; }
 }
+
+.detail .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; > view + view { border-left: 0; } }

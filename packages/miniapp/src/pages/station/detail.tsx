@@ -26,7 +26,7 @@ const TREND_TABS: { value: TrendMetric; label: string }[] = [
 const ACTIONS: QuickEntry[] = [
   { icon: 'satellite', title: '卫星云图', subtitle: '实时云况监测', tone: 'primary',
     onTap: () => Taro.switchTab({ url: '/pages/alert/index' }) },
-  { icon: 'fileText', title: 'AI分析报告', subtitle: '智能生成专业分析', tone: 'purple',
+  { icon: 'fileText', title: '分析报告', subtitle: '查看气象分析', tone: 'purple',
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
 ]
 
@@ -39,6 +39,8 @@ export default function StationDetail() {
     [routeId],
   )
   const id = req.data?.station.id ?? routeId
+  const remember = useStationStore((s) => s.remember)
+  useEffect(() => { if (req.data?.station) remember(req.data.station) }, [req.data, remember])
   const setCurrent = useStationStore((s) => s.setCurrent)
   useEffect(() => { if (id) setCurrent(id) }, [id, setCurrent])
   const [metric, setMetric] = useState<TrendMetric>('radiation')
@@ -114,16 +116,16 @@ export default function StationDetail() {
               </View>
               <MetricGrid>
                 <MetricCard icon="cloudSun" label="气温"
-                  metric={formatTemperature(weather.temperature.value ?? 0)}
+                  metric={formatTemperature(weather.temperature.value)}
                   caption={weather.weather_text ?? undefined} />
                 <MetricCard icon="wind" iconFill={false} label="风速"
-                  metric={formatWindSpeed(weather.wind_speed.value ?? 0)}
+                  metric={formatWindSpeed(weather.wind_speed.value)}
                   deltaPercent={weather.wind_speed.delta_percent} />
                 <MetricCard icon="cloud" label="云量"
-                  metric={formatPercent(weather.cloud_cover.value ?? 0)}
+                  metric={formatPercent(weather.cloud_cover.value)}
                   deltaPercent={weather.cloud_cover.delta_percent} />
                 <MetricCard icon="sun" label="辐射"
-                  metric={formatRadiation(weather.radiation.value ?? 0)}
+                  metric={formatRadiation(weather.radiation.value)}
                   deltaPercent={weather.radiation.delta_percent} />
               </MetricGrid>
             </View>

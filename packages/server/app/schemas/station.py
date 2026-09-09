@@ -51,6 +51,7 @@ class StationListResponse(BaseModel):
 class PublicStationListResponse(StationListResponse):
     total: int = Field(description="当前搜索和类型筛选的总数")
     has_more: bool
+    regions: list[str] = Field(description="目录中可筛选的省级地区")
 
 
 class CreateStationRequest(BaseModel):

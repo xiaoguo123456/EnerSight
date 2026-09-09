@@ -44,7 +44,7 @@ export function EmptyState({ icon = 'clipboard', title, description, actionText,
  * docs/06 §十三
  */
 export function ErrorState({ error, onRetry }: { error: ApiError; onRetry?: () => void }) {
-  if (error.status === 503) {
+  if (error.code === 'DATA_UNAVAILABLE') {
     return <EmptyState icon="cloud" title="该区域暂无数据" description={error.message} />
   }
   return (

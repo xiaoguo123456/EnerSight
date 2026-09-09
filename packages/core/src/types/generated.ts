@@ -310,6 +310,12 @@ export interface components {
             /** Generated At */
             generated_at: string;
             /**
+             * Method
+             * @description 实际生成方式
+             * @enum {string}
+             */
+            method: "rule" | "ai";
+            /**
              * Is Fallback
              * @description 供埋点统计，不用于改变展示
              */
@@ -478,6 +484,12 @@ export interface components {
         };
         /** CurrentAlertResponse */
         CurrentAlertResponse: {
+            station: components["schemas"]["StationSummary"];
+            /**
+             * Checked At
+             * @description 气象规则检查时间，ISO 8601
+             */
+            checked_at: string;
             alert: components["schemas"]["AlertSummary"] | null;
             /** @description 仅卫星短临预警有；预报类为 null */
             cloud_motion: components["schemas"]["CloudMotion"] | null;
@@ -838,6 +850,11 @@ export interface components {
             total: number;
             /** Has More */
             has_more: boolean;
+            /**
+             * Regions
+             * @description 目录中可筛选的省级地区
+             */
+            regions: string[];
         };
         /** ReportPeriodOut */
         ReportPeriodOut: {
@@ -1245,6 +1262,8 @@ export interface operations {
                 keyword?: string;
                 limit?: number;
                 offset?: number;
+                province?: string;
+                sort?: "capacity" | "name";
             };
             header?: {
                 authorization?: string | null;

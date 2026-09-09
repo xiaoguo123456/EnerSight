@@ -85,3 +85,29 @@ async def test_公共电站禁止个人修改删除_退役不可查看(client: A
     data = (await client.get("/v1/stations/public")).json()["data"]
     assert data["total"] == 3
     assert (await client.get("/v1/stations/gem:B/detail")).status_code == 404
+
+
+async def test_地区筛选与名称排序(client: AsyncClient):
+    response = await client.get(
+        "/v1/stations/public", params={"province": "甘肃省", "sort": "name"}
+    )
+    data = response.json()["data"]
+    assert data["total"] == 1
+    assert data["stations"][0]["id"] == "gem:B"
+    assert set(data["regions"]) == {"甘肃省", "河北省"}
+    response = await client.get(
+        "/v1/stations/public", params={"province": "甘肃省", "type": "solar"}
+    )
+    assert response.json()["data"]["total"] == 0
+    data = (await client.get("/v1/stations/public", params={"sort": "name"})).json()["data"]
+    assert [s["id"] for s in data["stations"]] == ["wri:C", "wri:A", "gem:D", "gem:B"]
+
+
+async def test_预警上下文和报告生成方式(client: AsyncClient):
+    response = await client.get("/v1/alerts/current", params={"station_id": "gem:B"})
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["station"]["id"] == "gem:B" and data["checked_at"]
+    response = await client.get("/v1/reports/gem:B")
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["method"] == "rule"

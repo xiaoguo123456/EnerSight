@@ -24,7 +24,7 @@
   // ── 中性色 ────────────────────────────────
   --color-text:      #111827; // 标题、数值（比之前更深，加强对比）
   --color-text-sub:  #6b7280; // 描述、副标题
-  --color-text-weak: #9ca3af; // 时间戳、单位、占位符
+  --color-text-weak: #64748b; // 时间戳、单位、占位符
   --color-icon:      #64748b; // 指标图标统一色，克制，不抢数值的戏
 
   // ── 状态色 ────────────────────────────────
@@ -58,7 +58,7 @@
 
   // ── 圆角 ──────────────────────────────────
   --radius-card:   16px;
-  --radius-module: 24px;
+  --radius-module: 16px;
   --radius-button: 16px;
   --radius-thumb:  12px;
   --radius-pill:   999px; // 筛选 Tab、状态徽章、悬浮按钮
@@ -71,8 +71,8 @@
   --font-metric:       22px; // 四宫格数字
   --font-metric-sm:    17px; // 次级数字（站点卡）
   --font-body:         14px;
-  --font-caption:      11px;
-  --font-micro:        10px;
+  --font-caption:      12px;
+  --font-micro:        11px;
 
   // ── 阴影 ──────────────────────────────────
   // 浅色底上的卡片靠留白分层，不叠重阴影。地图浮层才需要

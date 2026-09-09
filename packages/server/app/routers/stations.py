@@ -1,6 +1,6 @@
 """站点接口。docs/06 §五"""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,10 +42,12 @@ async def list_public_stations(
     keyword: Annotated[str, Query(max_length=64)] = "",
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    province: Annotated[str, Query(max_length=32)] = "",
+    sort: Literal["capacity", "name"] = "capacity",
 ) -> Envelope[PublicStationListResponse]:
     """所有登录用户共享公开目录，不需要创建个人站点。"""
     data = await svc.list_public_stations(
-        db, coord, type.value if type else None, keyword, limit, offset
+        db, coord, type.value if type else None, keyword, limit, offset, province, sort
     )
     return envelope(data, coord)
 

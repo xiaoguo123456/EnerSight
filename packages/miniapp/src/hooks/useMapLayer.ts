@@ -17,6 +17,8 @@ import { layersApi } from '@/api/layers'
 export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean) {
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
   const [observedAt, setObservedAt] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
   const overlayIds = useRef<number[]>([])
   const seq = useRef(0)
 
@@ -29,9 +31,10 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   }, [mapId])
 
   const refresh = useCallback(async () => {
-    if (!layer || !active) { clear(); setLegend(null); return }
+    if (!layer || !active) { ++seq.current; clear(); setLegend(null); setObservedAt(null); setLoading(false); setError(false); return }
     const ctx = Taro.createMapContext(mapId)
     const mine = ++seq.current
+    setLoading(true); setError(false)
     let region: { southwest: { latitude: number; longitude: number }; northeast: { latitude: number; longitude: number } }
     let scale = 8
     try {
@@ -39,6 +42,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       scale = await new Promise<number>((resolve) =>
         ctx.getScale({ success: (r) => resolve(r.scale), fail: () => resolve(8) }))
     } catch (e) {
+      if (mine === seq.current) { setLoading(false); setError(true) }
       clientLog('map.getRegion', String((e as any)?.errMsg ?? e))
       return
     }
@@ -49,6 +53,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
         east: region.northeast.longitude, north: region.northeast.latitude,
       }, Math.round(scale))
     } catch (e) {
+      if (mine === seq.current) { setLoading(false); setError(true); clear(); setLegend(null); setObservedAt(null) }
       clientLog('map.layersApi', String((e as any)?.message ?? e))
       return
     }
@@ -56,7 +61,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
 
     clear()
     const frame = res.frames[0]
-    if (!frame) return
+    if (!frame) { setLoading(false); setError(true); return }
     frame.images.forEach((img, i) => {
       const id = 1000 + i
       overlayIds.current.push(id)
@@ -78,11 +83,12 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
         clientLog('map.overlay', `called id=${id} (no promise)`, { src: img.url })
       }
     })
+    setLoading(false)
     setLegend(res.legend)
     setObservedAt(res.observed_at)
   }, [mapId, layer, active, clear])
 
   useEffect(() => { void refresh() }, [refresh])
 
-  return { legend, observedAt, refresh }
+  return { legend, observedAt, refresh, loading, error }
 }

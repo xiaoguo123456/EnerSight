@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.home import AlertSummary
 from app.schemas.satellite import SatelliteCloudResponse
+from app.schemas.station import StationSummary
 
 
 class AlertListResponse(BaseModel):
@@ -25,6 +26,8 @@ class CloudMotion(BaseModel):
 
 
 class CurrentAlertResponse(BaseModel):
+    station: StationSummary
+    checked_at: str = Field(description="气象规则检查时间，ISO 8601")
     alert: AlertSummary | None
     cloud_motion: CloudMotion | None = Field(description="仅卫星短临预警有；预报类为 null")
     satellite: SatelliteCloudResponse | None = Field(description="上游不可用时为 null")

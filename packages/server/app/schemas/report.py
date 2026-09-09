@@ -1,5 +1,7 @@
 """AI 报告接口。docs/06 §十"""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.ai.schema import ReportPeriod
@@ -22,6 +24,7 @@ class AIReportResponse(BaseModel):
     station: StationSummary
     report_date: str
     generated_at: str
+    method: Literal["rule", "ai"] = Field(description="实际生成方式")
     is_fallback: bool = Field(description="供埋点统计，不用于改变展示")
 
     verdict_title: str
