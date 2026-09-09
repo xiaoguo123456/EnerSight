@@ -16,7 +16,7 @@ const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 81, height: 81 }, deviceScaleFactor: 1 })
 
 for (const [name, d] of Object.entries(P)) {
-  for (const [state, color] of [['', '#9CA3AF'], ['-active', '#1677FF']]) {
+  for (const [state, color] of [['', '#64748B'], ['-active', '#1677FF']]) {
     // 两态保持相同线宽与留白，仅用颜色区分选择。
     const fill = 'fill="none"'
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="81" height="81" viewBox="-2 -2 28 28" ${fill} stroke="${color}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`

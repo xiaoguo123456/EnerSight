@@ -20,10 +20,11 @@ export default defineAppConfig({
   window: {
     backgroundTextStyle: 'light',
     navigationStyle: 'custom',
+    navigationBarTextStyle: 'black',
     backgroundColor: '#F5F9FC',
   },
   tabBar: {
-    color: '#9CA3AF',
+    color: '#64748B',
     selectedColor: '#1677FF',
     backgroundColor: '#FFFFFF',
     borderStyle: 'white',
