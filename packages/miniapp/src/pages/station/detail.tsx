@@ -1,11 +1,12 @@
 import { View, Text } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   formatCoordinate, formatPercent, formatPower, formatRadiation,
   formatTemperature, formatWindSpeed,
 } from '@enersight/core/format'
 import type { TrendMetric, TrendSeries } from '@enersight/core/types'
+import { useStationStore } from '@/store'
 import { homeApi } from '@/api/home'
 import {
   EnergyScoreCard, ErrorState, Icon, MetricCard, MetricGrid, PageHeader,
@@ -38,6 +39,8 @@ export default function StationDetail() {
     [routeId],
   )
   const id = req.data?.station.id ?? routeId
+  const setCurrent = useStationStore((s) => s.setCurrent)
+  useEffect(() => { if (id) setCurrent(id) }, [id, setCurrent])
   const [metric, setMetric] = useState<TrendMetric>('radiation')
   const [trendOverride, setTrendOverride] = useState<TrendSeries | null>(null)
 

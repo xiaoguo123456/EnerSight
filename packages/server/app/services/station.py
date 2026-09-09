@@ -4,15 +4,16 @@
 存储与计算一律 WGS84。docs/06 §2.2
 """
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import ApiError, InvalidCoordinate, StationNotFound
 from app.geo import gcj02_to_wgs84, wgs84_to_gcj02
-from app.models import Station
+from app.models import CatalogPlant, Station
 from app.schemas.common import Coord
 from app.schemas.station import (
     CreateStationRequest,
+    PublicStationListResponse,
     StationCounts,
     StationListResponse,
     StationMetrics,
@@ -91,7 +92,89 @@ async def list_stations(
     return StationListResponse(stations=stations, counts=counts)
 
 
+def from_catalog(p: CatalogPlant) -> Station:
+    """公开电站直接参与计算，不复制个人记录，也不加入会话持久化。"""
+    from app.services.catalog import join_address
+
+    return Station(
+        id=p.id,
+        owner_id="__catalog__",
+        catalog_id=p.id,
+        name=p.display_name,
+        type=p.type,
+        status="normal",
+        latitude=p.latitude,
+        longitude=p.longitude,
+        capacity_kw=p.capacity_kw,
+        address=join_address(p.province, p.city, p.district) or None,
+        image=None,
+        tilt=None,
+        azimuth=None,
+        hub_height=None,
+    )
+
+
+async def list_public_stations(
+    db: AsyncSession, coord: Coord, type_: str | None, keyword: str, limit: int, offset: int
+) -> PublicStationListResponse:
+    active = CatalogPlant.status == "operating"
+    count_rows = (
+        await db.execute(
+            select(CatalogPlant.type, func.count()).where(active).group_by(CatalogPlant.type)
+        )
+    ).all()
+    counts = dict(count_rows)
+    filters = [active]
+    if type_:
+        filters.append(CatalogPlant.type == type_)
+    if keyword.strip():
+        filters.append(
+            or_(
+                *[
+                    col.icontains(keyword.strip(), autoescape=True)
+                    for col in (
+                        CatalogPlant.name,
+                        CatalogPlant.name_local,
+                        CatalogPlant.province,
+                        CatalogPlant.city,
+                        CatalogPlant.district,
+                        CatalogPlant.owner_name,
+                    )
+                ]
+            )
+        )
+    total = (
+        await db.execute(select(func.count()).select_from(CatalogPlant).where(*filters))
+    ).scalar_one()
+    plants = (
+        (
+            await db.execute(
+                select(CatalogPlant)
+                .where(*filters)
+                .order_by(CatalogPlant.capacity_kw.desc(), CatalogPlant.id)
+                .offset(offset)
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return PublicStationListResponse(
+        stations=[to_summary(from_catalog(p), coord) for p in plants],
+        counts=StationCounts(
+            all=sum(counts.values()), solar=counts.get("solar", 0), wind=counts.get("wind", 0)
+        ),
+        total=total,
+        has_more=offset + len(plants) < total,
+    )
+
+
 async def get_station(db: AsyncSession, owner_id: str, station_id: str) -> Station:
+    plant = await db.get(CatalogPlant, station_id)
+    if plant is not None:
+        if plant.status != "operating":
+            raise StationNotFound()
+        return from_catalog(plant)
     s = await db.get(Station, station_id)
     if s is None:
         raise StationNotFound()
@@ -172,6 +255,8 @@ async def update_station(
     db: AsyncSession, owner_id: str, station_id: str, req: UpdateStationRequest
 ) -> Station:
     s = await get_station(db, owner_id, station_id)
+    if s.owner_id == "__catalog__":
+        raise ApiError("CATALOG_READ_ONLY", "公开电站由平台维护，不支持个人修改或删除", 403)
     data = req.model_dump(exclude_unset=True, exclude={"coord"})
 
     # 经纬度要一起处理，因为坐标转换是二维的
@@ -194,6 +279,8 @@ async def delete_station(db: AsyncSession, owner_id: str, station_id: str) -> No
     from app.services.alerts import deactivate_all
 
     s = await get_station(db, owner_id, station_id)
+    if s.owner_id == "__catalog__":
+        raise ApiError("CATALOG_READ_ONLY", "公开电站由平台维护，不支持个人修改或删除", 403)
     await deactivate_all(db, s.id)
     await db.delete(s)
     await db.commit()

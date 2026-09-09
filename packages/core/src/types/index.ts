@@ -67,3 +67,6 @@ export interface ApiEnvelope<T> {
 export interface ApiErrorBody {
   error: { code: string; message: string }
 }
+
+/** 所有用户共享的分页电站目录。 */
+export type PublicStationListResponse = S['PublicStationListResponse']

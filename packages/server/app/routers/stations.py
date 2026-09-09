@@ -11,6 +11,7 @@ from app.schemas.common import Coord, StationType
 from app.schemas.envelope import CoordQuery, Envelope, envelope
 from app.schemas.station import (
     CreateStationRequest,
+    PublicStationListResponse,
     StationListResponse,
     StationSummary,
     UpdateStationRequest,
@@ -29,6 +30,23 @@ async def list_stations(
     type: Annotated[StationType | None, Query()] = None,
 ) -> Envelope[StationListResponse]:
     data = await svc.list_stations(db, user.id, coord, type.value if type else None)
+    return envelope(data, coord)
+
+
+@router.get("/public", response_model=Envelope[PublicStationListResponse])
+async def list_public_stations(
+    user: CurrentUserDep,
+    db: DbDep,
+    coord: CoordQuery = Coord.WGS84,
+    type: Annotated[StationType | None, Query()] = None,
+    keyword: Annotated[str, Query(max_length=64)] = "",
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> Envelope[PublicStationListResponse]:
+    """所有登录用户共享公开目录，不需要创建个人站点。"""
+    data = await svc.list_public_stations(
+        db, coord, type.value if type else None, keyword, limit, offset
+    )
     return envelope(data, coord)
 
 

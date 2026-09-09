@@ -45,7 +45,7 @@ export default function AlertCenter() {
         {cur.status === 'loading' && <Skeleton height={120} lines={3} />}
 
         {noStation && (
-          <EmptyState icon="mapPin" title="还没有站点" description="添加站点后开始监测预警" />
+          <EmptyState icon="mapPin" title="目录暂无电站" description="平台更新目录后即可查看预警" />
         )}
         {cur.status === 'error' && !noStation && <ErrorState error={cur.error} onRetry={cur.reload} />}
 

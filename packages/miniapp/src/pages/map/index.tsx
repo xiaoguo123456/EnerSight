@@ -9,7 +9,6 @@ import {
 import type { MapLayer } from '@/components'
 import { geoApi } from '@/api/geo'
 import { homeApi } from '@/api/home'
-import { stationsApi } from '@/api/stations'
 import { useCatalogMarkers } from '@/hooks/useCatalogMarkers'
 import { useMapLayer } from '@/hooks/useMapLayer'
 import { getSafeArea } from '@/hooks/useSafeArea'
@@ -39,7 +38,7 @@ export default function MapPage() {
   const [focus, setFocus] = useState<{ latitude: number; longitude: number } | null>(null)
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState<GeoPlace[] | null>(null)
-  // 选中的公开电站（搜索结果或点 marker），底部出一条「添加为我的站点」
+  // 选中的公开电站（搜索结果或点 marker），底部提供直接查看入口
   const [picked, setPicked] = useState<CatalogPlant | GeoPlace | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>()
   const safe = getSafeArea()
@@ -55,7 +54,7 @@ export default function MapPage() {
   const dataLayer = layer === 'station' ? null : layer
   const overlay = useMapLayer('main-map', dataLayer, req.status === 'success')
   // 公开电站 marker：任何图层下都显示，视野内最多 100 个
-  const catalog = useCatalogMarkers('main-map', req.status !== 'loading')
+  const catalog = useCatalogMarkers('main-map', true)
   useEffect(() => { if (req.status !== 'loading') void catalog.refresh() }, [req.status])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 搜索：300ms 防抖，空串清空
@@ -84,17 +83,12 @@ export default function MapPage() {
   }
 
   const setCurrent = useStationStore((s) => s.setCurrent)
-  const addPicked = async () => {
+  const viewPicked = () => {
     const id = picked && ('capacity' in picked ? picked.id : picked.catalog_id)
     if (!id) return
-    try {
-      const s = await stationsApi.addFromCatalog(id)
-      setCurrent(s.id)
-      setPicked(null)
-      Taro.showToast({ title: '已添加到我的站点', icon: 'success' })
-    } catch {
-      Taro.showToast({ title: '添加失败，请稍后再试', icon: 'none' })
-    }
+    setCurrent(id)
+    setPicked(null)
+    void Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(id)}` })
   }
 
   const locate = () => {
@@ -115,7 +109,7 @@ export default function MapPage() {
           paddingRight: `${Math.max(safe.menuGuardRight, 16)}px`,
         }}
       >
-        <View className="map-page__station">
+        <View className="map-page__station" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>
           <View className="map-page__station-thumb">
             <Icon name="sun" size={14} color="#fff" />
           </View>
@@ -163,7 +157,7 @@ export default function MapPage() {
           }}
         />
 
-        {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、我的站点与公开电站 */}
+        {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、站点与公开电站 */}
         <View className="map-page__search">
           <Icon name="search" size={15} color="#9ca3af" />
           <Input
@@ -190,7 +184,7 @@ export default function MapPage() {
                   {r.address && <Text className="map-page__result-addr">{r.address}</Text>}
                 </View>
                 {r.type === 'plant' && <Text className="map-page__result-tag">公开电站</Text>}
-                {r.type === 'station' && <Text className="map-page__result-tag map-page__result-tag--mine">我的</Text>}
+                {r.type === 'station' && <Text className="map-page__result-tag map-page__result-tag--mine">站点</Text>}
               </View>
             ))}
           </View>
@@ -206,9 +200,9 @@ export default function MapPage() {
                   : picked.address}
               </Text>
             </View>
-            <View className="map-page__picked-add" hoverClass="pressed" onClick={() => void addPicked()}>
-              <Icon name="plus" size={13} color="#fff" />
-              <Text className="map-page__picked-add-text">添加为我的站点</Text>
+            <View className="map-page__picked-add" hoverClass="pressed" onClick={viewPicked}>
+              <Icon name="chevronRight" size={13} color="#fff" />
+              <Text className="map-page__picked-add-text">查看电站</Text>
             </View>
             <View className="map-page__picked-close" onClick={() => setPicked(null)}>
               <Icon name="minus" size={12} color="#9ca3af" />
@@ -261,8 +255,8 @@ export default function MapPage() {
           {req.status === 'error' && (
             <EmptyState
               icon={req.error.status === 404 ? 'mapPin' : 'alertTriangle'}
-              title={req.error.status === 404 ? '还没有站点' : '加载失败'}
-              actionText={req.error.status === 404 ? '去添加' : '重试'}
+              title={req.error.status === 404 ? '目录暂无电站' : '加载失败'}
+              actionText={req.error.status === 404 ? '查看目录' : '重试'}
               onAction={req.error.status === 404
                 ? () => Taro.switchTab({ url: '/pages/station/index' })
                 : req.reload}

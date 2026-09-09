@@ -17,7 +17,7 @@ class Alert(Base):
     __tablename__ = "alerts"
 
     id: Mapped[str] = mapped_column(String(12), primary_key=True, default=_new_id)
-    station_id: Mapped[str] = mapped_column(String(12), index=True)
+    station_id: Mapped[str] = mapped_column(String(24), index=True)
 
     # 类型：cloud 云层/辐射下降 | wind 强风 | rain 暴雨 | heat 高温 | cold 低温
     kind: Mapped[str] = mapped_column(String(16))

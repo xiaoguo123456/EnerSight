@@ -3,14 +3,14 @@
  * 类型全部来自 codegen，不手写。
  */
 import type {
-  CreateStationRequest, StationListResponse, StationSummary, StationType,
+  CreateStationRequest, PublicStationListResponse, StationSummary, StationType,
   UpdateStationRequest,
 } from '@enersight/core/types'
 import { api } from './index'
 
 export const stationsApi = {
-  list: (type?: StationType) =>
-    api.get<StationListResponse>('/v1/stations', type ? { type } : undefined),
+  list: (params?: { type?: StationType; keyword?: string; limit?: number; offset?: number }) =>
+    api.get<PublicStationListResponse>('/v1/stations/public', params),
 
   create: (body: CreateStationRequest) =>
     api.post<StationSummary>('/v1/stations', body),

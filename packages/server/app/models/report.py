@@ -13,7 +13,7 @@ class Report(Base):
     __table_args__ = (UniqueConstraint("station_id", "day", name="uq_report_station_day"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    station_id: Mapped[str] = mapped_column(String(12), index=True)
+    station_id: Mapped[str] = mapped_column(String(24), index=True)
     day: Mapped[date] = mapped_column(Date)
 
     # AIReport 的 JSON；数据摘要另存，因为它是算出来的

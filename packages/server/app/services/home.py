@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Station
+from app.models import CatalogPlant, Station
 from app.schemas.common import Coord, EnergyIndex, IndexLevel, MetricWithDelta
 from app.schemas.home import (
     CurrentWeather,
@@ -25,7 +25,7 @@ from app.schemas.home import (
 )
 from app.schemas.station import StationMetrics, StationSummary
 from app.services import accumulate, alerts, energy, weather
-from app.services.station import get_station, to_summary
+from app.services.station import from_catalog, get_station, to_summary
 from app.services.weather_text import describe_transition
 
 _TREND_SPEC: dict[TrendMetric, tuple[str, str, float | None]] = {
@@ -145,7 +145,17 @@ async def build_station_view(
 
 
 async def default_station(db: AsyncSession, owner_id: str) -> Station | None:
-    """未指定时取用户最早创建的站点"""
+    """默认展示容量排序第一座公开电站；空目录兼容历史个人数据。"""
+    plant = (
+        await db.execute(
+            select(CatalogPlant)
+            .where(CatalogPlant.status == "operating")
+            .order_by(CatalogPlant.capacity_kw.desc(), CatalogPlant.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if plant is not None:
+        return from_catalog(plant)
     q = select(Station).where(Station.owner_id == owner_id).order_by(Station.created_at)
     return (await db.execute(q)).scalars().first()
 

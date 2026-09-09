@@ -4,7 +4,7 @@
 import { create } from 'zustand'
 import Taro from '@tarojs/taro'
 
-const CURRENT_KEY = 'enersight_current_station'
+const CURRENT_KEY = 'enersight_current_public_station'
 
 interface StationState {
   currentId: string | null
@@ -21,7 +21,7 @@ export const useStationStore = create<StationState>((set) => ({
   restore: () => {
     try {
       const id = Taro.getStorageSync(CURRENT_KEY)
-      if (id) set({ currentId: id })
+      if (typeof id === 'string' && /^(gem|wri):/.test(id)) set({ currentId: id })
     } catch {
       // Storage 不可用时保持默认值
     }

@@ -73,6 +73,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stations/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Public Stations
+         * @description 所有登录用户共享公开目录，不需要创建个人站点。
+         */
+        get: operations["list_public_stations_v1_stations_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stations/{station_id}": {
         parameters: {
             query?: never;
@@ -575,6 +595,11 @@ export interface components {
             data: components["schemas"]["MapOverviewResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[PublicStationListResponse] */
+        Envelope_PublicStationListResponse_: {
+            data: components["schemas"]["PublicStationListResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[SatelliteCloudResponse] */
         Envelope_SatelliteCloudResponse_: {
             data: components["schemas"]["SatelliteCloudResponse"];
@@ -800,6 +825,19 @@ export interface components {
              * @description 较昨日同期百分比，None 时前端隐藏标签
              */
             delta_percent: number | null;
+        };
+        /** PublicStationListResponse */
+        PublicStationListResponse: {
+            /** Stations */
+            stations: components["schemas"]["StationSummary"][];
+            counts: components["schemas"]["StationCounts"];
+            /**
+             * Total
+             * @description 当前搜索和类型筛选的总数
+             */
+            total: number;
+            /** Has More */
+            has_more: boolean;
         };
         /** ReportPeriodOut */
         ReportPeriodOut: {
@@ -1185,6 +1223,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_StationSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_stations_v1_stations_public_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+                type?: components["schemas"]["StationType"] | null;
+                keyword?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_PublicStationListResponse_"];
                 };
             };
             /** @description Validation Error */

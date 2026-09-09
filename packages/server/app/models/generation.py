@@ -17,7 +17,7 @@ class DailyGeneration(Base):
     __table_args__ = (UniqueConstraint("station_id", "day", name="uq_generation_station_day"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    station_id: Mapped[str] = mapped_column(String(12), index=True)
+    station_id: Mapped[str] = mapped_column(String(24), index=True)
     day: Mapped[date] = mapped_column(Date)
     kwh: Mapped[float] = mapped_column(Float)
     # 最近一次任务运行时的即时功率（kW），列表页展示用；日终后无意义

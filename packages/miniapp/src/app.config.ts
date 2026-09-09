@@ -5,8 +5,6 @@ const PAGES = [
   'pages/station/index',
   'pages/mine/index',
   'pages/station/detail',
-  'pages/station/form',
-  'pages/station/catalog',
   'pages/report/index',
 ]
 
@@ -53,7 +51,7 @@ export default defineAppConfig({
   requiredPrivateInfos: ['getLocation', 'chooseLocation'],
   permission: {
     'scope.userLocation': {
-      desc: '用于定位当前区域的气象数据与添加站点坐标',
+      desc: '用于定位当前区域气象数据与附近公开电站',
     },
   },
 })

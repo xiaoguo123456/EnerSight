@@ -47,7 +47,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   &__meta { font-size: var(--font-caption); color: var(--color-text-sub); }
-  &__add {
+  &__view {
     font-size: var(--font-caption); font-weight: 600; color: var(--color-primary);
     padding: 4px 10px; border-radius: var(--radius-pill);
     background: rgba(22, 119, 255, .08);
@@ -57,3 +57,14 @@
     font-size: var(--font-micro); color: var(--color-text-weak);
   }
 }
+
+.catalog__intro { font-size: var(--font-caption); color: var(--color-text-sub); }
+.catalog__pagination {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: var(--font-caption); color: var(--color-text-sub);
+}
+.catalog__page-button {
+  margin: 0; padding: 0 18px; font-size: var(--font-body);
+  background: var(--color-surface); color: var(--color-primary);
+}
+.catalog__page-button[disabled] { color: var(--color-text-weak); }

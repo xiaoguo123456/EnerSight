@@ -48,6 +48,11 @@ class StationListResponse(BaseModel):
     counts: StationCounts
 
 
+class PublicStationListResponse(StationListResponse):
+    total: int = Field(description="当前搜索和类型筛选的总数")
+    has_more: bool
+
+
 class CreateStationRequest(BaseModel):
     """两种建法：给 catalog_id 从公开电站目录复制（其余字段可省，给了则覆盖）；
     或者不给 catalog_id、把五个必填字段都给全（API 保留，小程序 V1 不提供自建入口）。"""

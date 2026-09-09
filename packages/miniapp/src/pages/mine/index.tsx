@@ -20,14 +20,14 @@ interface Row {
 }
 
 export default function Mine() {
-  const stations = useRequest(() => stationsApi.list(), [])
+  const stations = useRequest(() => stationsApi.list({ limit: 1 }), [])
   const count = stations.data?.counts.all
 
   const groups: { title: string; rows: Row[] }[] = [
     {
       title: '站点',
       rows: [
-        { icon: 'lineChart', tone: '#1677ff', label: '我的站点',
+        { icon: 'lineChart', tone: '#1677ff', label: '平台电站',
           value: count === undefined ? undefined : `${count} 个`,
           onTap: () => Taro.switchTab({ url: '/pages/station/index' }) },
         { icon: 'bell', tone: '#f59e0b', label: '预警通知', value: '已开启' },
@@ -59,8 +59,8 @@ export default function Mine() {
             <Icon name="user" size={24} color="#ffffff" />
           </View>
           <View className="mine__profile-text">
-            <Text className="mine__profile-name">未登录</Text>
-            <Text className="mine__profile-sub">登录后可同步站点与预警设置</Text>
+            <Text className="mine__profile-name">晴川观象</Text>
+            <Text className="mine__profile-sub">浏览平台全部公开电站</Text>
           </View>
           <Icon name="chevronRight" size={15} color="#9ca3af" />
         </View>
@@ -83,7 +83,7 @@ export default function Mine() {
           </View>
         ))}
 
-        <Text className="mine__note">设计稿未出，本页为占位实现</Text>
+        <Text className="mine__note">气象数据用于发电环境参考</Text>
       </View>
     </View>
   )

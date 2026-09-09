@@ -1,6 +1,6 @@
 import { View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   formatPercent, formatRadiation, formatTemperature, formatWindSpeed,
 } from '@enersight/core/format'
@@ -23,7 +23,7 @@ const ENTRIES: QuickEntry[] = [
     onTap: () => Taro.switchTab({ url: '/pages/alert/index' }) },
   { icon: 'fileText', title: 'AI分析报告', subtitle: '智能生成专业分析', tone: 'purple',
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
-  { icon: 'settings', title: '站点管理', subtitle: '站点信息与设备', tone: 'cyan',
+  { icon: 'settings', title: '电站目录', subtitle: '浏览全部公开电站', tone: 'cyan',
     onTap: () => Taro.switchTab({ url: '/pages/station/index' }) },
 ]
 
@@ -49,6 +49,8 @@ export default function Home() {
   const [metric, setMetric] = useState<TrendMetric>('radiation')
   // 首屏用 home 带回的辐射趋势；切 Tab 后单独拉
   const [trendOverride, setTrendOverride] = useState<TrendSeries | null>(null)
+
+  useEffect(() => { setMetric('radiation'); setTrendOverride(null) }, [currentId])
 
   const switchTrend = async (m: TrendMetric) => {
     setMetric(m)
@@ -94,9 +96,9 @@ export default function Home() {
         <View className="home__body" style={{ paddingTop: '96px' }}>
           <EmptyState
             icon="mapPin"
-            title="还没有站点"
-            description="添加第一个站点，开始查看发电环境"
-            actionText="去添加"
+            title="目录暂无电站"
+            description="平台更新目录后即可查看发电环境"
+            actionText="查看目录"
             onAction={() => Taro.switchTab({ url: '/pages/station/index' })}
           />
         </View>
@@ -110,6 +112,7 @@ export default function Home() {
   return (
     <View className="home">
       <StationTitleBar
+        onSwitch={() => Taro.switchTab({ url: '/pages/station/index' })}
         name={station.name}
         status={station.status}
         address={station.address ?? '—'}
