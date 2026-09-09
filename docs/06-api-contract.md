@@ -700,7 +700,7 @@ interface EnergyIndex {
   score: number | null                 // 0-100，不可算时为 null
   level: "excellent" | "good" | "fair" | "poor" | null
   summary: string | null               // AI 一句话结论
-  estimated: boolean                   // true 表示部分气象因子由气候平均值填补
+  estimated: boolean                   // true 表示部分输入由插值 / 昨日回填 / 降级得到（07 §六）
   attribution: IndexAttribution[]      // 归因，供说明弹窗展示
 }
 

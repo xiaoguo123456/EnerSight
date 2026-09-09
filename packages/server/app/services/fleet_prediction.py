@@ -26,6 +26,9 @@ _gate = asyncio.Lock()
 TZ = "Asia/Shanghai"
 FIELDS = [
     "wind_speed_10m",
+    "wind_speed_80m",
+    "wind_speed_100m",
+    "wind_speed_120m",
     "temperature_2m",
     "shortwave_radiation",
     "direct_normal_irradiance",
@@ -113,7 +116,7 @@ def calculate_cell(plants, raw, model, day):
     results = []
     lat, lon = cell(plants[0])
     for p in plants:
-        hub = wind.default_hub_height(p.capacity_kw) if p.type == "wind" else None
+        hub = wind.default_hub_height() if p.type == "wind" else None
         key = (p.type, hub)
         if key not in curves:
             st = Station(

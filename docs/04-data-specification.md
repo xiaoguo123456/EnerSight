@@ -89,7 +89,8 @@ https://api.open-meteo.com/v1/forecast
 | 气温 | `temperature_2m` | ℃ | 2 米气温 |
 | 体感温度 | `apparent_temperature` | ℃ | 地图页「体感 34℃」 |
 | 湿度 | `relative_humidity_2m` | % | |
-| 风速 | `wind_speed_10m` | m/s | 10 米风速 |
+| 风速 | `wind_speed_10m` | m/s | 10 米风速，界面展示值 |
+| 高层风速 | `wind_speed_80m` / `_100m` / `_120m` | m/s | 风电轮毂高度风速按各层对数廓线插值（07 §2.2），不展示 |
 | 风向 | `wind_direction_10m` | ° | 0–360，正北为 0，顺时针 |
 | 云量 | `cloud_cover` | % | 总云量 |
 | 分层云量 | `cloud_cover_low` / `_mid` / `_high` | % | 用于云层风险判断 |
@@ -178,6 +179,10 @@ forecast 接口追加 past_days=1
 | Diffuse Radiation | `diffuse_radiation` | W/m² | 散射分量 |
 | DNI | `direct_normal_irradiance` | W/m² | 法向直射 |
 | GTI | `global_tilted_irradiance` | W/m² | 倾斜面总辐射，光伏发电估算用 |
+
+**时间口径**：Open-Meteo 的小时辐射是**前一小时的平均值**，标在区间末 ——
+标注 13:00 的值对应 12:00–13:00。与之配合的太阳位置要取区间中点 12:30，
+晴空基准也取同一区间的均值（07 §2.1）。瞬时值另有 `*_instant` 字段，本项目不用。
 
 
 用途：

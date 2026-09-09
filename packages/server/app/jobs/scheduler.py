@@ -35,10 +35,33 @@ def _make_accumulate(app: FastAPI):
     return job
 
 
+async def _stations_to_scan(db) -> list[Station]:
+    """个人站点 + 首页顺手扫过、仍有生效预警的公开电站（否则它们的预警只有再次被打开才会解除）。"""
+    from app.models import Alert
+    from app.services.station import from_catalog
+
+    stations = list((await db.execute(select(Station))).scalars().all())
+    known = {s.id for s in stations}
+    active_ids = (
+        (await db.execute(select(Alert.station_id).where(Alert.active.is_(True)).distinct()))
+        .scalars()
+        .all()
+    )
+    pending = [sid for sid in active_ids if sid not in known]
+    if pending:
+        plants = (
+            (await db.execute(select(CatalogPlant).where(CatalogPlant.id.in_(pending))))
+            .scalars()
+            .all()
+        )
+        stations.extend(from_catalog(p) for p in plants)
+    return stations
+
+
 def _make_scan_alerts(app: FastAPI):
     async def job() -> None:
         async with SessionLocal() as db:
-            stations = (await db.execute(select(Station))).scalars().all()
+            stations = await _stations_to_scan(db)
             n = 0
             for s in stations:
                 try:

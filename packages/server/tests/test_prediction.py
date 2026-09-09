@@ -3,9 +3,11 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import numpy as np
+import pandas as pd
 import pytest
 import respx
 
+from app.config import settings
 from app.models import CatalogPlant, Station
 from app.services import fleet_prediction as fleet
 from app.services import prediction, weather
@@ -50,17 +52,41 @@ def test_日总量等于逐时功率积分():
     result = prediction.compute(station(), weather.parse_forecast(forecast()), "gfs_global")
     assert result.model == "gfs_global"
     assert len(result.power_kw) == 24
-    assert result.energy_kwh == 24000
-    assert sum(p.value for p in result.power_kw) == result.energy_kwh
+    # 15 m/s 在 100 m 已超额定：满发 × 24 h × (1 − 场站损耗)
+    assert result.energy_kwh == pytest.approx(24000 * (1 - settings.wind_losses))
+    assert sum(p.value for p in result.power_kw) == pytest.approx(result.energy_kwh)
 
 
 def test_缺测不当零且负容量不计算():
     fc = weather.parse_forecast(forecast())
-    fc.hourly.loc[fc.current_hour(), "wind_speed_10m"] = np.nan
-    assert prediction.compute(station(), fc).energy_kwh is None
+    day = fc.current_hour().normalize()
+    today = slice(day, day + pd.Timedelta(hours=23))
+    # 全天各层风速都缺：不可算，给 null 而不是 0
+    for col in ("wind_speed_10m", "wind_speed_80m", "wind_speed_100m", "wind_speed_120m"):
+        fc.hourly.loc[today, col] = np.nan
+    out = prediction.compute(station(), fc)
+    assert out.energy_kwh is None
+    assert all(p.value is None for p in out.power_kw)
     st = station()
     st.capacity_kw = -1
     assert prediction.compute(st, weather.parse_forecast(forecast())).energy_kwh is None
+
+
+def test_单小时缺测按前后插值而非归零():
+    fc = weather.parse_forecast(forecast())
+    for col in ("wind_speed_10m", "wind_speed_80m", "wind_speed_100m", "wind_speed_120m"):
+        fc.hourly.loc[fc.current_hour(), col] = np.nan
+    full = prediction.compute(station(), weather.parse_forecast(forecast()))
+    out = prediction.compute(station(), fc)
+    assert out.energy_kwh == pytest.approx(full.energy_kwh)
+
+
+def test_只有10m风速时按幂律降级():
+    fc = weather.parse_forecast(forecast())
+    for col in ("wind_speed_80m", "wind_speed_100m", "wind_speed_120m"):
+        fc.hourly[col] = np.nan
+    out = prediction.compute(station(), fc)
+    assert out.energy_kwh == pytest.approx(24000 * (1 - settings.wind_losses))
 
 
 def test_光伏夜间零值与缺测不同():

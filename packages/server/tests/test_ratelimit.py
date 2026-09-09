@@ -28,14 +28,30 @@ class TestRateLimit:
         for _ in range(5):
             assert (await client.get("/health")).status_code == 200
 
-    async def test_不同token分开计数(self, client: AsyncClient):
-        """无效 token 也先过限流再鉴权：aaa 被限，bbb 只是 401，不是 429"""
+    async def test_有效token分开计数(self, client: AsyncClient):
+        from app.auth import issue_token
+
+        ta, _ = issue_token("user-a")
+        tb, _ = issue_token("user-b")
         for _ in range(3):
-            await client.get("/v1/stations", headers={"Authorization": "Bearer aaa"})
-        r_a = await client.get("/v1/stations", headers={"Authorization": "Bearer aaa"})
-        r_b = await client.get("/v1/stations", headers={"Authorization": "Bearer bbb"})
+            await client.get("/v1/stations", headers={"Authorization": f"Bearer {ta}"})
+        r_a = await client.get("/v1/stations", headers={"Authorization": f"Bearer {ta}"})
+        r_b = await client.get("/v1/stations", headers={"Authorization": f"Bearer {tb}"})
         assert r_a.status_code == 429
-        assert r_b.status_code == 401
+        assert r_b.status_code == 200
+
+    async def test_无效token不能绕开按IP限流(self, client: AsyncClient):
+        """随便编 Bearer 不能各开一个桶：无效 token 一律按来源 IP 计数"""
+        for i in range(3):
+            await client.get("/v1/stations", headers={"Authorization": f"Bearer fake-{i}"})
+        r = await client.get("/v1/stations", headers={"Authorization": "Bearer fake-9"})
+        assert r.status_code == 429
+
+    def test_键数到上限时先清空闲键(self):
+        for i in range(ratelimit.MAX_KEYS):
+            ratelimit.check(f"idle-{i}", 5, now=0.0)
+        assert ratelimit.check("busy", 5, now=100.0) == 0  # 空闲键被清，忙碌键不受影响
+        assert len(ratelimit._hits) == 1
 
     def test_滑动窗口过期后放行(self):
         assert ratelimit.check("k", 2, now=100.0) == 0

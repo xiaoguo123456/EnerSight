@@ -6,30 +6,17 @@
 补偿性（夜间辐射为 0 仍能靠温度风速得分）和权重无依据三个结构缺陷。
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
 from app.config import settings
 from app.metrics import pv, solar, wind
+from app.metrics.pv import PvInputs
 from app.schemas.common import IndexAttribution, IndexAttributionFactor, IndexLevel
 
-
-@dataclass(frozen=True)
-class PvInputs:
-    latitude: float
-    longitude: float
-    tz: str
-    capacity_kw: float
-    tilt: float
-    azimuth: float
-    times: pd.DatetimeIndex
-    ghi: pd.Series
-    dni: pd.Series
-    dhi: pd.Series
-    temp_air: pd.Series
-    wind_speed: pd.Series
+__all__ = ["IndexResult", "PvInputs", "classify", "pv_index", "wind_index"]
 
 
 @dataclass(frozen=True)
@@ -39,6 +26,8 @@ class IndexResult:
     actual_kwh: float
     ideal_kwh: float
     attribution: list[IndexAttribution]
+    # 今日逐时出力（kW），与 actual_kwh 同一条链路算出，供当前功率与预测曲线复用
+    hourly_kw: pd.Series | None = field(default=None, compare=False, repr=False)
 
 
 def classify(score: float) -> IndexLevel:
@@ -51,55 +40,32 @@ def classify(score: float) -> IndexLevel:
     return IndexLevel.POOR
 
 
-def _pv_energy(
-    inp: PvInputs,
-    *,
-    ghi: pd.Series,
-    dni: pd.Series,
-    dhi: pd.Series,
-    temp_air: pd.Series,
-    wind_speed: pd.Series,
-) -> float:
-    pos = solar.solar_position(inp.latitude, inp.longitude, inp.tz, inp.times)
-    poa = pv.poa_from_components(
-        tilt=inp.tilt,
-        azimuth=inp.azimuth,
-        solar_zenith=pos["apparent_zenith"],
-        solar_azimuth=pos["azimuth"],
-        dni=dni,
-        ghi=ghi,
-        dhi=dhi,
-    )
-    dc = pv.dc_power(
-        poa_global=poa,
-        temp_air=temp_air,
-        wind_speed=wind_speed,
-        capacity_kw=inp.capacity_kw,
-    )
-    return pv.daily_energy_kwh(dc)
+def _check_complete(inp: PvInputs) -> None:
+    for name in ("ghi", "dni", "dhi", "temp_air", "wind_speed"):
+        s = getattr(inp, name)
+        if not np.isfinite(s.to_numpy(dtype=float)).all():
+            raise ValueError(f"pv_index 输入 {name} 含缺测；缺测判定与填补由 services.energy 负责")
 
 
 def pv_index(inp: PvInputs) -> IndexResult:
-    """光伏指数。分子分母跑同一个模型链，只换输入。"""
-    cs = solar.clearsky(inp.latitude, inp.longitude, inp.tz, inp.times)
+    """光伏指数。分子分母跑同一个模型链，只换输入。输入须完整（无 NaN）。"""
+    _check_complete(inp)
+    # 理想基准与 Open-Meteo 同口径：前一小时均值，不是整点瞬时值
+    cs = solar.clearsky_hourly_mean(inp.latitude, inp.longitude, inp.tz, inp.times)
     ideal_temp = pd.Series(pv.IDEAL_TEMP_AIR, index=inp.times)
     ideal_wind = pd.Series(pv.IDEAL_WIND_SPEED, index=inp.times)
 
-    actual = _pv_energy(
-        inp,
-        ghi=inp.ghi,
-        dni=inp.dni,
-        dhi=inp.dhi,
-        temp_air=inp.temp_air,
-        wind_speed=inp.wind_speed,
-    )
-    ideal = _pv_energy(
-        inp,
-        ghi=cs["ghi"],
-        dni=cs["dni"],
-        dhi=cs["dhi"],
-        temp_air=ideal_temp,
-        wind_speed=ideal_wind,
+    actual_kw = pv.hourly_power(inp)
+    actual = pv.daily_energy_kwh(actual_kw)
+    ideal = pv.daily_energy_kwh(
+        pv.hourly_power(
+            inp,
+            ghi=cs["ghi"],
+            dni=cs["dni"],
+            dhi=cs["dhi"],
+            temp_air=ideal_temp,
+            wind_speed=ideal_wind,
+        )
     )
 
     score = 0.0 if ideal <= 0 else min(100.0, actual / ideal * 100.0)
@@ -112,13 +78,8 @@ def pv_index(inp: PvInputs) -> IndexResult:
         def pct(v: float) -> float:
             return v / ideal * 100.0
 
-        no_cloud = _pv_energy(
-            inp,
-            ghi=cs["ghi"],
-            dni=cs["dni"],
-            dhi=cs["dhi"],
-            temp_air=inp.temp_air,
-            wind_speed=inp.wind_speed,
+        no_cloud = pv.daily_energy_kwh(
+            pv.hourly_power(inp, ghi=cs["ghi"], dni=cs["dni"], dhi=cs["dhi"])
         )
         kt = actual / no_cloud if no_cloud > 0 else 0.0
         attribution.append(
@@ -129,14 +90,7 @@ def pv_index(inp: PvInputs) -> IndexResult:
             )
         )
 
-        ideal_temp_only = _pv_energy(
-            inp,
-            ghi=inp.ghi,
-            dni=inp.dni,
-            dhi=inp.dhi,
-            temp_air=ideal_temp,
-            wind_speed=inp.wind_speed,
-        )
+        ideal_temp_only = pv.daily_energy_kwh(pv.hourly_power(inp, temp_air=ideal_temp))
         t_avg = float(inp.temp_air.mean())
         attribution.append(
             IndexAttribution(
@@ -146,12 +100,23 @@ def pv_index(inp: PvInputs) -> IndexResult:
             )
         )
 
+        ideal_wind_only = pv.daily_energy_kwh(pv.hourly_power(inp, wind_speed=ideal_wind))
+        v_avg = float(inp.wind_speed.mean())
+        attribution.append(
+            IndexAttribution(
+                factor=IndexAttributionFactor.WIND,
+                delta=round(pct(actual) - pct(ideal_wind_only), 1),
+                description=f"平均风速 {v_avg:.1f} m/s 对组件散热的影响",
+            )
+        )
+
     return IndexResult(
         score=round(score, 1),
         level=classify(score),
         actual_kwh=actual,
         ideal_kwh=ideal,
         attribution=attribution,
+        hourly_kw=actual_kw,
     )
 
 

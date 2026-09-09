@@ -1,27 +1,143 @@
-"""站点能量指标：环境指数 + 发电估算。
+"""站点能量指标：环境指数 + 发电估算 + 逐时出力。
 
 把 Forecast 喂给 app/metrics 的物理模型。pvlib 是 CPU 密集同步代码，
 调用方必须放进 executor，不要在 async 路由里直接调。docs/05 §6.6
+
+缺测处理（docs/07 §六）在这里统一做，metrics 层只负责算：
+- 次要因子（光伏的气温、10 m 风速）：短缺口按前后时刻插值，长缺口用昨日同时刻，标 estimated
+- 主要因子（辐射、风电各层风速）：只补 2–3 小时内的短缺口，标 estimated；夜间辐射缺测归 0
+- 仍有必要输入缺失 → 不可算：指数 null、日发电 null，不用 0 冒充
 """
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
-from app.metrics import pv, wind
+from app.metrics import pv, solar, wind
 from app.metrics.index import IndexResult, PvInputs, pv_index, wind_index
 from app.models import Station
 from app.services.weather import Forecast
 
+RADIATION_COLUMNS = ["shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation"]
+# 主要因子只补短缺口：辐射 2 小时、风速 3 小时；再长就是不可算，不用昨日冒充
+RADIATION_GAP_HOURS = 2
+WIND_GAP_HOURS = 3
+# 次要因子（光伏的气温与散热风速，对出力只有几个百分点的影响）允许更长的插值与昨日同时刻回填
+SECONDARY_GAP_HOURS = 6
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """今日 24 点（00:00–23:00，区间末标注）的输入，缺测已按规则处理。"""
+
+    frame: pd.DataFrame
+    complete: bool  # 必要输入齐全，可算
+    estimated: bool  # 有输入由插值 / 降级得到
+    v_hub: pd.Series | None  # 风电：轮毂高度风速
+
 
 @dataclass(frozen=True)
 class EnergySnapshot:
-    index: IndexResult
-    daily_kwh: float
+    index: IndexResult | None  # 不可算时 None
+    daily_kwh: float | None
     current_kw: float | None
+    hourly_kw: pd.Series  # 今日逐时出力，不可算时全 NaN
+    estimated: bool
 
 
-def _pv_inputs(station: Station, today: pd.DataFrame, tz: str) -> PvInputs:
+def _today_hours(fc: Forecast) -> pd.DatetimeIndex:
+    return pd.date_range(fc.current_hour().normalize(), periods=24, freq="h")
+
+
+def _interp_short_gaps(s: pd.Series, limit_hours: int) -> pd.Series:
+    """只对长度 ≤ limit 且两端有值的缺口做时间插值；长缺口整段保留 NaN，不做半截填补。"""
+    isna = s.isna()
+    if not isna.any():
+        return s
+    runs = (isna != isna.shift()).cumsum()
+    run_len = isna.groupby(runs).transform("size")
+    fillable = isna & (run_len <= limit_hours)
+    interp = s.interpolate(method="time", limit_area="inside")
+    return s.where(~fillable, interp)
+
+
+def _fill_from_forecast(
+    fc: Forecast, frame: pd.DataFrame, col: str, *, limit_hours: int, persistence: bool
+) -> tuple[pd.Series, bool]:
+    """用整份预报（昨日 + 7 天）填补今日缺口。返回 (列, 是否填补过)。
+
+    persistence=True 时长缺口再用昨日同时刻回填（只给次要因子用）。
+    """
+    today = frame[col].astype(float) if col in frame else pd.Series(np.nan, index=frame.index)
+    missing = today.isna()
+    if not missing.any() or col not in fc.hourly:
+        return today, False
+    full = fc.hourly[col].astype(float)
+    filled = today.fillna(_interp_short_gaps(full, limit_hours).reindex(frame.index))
+    if persistence:
+        filled = filled.fillna(full.shift(24, freq="h").reindex(frame.index))
+    return filled, bool(filled.notna().to_numpy()[missing.to_numpy()].any())
+
+
+def prepare(station: Station, fc: Forecast) -> Prepared:
+    hours = _today_hours(fc)
+    frame = fc.today().reindex(hours).copy()
+    estimated = False
+
+    if station.type == "wind":
+        levels: dict[float, pd.Series] = {}
+        for height, col in wind.LEVEL_COLUMNS.items():
+            if col not in frame and col not in fc.hourly:
+                continue
+            series, filled = _fill_from_forecast(
+                fc, frame, col, limit_hours=WIND_GAP_HOURS, persistence=False
+            )
+            estimated |= filled
+            frame[col] = series
+            levels[height] = series
+        hub = station.hub_height if station.hub_height is not None else wind.default_hub_height()
+        if levels:
+            v_hub, fallback = wind.hub_wind_speed(levels, hub)
+            estimated |= bool(fallback.any())
+        else:
+            v_hub = pd.Series(np.nan, index=hours)
+        complete = _capacity_ok(station) and bool(np.isfinite(v_hub.to_numpy()).all())
+        return Prepared(frame, complete, estimated, v_hub)
+
+    # 光伏
+    for col in ("temperature_2m", "wind_speed_10m"):
+        series, filled = _fill_from_forecast(
+            fc, frame, col, limit_hours=SECONDARY_GAP_HOURS, persistence=True
+        )
+        estimated |= filled
+        frame[col] = series
+
+    night = (
+        solar.clearsky_hourly_mean(station.latitude, station.longitude, fc.tz, hours)["ghi"] < 1.0
+    )
+    for col in RADIATION_COLUMNS:
+        s = frame[col].astype(float) if col in frame else pd.Series(np.nan, index=hours)
+        s = s.where(~(s.isna() & night), 0.0)  # 夜间缺测就是 0，不算估计
+        gap = s.isna()
+        if gap.any():
+            s2 = _interp_short_gaps(s, RADIATION_GAP_HOURS)
+            estimated |= bool(s2.notna().to_numpy()[gap.to_numpy()].any())
+            s = s2
+        frame[col] = s
+
+    required = [*RADIATION_COLUMNS, "temperature_2m", "wind_speed_10m"]
+    complete = _capacity_ok(station) and all(
+        np.isfinite(frame[c].to_numpy(dtype=float)).all() for c in required
+    )
+    return Prepared(frame, complete, estimated, None)
+
+
+def _capacity_ok(station: Station) -> bool:
+    return bool(np.isfinite(station.capacity_kw)) and station.capacity_kw > 0
+
+
+def pv_inputs(station: Station, frame: pd.DataFrame, tz: str) -> PvInputs:
     return PvInputs(
         latitude=station.latitude,
         longitude=station.longitude,
@@ -29,62 +145,61 @@ def _pv_inputs(station: Station, today: pd.DataFrame, tz: str) -> PvInputs:
         capacity_kw=station.capacity_kw,
         tilt=station.tilt if station.tilt is not None else pv.default_tilt(station.latitude),
         azimuth=station.azimuth if station.azimuth is not None else 180.0,
-        times=pd.DatetimeIndex(today.index),
-        ghi=today["shortwave_radiation"].astype(float),
-        dni=today["direct_normal_irradiance"].astype(float),
-        dhi=today["diffuse_radiation"].astype(float),
-        temp_air=today["temperature_2m"].astype(float),
-        wind_speed=today["wind_speed_10m"].astype(float),
+        times=pd.DatetimeIndex(frame.index),
+        ghi=frame["shortwave_radiation"].astype(float),
+        dni=frame["direct_normal_irradiance"].astype(float),
+        dhi=frame["diffuse_radiation"].astype(float),
+        temp_air=frame["temperature_2m"].astype(float),
+        wind_speed=frame["wind_speed_10m"].astype(float),
     )
+
+
+def hourly_power(station: Station, prep: Prepared, tz: str) -> pd.Series:
+    """今日逐时出力（kW）。不可算时全 NaN。发电预测与区域汇总都走这里。"""
+    if not prep.complete:
+        return pd.Series(np.nan, index=prep.frame.index)
+    if station.type == "wind":
+        assert prep.v_hub is not None
+        return wind.plant_power(prep.v_hub, station.capacity_kw)
+    return pv.hourly_power(pv_inputs(station, prep.frame, tz))
 
 
 def compute(station: Station, fc: Forecast) -> EnergySnapshot:
     """同步、CPU 密集。"""
-    today = fc.today()
+    prep = prepare(station, fc)
     now_ts = fc.current_hour()
+    if not prep.complete:
+        return EnergySnapshot(
+            index=None,
+            daily_kwh=None,
+            current_kw=None,
+            hourly_kw=pd.Series(np.nan, index=prep.frame.index),
+            estimated=prep.estimated,
+        )
 
     if station.type == "solar":
-        inp = _pv_inputs(station, today, fc.tz)
-        result = pv_index(inp)
+        result = pv_index(pv_inputs(station, prep.frame, fc.tz))
+        assert result.hourly_kw is not None
+        hourly_kw = result.hourly_kw
+    else:
+        # 风电：全天 24 小时，不分昼夜
+        hourly_kw = hourly_power(station, prep, fc.tz)
+        result = wind_index(float(hourly_kw.sum()), station.capacity_kw)
 
-        # 当前小时功率：用与指数同一条模型链算今日逐时，取当前点
-        from app.metrics import solar
-
-        pos = solar.solar_position(station.latitude, station.longitude, fc.tz, inp.times)
-        poa = pv.poa_from_components(
-            tilt=inp.tilt,
-            azimuth=inp.azimuth,
-            solar_zenith=pos["apparent_zenith"],
-            solar_azimuth=pos["azimuth"],
-            dni=inp.dni,
-            ghi=inp.ghi,
-            dhi=inp.dhi,
-        )
-        hourly_kw = pv.dc_power(
-            poa_global=poa,
-            temp_air=inp.temp_air,
-            wind_speed=inp.wind_speed,
-            capacity_kw=station.capacity_kw,
-        )
-        current = float(hourly_kw.get(now_ts, 0.0)) if now_ts in hourly_kw.index else None
-        return EnergySnapshot(index=result, daily_kwh=result.actual_kwh, current_kw=current)
-
-    # 风电：全天 24 小时，不分昼夜
-    hub = (
-        station.hub_height
-        if station.hub_height is not None
-        else wind.default_hub_height(station.capacity_kw)
+    current = float(hourly_kw.loc[now_ts]) if now_ts in hourly_kw.index else None
+    return EnergySnapshot(
+        index=result,
+        daily_kwh=result.actual_kwh,
+        current_kw=current,
+        hourly_kw=hourly_kw,
+        estimated=prep.estimated,
     )
-    v_hub = wind.extrapolate_wind(today["wind_speed_10m"].astype(float), hub)
-    hourly_kw = wind.power_curve(v_hub, station.capacity_kw)
-    daily = float(hourly_kw.sum())
-    result = wind_index(daily, station.capacity_kw)
-    current = float(hourly_kw.get(now_ts, 0.0)) if now_ts in hourly_kw.index else None
-    return EnergySnapshot(index=result, daily_kwh=daily, current_kw=current)
 
 
-def summary_text(result: IndexResult, station_type: str) -> str:
+def summary_text(result: IndexResult | None, station_type: str) -> str:
     """规则模板的一句话结论。AI 接入前的兜底，接入后也是降级路径。docs/08 §六"""
+    if result is None:
+        return "气象数据获取中，指数暂不可算"
     s = result.score
     if s >= 85:
         base = "今日发电条件优秀"

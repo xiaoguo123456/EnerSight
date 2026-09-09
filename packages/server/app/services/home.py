@@ -93,13 +93,14 @@ def build_trend(
 
 
 def build_index(snap: energy.EnergySnapshot, station_type: str) -> EnergyIndex:
+    """不可算时 score / level 为 None，前端显示「数据获取中」。docs/06 §十二"""
     r = snap.index
     return EnergyIndex(
-        score=r.score,
-        level=IndexLevel(r.level.value),
+        score=r.score if r else None,
+        level=IndexLevel(r.level.value) if r else None,
         summary=energy.summary_text(r, station_type),
-        estimated=False,
-        attribution=r.attribution,
+        estimated=snap.estimated,
+        attribution=r.attribution if r else [],
     )
 
 
@@ -129,7 +130,7 @@ async def build_station_view(
 
     summary = to_summary(station, coord)
     summary.metrics = StationMetrics(
-        daily_generation=round(snap.daily_kwh, 1),
+        daily_generation=round(snap.daily_kwh, 1) if snap.daily_kwh is not None else None,
         current_power=round(snap.current_kw, 1) if snap.current_kw is not None else None,
         total_generation=round(total_kwh, 1) if total_kwh is not None else None,
         co2_reduction=round(co2_kg, 1) if co2_kg is not None else None,
@@ -185,7 +186,8 @@ async def build_home(
     await db.commit()
     from app.services import prediction
 
-    forecast_prediction = await asyncio.to_thread(prediction.compute, station, v.forecast)
+    # 逐时出力已在 build_station_view 里算过，直接复用，不再跑一遍 pvlib
+    forecast_prediction = prediction.from_hourly(v.forecast, v.snapshot.hourly_kw)
     return HomeResponse(
         prediction=forecast_prediction,
         has_station=True,

@@ -260,3 +260,51 @@ async def test_个人模型不扫描写入公共预警(client, open_meteo, monke
 async def test_拒绝任意模型字符串(client):
     response = await client.get("/v1/home", headers={"X-Weather-Model": "../unexpected"})
     assert response.status_code == 400
+
+
+class TestHomeMissingData:
+    """docs/06 §2.5、07 §六：缺测给 null，不用 0 冒充成「0 分 较差」。"""
+
+    def _raw(self, missing: list[str], hours: slice) -> dict:
+        raw = make_forecast(start_date=_yesterday_midnight())
+        for k in missing:
+            col = raw["hourly"][k]
+            for i in range(*hours.indices(len(col))):
+                col[i] = None
+        return raw
+
+    async def test_今日辐射整段缺失时指数与发电为null(self, client: AsyncClient):
+        raw = self._raw(
+            ["shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation"], slice(24, 48)
+        )
+        with respx.mock:
+            respx.get(url__regex=r".*open-meteo.*").mock(return_value=Response(200, json=raw))
+            sid = await _create(client, SUZHOU)
+            d = (await client.get("/v1/home", params={"station_id": sid})).json()["data"]
+        assert d["index"]["score"] is None and d["index"]["level"] is None
+        assert d["index"]["estimated"] is False
+        assert d["station"]["metrics"]["daily_generation"] is None
+        assert d["prediction"]["energy_kwh"] is None
+        assert all(p["value"] is None for p in d["prediction"]["power_kw"])
+
+    async def test_气温缺失用昨日回填并标记estimated(self, client: AsyncClient):
+        raw = self._raw(["temperature_2m"], slice(24, 48))
+        with respx.mock:
+            respx.get(url__regex=r".*open-meteo.*").mock(return_value=Response(200, json=raw))
+            sid = await _create(client, SUZHOU)
+            d = (await client.get("/v1/home", params={"station_id": sid})).json()["data"]
+        assert d["index"]["score"] is not None and d["index"]["estimated"] is True
+        assert d["station"]["metrics"]["daily_generation"] > 0
+
+    async def test_风电各层风速整段缺失时为null(self, client: AsyncClient):
+        raw = self._raw(
+            ["wind_speed_10m", "wind_speed_80m", "wind_speed_100m", "wind_speed_120m"],
+            slice(24, 48),
+        )
+        with respx.mock:
+            respx.get(url__regex=r".*open-meteo.*").mock(return_value=Response(200, json=raw))
+            sid = await _create(client, WIND)
+            d = (await client.get("/v1/home", params={"station_id": sid})).json()["data"]
+        assert d["index"]["score"] is None
+        assert d["station"]["metrics"]["daily_generation"] is None
+        assert d["prediction"]["energy_kwh"] is None

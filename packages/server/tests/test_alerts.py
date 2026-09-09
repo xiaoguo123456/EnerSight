@@ -92,6 +92,28 @@ class TestRules:
         found = alerts.detect_weather(parse_forecast(raw))
         assert any(d.kind == "wind" and d.level == "severe" for d in found)
 
+    def test_风电站按轮毂高度判切出(self):
+        """10 m 17 m/s 对光伏只是强风；100 m 轮毂处约 25.7 m/s，风机已切出，与功率曲线同口径"""
+        from app.models import Station
+
+        raw = make_forecast(start_date=_yesterday_midnight(), wind_today=17.0)
+        fc = parse_forecast(raw)
+        solar_found = alerts.detect_weather(fc, self._station())
+        assert any(d.kind == "wind" and d.level == "moderate" for d in solar_found)
+        farm = Station(
+            id="w1",
+            owner_id="u",
+            name="风场",
+            type="wind",
+            latitude=31.3,
+            longitude=120.62,
+            capacity_kw=50000,
+            hub_height=100,
+        )
+        wind_found = alerts.detect_weather(fc, farm)
+        severe = next(d for d in wind_found if d.kind == "wind")
+        assert severe.level == "severe" and "轮毂高度 100 m" in severe.description
+
     def test_高温(self):
         raw = make_forecast(start_date=_yesterday_midnight(), temp_today=40.0)
         found = alerts.detect_weather(parse_forecast(raw))
@@ -101,6 +123,56 @@ class TestRules:
         raw = make_forecast(start_date=_yesterday_midnight(), code_now=0, code_later=95)
         found = alerts.detect_weather(parse_forecast(raw))
         assert any(d.kind == "rain" for d in found)
+
+
+class TestClearing:
+    """解除要求条件消失并持续 30 分钟稳定，避免临界值抖动产生「预警 / 解除 / 预警」。docs/07 §5.3"""
+
+    async def _db(self):
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from app.db import Base
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return async_sessionmaker(engine, expire_on_commit=False)()
+
+    async def test_条件刚消失不解除_持续30分钟才解除(self):
+        from app.models import Alert, Station
+
+        db = await self._db()
+        st = Station(
+            id="s1",
+            owner_id="u",
+            name="x",
+            type="solar",
+            latitude=31.3,
+            longitude=120.6,
+            capacity_kw=500,
+        )
+        hot = alerts.Detected("heat", "moderate", "高温", "…")
+        await alerts.apply_detections(db, st, [hot])
+        await db.commit()
+        # 第一次没检测到：刚消失，仍生效
+        await alerts.apply_detections(db, st, [])
+        await db.commit()
+        rows = (await db.execute(__import__("sqlalchemy").select(Alert))).scalars().all()
+        assert len(rows) == 1 and rows[0].active
+        # 把最近检测时刻拨回 31 分钟：再扫一次才解除
+        rows[0].last_detected_at = rows[0].last_detected_at - timedelta(minutes=31)
+        await db.commit()
+        await alerts.apply_detections(db, st, [])
+        await db.commit()
+        rows = (await db.execute(__import__("sqlalchemy").select(Alert))).scalars().all()
+        levels = sorted(a.level for a in rows)
+        assert levels == ["cleared", "moderate"] and not any(a.active for a in rows)
+        await db.close()
 
 
 class TestApi:
@@ -131,14 +203,20 @@ class TestApi:
             home = (await client.get("/v1/home", params={"station_id": sid})).json()["data"]
             assert home["alert"]["level"] == "moderate"
 
-    async def test_等级筛选不含解除(self, client: AsyncClient):
+    async def test_等级筛选不含解除(self, client: AsyncClient, monkeypatch):
         raw_windy = make_forecast(start_date=_yesterday_midnight(), wind_today=18.0)
         sid = await self._station_with(client, raw_windy)
-        # 风停了 → 再扫一次应生成 cleared
+        # 风停了 → 条件消失并稳定 30 分钟后才解除：先验证刚消失时仍在生效
         raw_calm = make_forecast(start_date=_yesterday_midnight(), wind_today=3.0)
         weather.clear_cache()
         with respx.mock:
             respx.get(url__regex=r".*open-meteo.*").mock(return_value=Response(200, json=raw_calm))
+            cur = (await client.get("/v1/alerts/current", params={"station_id": sid})).json()[
+                "data"
+            ]
+            assert cur["alert"] is not None and cur["alert"]["level"] == "moderate"
+            # 再过 30 分钟仍未检测到 → 解除
+            monkeypatch.setattr(alerts, "CLEAR_STABLE_WINDOW", timedelta(0))
             await client.get("/v1/alerts/current", params={"station_id": sid})
             all_ = (await client.get("/v1/alerts", params={"station_id": sid})).json()["data"][
                 "alerts"

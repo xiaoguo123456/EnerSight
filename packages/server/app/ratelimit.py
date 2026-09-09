@@ -21,9 +21,19 @@ _hits: dict[str, deque[float]] = {}
 
 
 def client_key(request: Request) -> str:
+    """按用户计数只认能验签的 token；无效 token 退回按 IP，
+    否则随便编一串 Bearer 就能绕开限流（每个假 token 一个桶）。"""
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer ") and len(auth) > 7:
-        return "t:" + hashlib.sha1(auth[7:].encode()).hexdigest()[:16]
+        from app.auth import decode_token
+        from app.errors import ApiError
+
+        try:
+            user_id = decode_token(auth[7:].strip())
+        except ApiError:
+            user_id = None
+        if user_id:
+            return "t:" + hashlib.sha1(user_id.encode()).hexdigest()[:16]
     ip = request.client.host if request.client else "unknown"
     if settings.trust_forwarded_for:
         # 只在 ALB/反代前置且安全组已限制直连时开启，否则 XFF 可伪造
@@ -36,18 +46,26 @@ def client_key(request: Request) -> str:
 def check(key: str, limit: int, now: float | None = None) -> int:
     """记录一次访问并返回需等待的秒数；0 表示放行。"""
     now = now if now is not None else time.monotonic()
+    cutoff = now - WINDOW_SECONDS
     q = _hits.get(key)
     if q is None:
         if len(_hits) >= MAX_KEYS:
-            _hits.clear()  # 极端情况下整体重置，宁可放行也不要无限增长
+            _evict_idle(cutoff)
         q = _hits[key] = deque()
-    cutoff = now - WINDOW_SECONDS
     while q and q[0] <= cutoff:
         q.popleft()
     if len(q) >= limit:
         return max(1, int(q[0] + WINDOW_SECONDS - now) + 1)
     q.append(now)
     return 0
+
+
+def _evict_idle(cutoff: float) -> None:
+    """键数到上限时先清掉窗口内没有请求的键；仍然满则整体重置（宁可放行也不要无限增长）。"""
+    for k in [k for k, q in _hits.items() if not q or q[-1] <= cutoff]:
+        del _hits[k]
+    if len(_hits) >= MAX_KEYS:
+        _hits.clear()
 
 
 def reset() -> None:

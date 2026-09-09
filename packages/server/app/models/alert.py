@@ -35,3 +35,5 @@ class Alert(Base):
     # naive UTC，出口按站点时区格式化
     published_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    # 最近一次扫描仍检测到该条件的时刻；条件消失且持续 30 分钟才解除。docs/07 §5.3
+    last_detected_at: Mapped[datetime | None] = mapped_column(default=utcnow)

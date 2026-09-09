@@ -262,6 +262,12 @@ class TestApi:
         self, client: AsyncClient, open_meteo, monkeypatch
     ):
         """未知 ≠ 消失：上游故障时保留卫星预警；拿到云图确认云已散才解除"""
+        from datetime import timedelta as _td
+
+        from app.services import alerts as alerts_svc
+
+        # 本例验证的是「确认无云才清」，解除的 30 分钟稳定期另有用例，这里关掉
+        monkeypatch.setattr(alerts_svc, "CLEAR_STABLE_WINDOW", _td(0))
         sid = await self._create(client)
         _approaching(FakeSky(), DAY).install(monkeypatch)
         d = (await client.get(f"/v1/alerts/current?station_id={sid}")).json()["data"]
