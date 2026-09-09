@@ -30,6 +30,7 @@ class ReportInput:
     daily_kwh: float
     equivalent_hours: float
     numbers: set[str] = field(default_factory=set)
+    capacity_note: str | None = None  # 目录容量口径待核验时的说明
 
     def render(self) -> str:
         lines = [
@@ -56,6 +57,8 @@ class ReportInput:
             "",
             f"估算：日发电 {self.daily_kwh:,.0f} kWh，等效利用 {self.equivalent_hours:.1f} 小时",
         ]
+        if self.capacity_note:
+            lines.append(f"注：{self.capacity_note}")
         return "\n".join(lines)
 
 
@@ -77,7 +80,12 @@ def _factor_cn(f: str) -> str:
 
 
 def build_input(
-    station: Station, fc: Forecast, idx: IndexResult, daily_kwh: float, alert: AlertSummary | None
+    station: Station,
+    fc: Forecast,
+    idx: IndexResult,
+    daily_kwh: float,
+    alert: AlertSummary | None,
+    capacity_note: str | None = None,
 ) -> ReportInput:
     today = fc.today()
     periods = []
@@ -107,6 +115,7 @@ def build_input(
         alert=alert,
         daily_kwh=daily_kwh,
         equivalent_hours=daily_kwh / station.capacity_kw if station.capacity_kw else 0.0,
+        capacity_note=capacity_note,
     )
     inp.numbers = extract_numbers(inp.render())
     return inp

@@ -1,10 +1,18 @@
-"""目录容量口径：未知类型不猜测；已知交流/直流采用明确的设备假设。"""
+"""目录容量口径：未知类型不猜测；已知交流/直流采用明确的设备假设。
+
+容配比与出力模型共用 settings.pv_dc_ac_ratio；逆变器损耗计在 14% 系统损耗里（与 PVGIS
+同口径，docs/07 §2.1），不再单独乘效率。VERSION 标记计算口径，模型改动要升版本，
+留档与全目录历史按版本隔离。
+"""
 
 import math
 
-DC_AC_RATIO = 1.2
-INVERTER_EFFICIENCY = 0.96
-VERSION = "capacity-v2"
+from app.config import settings
+
+DC_AC_RATIO = settings.pv_dc_ac_ratio
+# capacity-v2：区分分期交直流容量；model-v3：太阳位置取区间中点、风电各层插值 + 场站损耗、
+# 逆变器损耗并入系统损耗
+VERSION = "model-v3"
 
 
 def catalog_basis(plant):

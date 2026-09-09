@@ -37,10 +37,16 @@ async def upsert_daily(
     await db.execute(stmt)
 
 
-async def accumulate_station(db: AsyncSession, http: httpx.AsyncClient, station: Station) -> float:
+async def accumulate_station(
+    db: AsyncSession, http: httpx.AsyncClient, station: Station
+) -> float | None:
+    """不可算（气象缺测）时不写记录：宁可缺一天，也不把 0 累进总量。"""
     fc = await weather.get_forecast(http, station.latitude, station.longitude)
     loop = asyncio.get_running_loop()
     snap = await loop.run_in_executor(None, energy.compute, station, fc)
+    if snap.daily_kwh is None or snap.blocked:
+        log.warning("accumulate skipped (%s): station=%s", snap.blocked or "缺测", station.id)
+        return None
     today = fc.now().date()
     current = round(snap.current_kw, 1) if snap.current_kw is not None else None
     await upsert_daily(db, station.id, today, round(snap.daily_kwh, 1), current)

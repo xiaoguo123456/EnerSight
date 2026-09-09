@@ -46,19 +46,23 @@ class Settings(BaseSettings):
     open_meteo_archive_base: str = "https://archive-api.open-meteo.com/v1"
 
     # 缓存 TTL（秒），见 docs/05 §五
-    ttl_current_weather: int = 600
-    ttl_hourly_forecast: int = 3600
-    ttl_energy_index: int = 3600
+    ttl_current_weather: int = 600  # 站点整份 Forecast（实时天气、指数、趋势共用）
+    ttl_hourly_forecast: int = 3600  # 图层网格块
 
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码
     pv_gamma_pdc: float = -0.004
-    pv_losses: float = 0.14
+    pv_losses: float = 0.14  # 含逆变器损耗，与 PVGIS 口径一致
+    # 站点容量是交流侧（docs/04 §七），直流侧 pdc0 = 容量 × 容配比；交流出力按容量限幅
+    pv_dc_ac_ratio: float = 1.2
     pv_temperature_model: str = "open_rack_glass_glass"
     pv_sky_diffuse_model: str = "perez"  # 校准结论，见 docs/07 §八
     wind_v_in: float = 3.0
     wind_v_rated: float = 12.0
     wind_v_out: float = 25.0
-    wind_shear_alpha: float = 0.18  # 按 ERA5 10 m / 100 m 风速在 5 个风电基地拟合，见 docs/07 §八
+    wind_losses: float = 0.10  # 尾流 + 可利用率 + 电气损耗，场站级
+    wind_hub_height_default: float = 100.0  # 未填轮毂高度时的默认值
+    # 只有 10 m 风速时的幂律外推指数（降级路径）；正常用 80/100/120 m 各层按对数廓线插值
+    wind_shear_alpha: float = 0.18
 
     # 指数分档阈值，上线前需按 docs/07 §八 校准
     # 公开电站目录同步：GEM 下载要提交联系人信息（表单），按月一次。docs/04 §七

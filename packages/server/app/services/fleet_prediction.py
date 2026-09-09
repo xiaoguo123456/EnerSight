@@ -27,6 +27,9 @@ _gate = asyncio.Lock()
 TZ = "Asia/Shanghai"
 FIELDS = [
     "wind_speed_10m",
+    "wind_speed_80m",
+    "wind_speed_100m",
+    "wind_speed_120m",
     "temperature_2m",
     "shortwave_radiation",
     "direct_normal_irradiance",
@@ -67,7 +70,8 @@ def blank(model: str, day: str) -> FleetPrediction:
         status="queued",
         assumptions=[
             "区域近似：1°气象网格，按场站容量与能源类型估算",
-            "已区分分期交直流容量，容配比假设1.2、逆变器效率假设96%；未知容量类型不计入预测",
+            "已区分分期交直流容量，容配比假设 1.2、系统损耗 14%（含逆变器）并按交流容量限幅；"
+            "未知容量类型不计入预测",
             "采用默认设备参数，未计入限电、检修及故障影响",
             "统一北京时间；仅汇总平台运营目录，非全国实测电量",
         ],
@@ -115,7 +119,7 @@ def calculate_cell(plants, raw, model, day):
     results = []
     lat, lon = cell(plants[0])
     for p in plants:
-        hub = wind.default_hub_height(p.capacity_kw) if p.type == "wind" else None
+        hub = wind.default_hub_height() if p.type == "wind" else None
         basis, blocked = catalog_basis(p)
         if blocked:
             continue
@@ -278,6 +282,7 @@ async def build(http, model: str, day: str, plants) -> None:
     )
     publish()
     from app.services import fleet_history
+
     fleet_history.capture(out.model_dump(), VERSION)
     # 留两天快照，清理旧天气文件，避免磁盘长期增长。
     for old in directory().glob("*.json"):

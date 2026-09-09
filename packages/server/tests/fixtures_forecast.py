@@ -67,6 +67,10 @@ def make_forecast(
             "apparent_temperature": app_t,
             "relative_humidity_2m": rh,
             "wind_speed_10m": ws,
+            # 高层风按 α = 0.18 幂律生成，轮毂 100 m 时与旧的外推结果一致
+            "wind_speed_80m": [round(v * 8**0.18, 2) for v in ws],
+            "wind_speed_100m": [round(v * 10**0.18, 2) for v in ws],
+            "wind_speed_120m": [round(v * 12**0.18, 2) for v in ws],
             "wind_direction_10m": wd,
             "cloud_cover": cc,
             "cloud_cover_low": cc,

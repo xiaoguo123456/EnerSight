@@ -4,7 +4,8 @@
   1. 发电量准确度：光伏年发电量与 PVGIS 对比，判据 ±15%
   2. 指数分布：5 个气候区 × 365 天，看分档分布是否过度集中
   3. 分档直觉：抽查典型晴天 / 阴天 / 雨天
-另外用 ERA5 的 100 m 风速标定风电的幂律指数，并在 5 个风电基地看容量因子分布。
+风电：轮毂风速按 ERA5 10 m / 100 m 两层对数廓线插值（线上用 Open-Meteo 的 10/80/100/120 m），
+同时给出旧方法（10 m 固定幂律外推、无场站损耗）作对照，并在 5 个风电基地看容量因子分布。
 
 用法：
   uv run python scripts/calibrate.py                      # 默认最近一整年
@@ -39,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "calibration"
 REPORT_DIR = ROOT.parents[1] / "docs" / "reports"
 
-PV_CAPACITY_KW = 500.0
+PV_CAPACITY_KW = 500.0  # 交流侧；直流侧 = × settings.pv_dc_ac_ratio，与 PVGIS 的 kWp 对账时按此换算
 WIND_CAPACITY_KW = 2000.0
 PVGIS_TOLERANCE = 0.15
 TZ = "Asia/Shanghai"
@@ -182,25 +183,26 @@ def run_pv_days(site: Site, df: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_wind_days(df: pd.DataFrame, alpha: float) -> pd.DataFrame:
-    """外推 10 m 风（指定 α）与 ERA5 100 m 风各算一遍，后者作为参考。"""
-    hub = wind.default_hub_height(WIND_CAPACITY_KW)
+    """本模型：10 m / 100 m 两层对数廓线插值到轮毂 + 场站损耗（与线上一致）；
+    旧方法：10 m 按固定 α 幂律外推、无损耗，作对照。"""
+    hub = wind.default_hub_height()
     rows = []
     for day, chunk in df.groupby(df.index.date):
         if len(chunk) < 24:
             continue
         v10 = chunk["wind_speed_10m"].fillna(0.0)
-        v_hub = v10 * (hub / 10.0) ** alpha
-        daily = float(wind.power_curve(v_hub, WIND_CAPACITY_KW).sum())
-        # 100 m → 轮毂高度只差一点，仍按同一 α 换算
-        v_ref = chunk["wind_speed_100m"].fillna(0.0) * (hub / 100.0) ** alpha
-        daily_ref = float(wind.power_curve(v_ref, WIND_CAPACITY_KW).sum())
+        v100 = chunk["wind_speed_100m"].fillna(0.0)
+        v_hub, _ = wind.hub_wind_speed({10.0: v10, 100.0: v100}, hub)
+        daily = float(wind.plant_power(v_hub, WIND_CAPACITY_KW).sum())
+        v_old = v10 * (hub / 10.0) ** alpha
+        daily_old = float(wind.power_curve(v_old, WIND_CAPACITY_KW).sum())
         rows.append(
             {
                 "date": pd.Timestamp(day),
                 "score": wind_index(daily, WIND_CAPACITY_KW).score,
-                "score_ref": wind_index(daily_ref, WIND_CAPACITY_KW).score,
+                "score_old": wind_index(daily_old, WIND_CAPACITY_KW).score,
                 "daily_kwh": daily,
-                "daily_kwh_ref": daily_ref,
+                "daily_kwh_old": daily_old,
                 "v10_mean": float(v10.mean()),
                 "v100_mean": float(chunk["wind_speed_100m"].mean()),
             }
@@ -267,7 +269,8 @@ def main() -> int:
         else (settings.index_excellent, settings.index_good, settings.index_fair)
     )
     alpha_used = args.alpha if args.alpha is not None else settings.wind_shear_alpha
-    hub = wind.default_hub_height(WIND_CAPACITY_KW)
+    hub = wind.default_hub_height()
+    kwp = PV_CAPACITY_KW * settings.pv_dc_ac_ratio
     print(f"区间 {start} ~ {end}，分档阈值 {th}，α = {alpha_used}")
 
     pv_rows: list[str] = []
@@ -288,7 +291,10 @@ def main() -> int:
             pvgis = fetch_pvgis(http, site)
             dist = fmt_dist(level_dist(pv["level"]))
             if pvgis:
-                ref = float(pvgis["outputs"]["totals"]["fixed"]["E_y"])
+                # PVGIS 按直流峰值功率 kWp 报产量，且产量与 kWp 成正比；缓存按 PV_CAPACITY_KW 拉取，
+                # 这里换算到本模型的直流侧容量
+                pvgis_kwp = float(pvgis["inputs"]["pv_module"]["peak_power"])
+                ref = float(pvgis["outputs"]["totals"]["fixed"]["E_y"]) * kwp / pvgis_kwp
                 db = pvgis["inputs"]["meteo_data"]["radiation_db"]
                 dev = (annual - ref) / ref
                 ok = "✅" if abs(dev) <= PVGIS_TOLERANCE else "❌"
@@ -320,17 +326,17 @@ def main() -> int:
         wd["level"] = classify_with(wd["score"], th)
         all_wind[site.key] = wd
         cf_year = float(wd["daily_kwh"].sum()) / (WIND_CAPACITY_KW * 24 * len(wd))
-        cf_ref = float(wd["daily_kwh_ref"].sum()) / (WIND_CAPACITY_KW * 24 * len(wd))
+        cf_old = float(wd["daily_kwh_old"].sum()) / (WIND_CAPACITY_KW * 24 * len(wd))
         dist = fmt_dist(level_dist(wd["level"]))
         wind_rows.append(
             f"| {site.name} | {site.zone} | {wd['v10_mean'].mean():.1f} | {wd['v100_mean'].mean():.1f} | "
-            f"{cf_year:.2f} | {cf_ref:.2f} | {wd['score'].mean():.0f} / {wd['score_ref'].mean():.0f} | "
+            f"{cf_year:.2f} | {cf_old:.2f} | {wd['score'].mean():.0f} / {wd['score_old'].mean():.0f} | "
             f"{dist} |"
         )
         print(
             f"[{site.name}] 10m {wd['v10_mean'].mean():.1f} / 100m {wd['v100_mean'].mean():.1f} m/s，"
-            f"CF 外推 {cf_year:.2f} / 参考 {cf_ref:.2f}，指数 {wd['score'].mean():.0f} / "
-            f"{wd['score_ref'].mean():.0f}，分档 {dist}"
+            f"CF 本模型 {cf_year:.2f} / 旧方法 {cf_old:.2f}，指数 {wd['score'].mean():.0f} / "
+            f"{wd['score_old'].mean():.0f}，分档 {dist}"
         )
 
     pv_all = pd.concat(all_pv.values())
@@ -340,9 +346,11 @@ def main() -> int:
     lines = [
         f"# 环境指数校准报告 {date.today()}\n",
         f"数据：Open-Meteo archive（ERA5）{start} ~ {end}，分档阈值 excellent/good/fair = {th}。",
-        f"光伏 {PV_CAPACITY_KW:.0f} kW，倾角=纬度、正南、系统损耗 {settings.pv_losses:.0%}、"
-        f"散射模型 {settings.pv_sky_diffuse_model}；",
-        f"风电 {WIND_CAPACITY_KW:.0f} kW，轮毂 {hub:.0f} m，切入/额定/切出 "
+        f"光伏交流 {PV_CAPACITY_KW:.0f} kW（容配比 {settings.pv_dc_ac_ratio}，直流 {kwp:.0f} kWp），"
+        f"倾角=纬度、正南、系统损耗 {settings.pv_losses:.0%}、散射模型 {settings.pv_sky_diffuse_model}，"
+        "太阳位置取小时区间中点；",
+        f"风电 {WIND_CAPACITY_KW:.0f} kW，轮毂 {hub:.0f} m（10 m / 100 m 对数廓线插值），"
+        f"场站损耗 {settings.wind_losses:.0%}，切入/额定/切出 "
         f"{settings.wind_v_in}/{settings.wind_v_rated}/{settings.wind_v_out} m/s。\n",
         "方法与判据见 [07 §八](../07-metrics.md)。脚本 `packages/server/scripts/calibrate.py`，"
         "改参数后重跑即可复现。\n",
@@ -361,15 +369,16 @@ def main() -> int:
         "| --- |" + " --- |" * len(monthly),
         "| 指数 | " + " | ".join(f"{v:.0f}" for v in monthly.values) + " |\n",
         "## 3. 风电\n",
-        f"幂律指数：按 ERA5 10 m 与 100 m 风速拟合得 α = {alpha_fit:.3f}"
-        f"（5 个风电基地中位数），本轮使用 α = {alpha_used}。\n",
-        "| 站点 | 地形 | 10 m 年均 m/s | 100 m 年均 m/s | 年 CF 外推 | 年 CF 100 m 参考 | "
-        "指数均值 外推/参考 | 分档 优/良/中/差 |",
+        f"本模型：轮毂风速由 10 m / 100 m 两层对数廓线插值，场站损耗 {settings.wind_losses:.0%}。"
+        f"旧方法：10 m 按固定 α = {alpha_used} 幂律外推、无损耗（ERA5 拟合 α = {alpha_fit:.3f}，"
+        "但昼夜差近 3 倍，固定值抹平了夜间大风）。\n",
+        "| 站点 | 地形 | 10 m 年均 m/s | 100 m 年均 m/s | 年 CF 本模型 | 年 CF 旧方法 | "
+        "指数均值 本/旧 | 分档 优/良/中/差 |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
         *wind_rows,
         f"\n5 站合计分档 = {fmt_dist(level_dist(wind_all['level']))}。",
-        "风电没有 PVGIS 这样的公开对账源，用 ERA5 100 m 风直接算的容量因子作参考。"
-        "ERA5 25 km 网格抹平了山口与海岛的局地加速，复杂地形下两者都偏低；"
+        "风电没有 PVGIS 这样的公开对账源。"
+        "ERA5 25 km 网格抹平了山口与海岛的局地加速，复杂地形下偏低；"
         "实际风场年 CF 多在 0.22–0.35。\n",
         "## 4. 分档直觉抽查（夏半年）\n",
         "| 站点 | 类型 | 日期 | 日均云量 | 降水 | 日辐射 kWh/m² | 指数 | 分档 |",

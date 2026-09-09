@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import utcnow
-from app.metrics import solar
+from app.metrics import solar, wind
 from app.models import Alert, Station
 from app.schemas.common import AlertLevel
 from app.schemas.home import AlertSummary
@@ -24,12 +24,14 @@ from app.services.weather import Forecast
 
 # ── 规则参数（docs/07 §七 预警）──
 DEDUP_WINDOW = timedelta(hours=2)
+CLEAR_STABLE_WINDOW = timedelta(minutes=30)  # 条件消失并持续这么久才解除，避免临界抖动。§5.3
 SATELLITE_ALERT_TTL = timedelta(hours=2)  # 外推时效上限，卫星断供时预警最多保留这么久
 LOOKAHEAD_HOURS = 6  # 云层下降只看未来 6 小时
 MIN_DROP = 10.0  # 降幅低于此不触发
 MODERATE_DROP = settings.alert_drop_moderate
 SEVERE_DROP = settings.alert_drop_severe
 MIN_KT_NOW = 0.35  # 当前晴空指数太低（本来就阴）不谈「下降」
+MIN_CLEAR_GHI = 100.0  # 晴空小时均值低于此（日出日落边缘）不参与比较：kt 噪声大且对发电无关紧要
 WIND_MODERATE, WIND_SEVERE = 15.0, 25.0
 HEAT, COLD = 38.0, -10.0
 RAIN_CODES = {65, 67, 82, 95, 96, 99}
@@ -55,12 +57,13 @@ def detect_cloud_drop(fc: Forecast, latitude: float, longitude: float) -> Detect
     if len(window) < 2:
         return None
 
-    cs = solar.clearsky(latitude, longitude, fc.tz, pd.DatetimeIndex(window.index))
+    # 预报辐射是前一小时均值，晴空分母取同口径的小时均值；用整点瞬时值会让早晨的 kt 系统性偏低
+    cs = solar.clearsky_hourly_mean(latitude, longitude, fc.tz, pd.DatetimeIndex(window.index))
     ghi = window["shortwave_radiation"].astype(float)
     clear = cs["ghi"].astype(float)
 
     # 只在白天且晴空辐射有意义的时段比较
-    valid = clear > 50
+    valid = clear >= MIN_CLEAR_GHI
     if valid.sum() < 2:
         return None
     kt = (ghi / clear).where(valid)
@@ -91,31 +94,47 @@ def detect_cloud_drop(fc: Forecast, latitude: float, longitude: float) -> Detect
     )
 
 
-def detect_weather(fc: Forecast) -> list[Detected]:
+def _alert_wind_speed(window: pd.DataFrame, station: Station | None) -> tuple[pd.Series, str]:
+    """强风规则用的风速。风电站取轮毂高度（与功率曲线同口径，切出判断才对得上），
+    其余取 10 m。返回 (风速, 高度文案)。"""
+    if station is not None and station.type == "wind":
+        levels = {
+            h: window[col].astype(float) for h, col in wind.LEVEL_COLUMNS.items() if col in window
+        }
+        if levels:
+            hub = station.hub_height
+            if hub is None:
+                hub = wind.default_hub_height()
+            v_hub, _ = wind.hub_wind_speed(levels, hub)
+            return v_hub, f"轮毂高度 {hub:.0f} m"
+    return window["wind_speed_10m"].astype(float), "10 m"
+
+
+def detect_weather(fc: Forecast, station: Station | None = None) -> list[Detected]:
     """天气异常：未来 24 小时。docs/07 §5.2"""
     now_ts = fc.current_hour()
     window = fc.hourly.loc[now_ts : now_ts + pd.Timedelta(hours=24)]
     out: list[Detected] = []
 
-    ws = window["wind_speed_10m"].astype(float)
-    if ws.max() >= WIND_SEVERE:
+    ws, height = _alert_wind_speed(window, station)
+    if ws.notna().any() and ws.max() >= WIND_SEVERE:
         at = pd.Timestamp(ws.idxmax()).strftime("%H:%M")
         out.append(
             Detected(
                 "wind",
                 "severe",
                 f"{at}前后风速超过切出风速",
-                f"预报最大风速 {ws.max():.0f} m/s，风机将停机保护，请关注设备状态。",
+                f"预报{height}最大风速 {ws.max():.0f} m/s，风机将停机保护，请关注设备状态。",
             )
         )
-    elif ws.max() >= WIND_MODERATE:
+    elif ws.notna().any() and ws.max() >= WIND_MODERATE:
         at = pd.Timestamp(ws.idxmax()).strftime("%H:%M")
         out.append(
             Detected(
                 "wind",
                 "moderate",
                 f"{at}前后有强风",
-                f"预报最大风速 {ws.max():.0f} m/s，注意光伏组件与风机安全。",
+                f"预报{height}最大风速 {ws.max():.0f} m/s，注意光伏组件与风机安全。",
             )
         )
 
@@ -198,7 +217,7 @@ def detect_all(
             m = detect_cloud_motion(scene, station, fc.tz)
             if m:
                 found.append(m)
-    found.extend(detect_weather(fc))
+    found.extend(detect_weather(fc, station))
     return found
 
 
@@ -232,6 +251,7 @@ async def apply_detections(
         if cur and now - cur.published_at < DEDUP_WINDOW:
             # 2 小时内同类型：更新内容不新建
             cur.level, cur.title, cur.description = d.level, d.title, d.description
+            cur.last_detected_at = now
             continue
         if cur:
             cur.active = False
@@ -244,10 +264,11 @@ async def apply_detections(
                 title=d.title,
                 description=d.description,
                 published_at=now,
+                last_detected_at=now,
             )
         )
 
-    # 之前在生效、这次没检测到的 → 解除
+    # 之前在生效、这次没检测到的 → 条件消失并持续 30 分钟稳定后解除
     for kind, cur in active.items():
         if kind in seen or cur.level == "cleared":
             continue
@@ -256,6 +277,8 @@ async def apply_detections(
             and not satellite_known
             and now - cur.published_at < SATELLITE_ALERT_TTL
         ):
+            continue
+        if now - (cur.last_detected_at or cur.published_at) < CLEAR_STABLE_WINDOW:
             continue
         cur.active = False
         db.add(

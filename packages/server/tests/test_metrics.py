@@ -21,8 +21,8 @@ def _times(day: str) -> pd.DatetimeIndex:
 
 
 def _pv_inputs(times: pd.DatetimeIndex, *, cloudy: float = 1.0, temp: float = 25.0):
-    """用晴空辐射乘一个折减系数模拟云天。"""
-    cs = solar.clearsky(LAT, LON, TZ, times)
+    """用晴空辐射乘一个折减系数模拟云天。与 Open-Meteo 同口径：前一小时均值。"""
+    cs = solar.clearsky_hourly_mean(LAT, LON, TZ, times)
     return idx.PvInputs(
         latitude=LAT,
         longitude=LON,
@@ -58,6 +58,36 @@ class TestPvIndex:
     def test_晴空条件下接近满分(self):
         r = idx.pv_index(_pv_inputs(_times("2026-06-21"), cloudy=1.0, temp=25.0))
         assert r.score > 95
+
+    @pytest.mark.parametrize("day", ["2026-06-21", "2026-09-09", "2026-12-21"])
+    def test_晴空小时均值恰为满分(self, day: str):
+        """分子分母同口径（小时均值 + 区间中点太阳位置）：晴天就是 100，不是 98 或 99"""
+        r = idx.pv_index(_pv_inputs(_times(day), cloudy=1.0, temp=25.0))
+        assert r.score >= 99.5
+
+    def test_逐时出力随分子一起返回且不超过交流容量(self):
+        inp = _pv_inputs(_times("2026-06-21"), cloudy=1.0, temp=-5.0)  # 低温高辐射，直流侧超配
+        r = idx.pv_index(inp)
+        assert r.hourly_kw is not None and len(r.hourly_kw) == 24
+        assert r.hourly_kw.max() <= inp.capacity_kw + 1e-6
+        assert r.actual_kwh == pytest.approx(float(r.hourly_kw.sum()))
+
+    def test_归因含辐射温度散热三项(self):
+        r = idx.pv_index(_pv_inputs(_times("2026-06-21"), cloudy=0.7, temp=35.0))
+        assert [a.factor.value for a in r.attribution] == ["radiation", "temperature", "wind"]
+
+    def test_缺测输入直接拒绝而不是当零(self):
+        inp = _pv_inputs(_times("2026-06-21"))
+        inp.temp_air.iloc[12] = float("nan")
+        with pytest.raises(ValueError):
+            idx.pv_index(inp)
+
+    def test_逐时链路缺测透传为NaN(self):
+        inp = _pv_inputs(_times("2026-06-21"))
+        inp.ghi.iloc[12] = float("nan")
+        p = pv.hourly_power(inp)
+        assert pd.isna(p.iloc[12]) and p.drop(p.index[12]).notna().all()
+        assert p.iloc[0] == 0  # 夜间是 0，不是 NaN
 
     def test_云量增加使分数下降(self):
         clear = idx.pv_index(_pv_inputs(_times("2026-06-21"), cloudy=1.0))
@@ -107,6 +137,62 @@ class TestWindPowerCurve:
     def test_风速外推随高度增大(self):
         v10 = pd.Series([5.0], index=pd.RangeIndex(1))
         assert wind.extrapolate_wind(v10, 85.0).iloc[0] > v10.iloc[0]
+
+    def test_缺测风速出力为NaN不当零(self):
+        v = pd.Series([8.0, float("nan"), 8.0], index=pd.RangeIndex(3))
+        p = wind.power_curve(v, 2000.0)
+        assert pd.isna(p.iloc[1]) and p.iloc[0] > 0
+
+    def test_场站损耗(self):
+        from app.config import settings
+
+        v = pd.Series([15.0], index=pd.RangeIndex(1))
+        assert wind.plant_power(v, 2000.0).iloc[0] == pytest.approx(
+            2000.0 * (1 - settings.wind_losses)
+        )
+
+
+class TestHubWind:
+    def _levels(self, v10, v80, v100, v120):
+        i = pd.RangeIndex(1)
+        return {
+            10.0: pd.Series([v10], index=i),
+            80.0: pd.Series([v80], index=i),
+            100.0: pd.Series([v100], index=i),
+            120.0: pd.Series([v120], index=i),
+        }
+
+    def test_轮毂在两层之间按对数廓线插值(self):
+        v, fb = wind.hub_wind_speed(self._levels(4.0, 6.0, 7.0, 7.5), 90.0)
+        assert 6.0 < v.iloc[0] < 7.0 and not fb.iloc[0]
+        # 对数廓线：90 m 比 80 m / 100 m 的算术中点略偏向 100 m
+        assert v.iloc[0] > 6.5
+
+    def test_轮毂恰在层上取该层(self):
+        v, _ = wind.hub_wind_speed(self._levels(4.0, 6.0, 7.0, 7.5), 100.0)
+        assert v.iloc[0] == pytest.approx(7.0)
+
+    def test_高于最高层按最高两层斜率外推(self):
+        v, fb = wind.hub_wind_speed(self._levels(4.0, 6.0, 7.0, 7.5), 140.0)
+        assert 7.5 < v.iloc[0] < 8.5 and not fb.iloc[0]
+
+    def test_只有10m时按幂律降级并标记(self):
+        nan = float("nan")
+        v, fb = wind.hub_wind_speed(self._levels(5.0, nan, nan, nan), 100.0)
+        assert v.iloc[0] == pytest.approx(wind.extrapolate_wind(pd.Series([5.0]), 100.0).iloc[0])
+        assert fb.iloc[0]
+
+    def test_全部缺测为NaN(self):
+        nan = float("nan")
+        v, _ = wind.hub_wind_speed(self._levels(nan, nan, nan, nan), 100.0)
+        assert pd.isna(v.iloc[0])
+
+    def test_昼夜廓线差异被保留(self):
+        """同样的 10 m 风，夜间稳定层结 100 m 更强 —— 固定 α 外推抹平了这一点"""
+        night, _ = wind.hub_wind_speed(self._levels(2.1, 4.3, 4.4, 4.5), 100.0)
+        day, _ = wind.hub_wind_speed(self._levels(2.1, 2.7, 2.8, 2.9), 100.0)
+        fixed = wind.extrapolate_wind(pd.Series([2.1]), 100.0).iloc[0]
+        assert night.iloc[0] > fixed > day.iloc[0]
 
 
 class TestWindIndex:

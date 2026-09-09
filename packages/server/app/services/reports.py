@@ -15,7 +15,7 @@ from app.ai.input import PERIODS, build_input
 from app.ai.schema import AIReport
 from app.config import settings
 from app.db import upsert_insert
-from app.errors import ApiError
+from app.errors import ApiError, DataUnavailable
 from app.models import DailyGeneration, Report, Station
 from app.schemas.common import Coord, MetricWithDelta
 from app.schemas.report import AIReportResponse, ReportPeriodOut, ReportSummary
@@ -67,8 +67,14 @@ async def generate_and_store(
 ) -> Report:
     v = await build_station_view(http, station, Coord.WGS84, db)
     day = day or v.forecast.now().date()
+    if v.snapshot.index is None or v.snapshot.daily_kwh is None:
+        # 气象缺测时指数不可算，不能拿 0 分生成报告
+        raise DataUnavailable("气象数据暂不完整，报告稍后生成")
     alert = await alerts.current_alert(db, station.id, v.forecast.tz)
-    inp = build_input(station, v.forecast, v.snapshot.index, v.snapshot.daily_kwh, alert)
+    note = (
+        f"{v.snapshot.blocked}，发电量按目录申报容量估算，仅供参考" if v.snapshot.blocked else None
+    )
+    inp = build_input(station, v.forecast, v.snapshot.index, v.snapshot.daily_kwh, alert, note)
 
     gen = await ai.generate(inp)
     content = gen.report.model_dump()

@@ -9,11 +9,15 @@ from app.errors import DataUnavailable, UpstreamUnavailable
 from app.weather_model import current_model
 
 # 逐小时字段。新增字段前先更新 docs/04
+# 辐射类是「前一小时平均值」，标在区间末；太阳位置要按区间中点算，见 metrics/solar
 HOURLY_FIELDS = [
     "temperature_2m",
     "apparent_temperature",
     "relative_humidity_2m",
     "wind_speed_10m",
+    "wind_speed_80m",  # 80 / 100 / 120 m：风电轮毂高度风速按对数廓线插值，见 metrics/wind
+    "wind_speed_100m",
+    "wind_speed_120m",
     "wind_direction_10m",
     "cloud_cover",
     "cloud_cover_low",

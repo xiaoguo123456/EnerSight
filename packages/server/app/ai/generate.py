@@ -55,14 +55,19 @@ def numbers_consistent(report: AIReport, allowed: set[str]) -> bool:
     )
     found = extract_numbers(text)
     # 时刻拆成小时/分钟也算命中（输入写 06:00–12:00，输出可能写 12 点）
-    tokens = set(allowed)
+    tokens = {_canonical(n) for n in allowed}
     for n in list(allowed):
         if ":" in n:
-            tokens.update(n.split(":"))
-    for n in found:
-        if n and n not in tokens and n.rstrip("0").rstrip(".") not in tokens:
-            return False
-    return True
+            tokens.update(_canonical(p) for p in n.split(":"))
+    return all(_canonical(n) in tokens for n in found if n)
+
+
+def _canonical(n: str) -> str:
+    """12.0 与 12 视为同一个数；整数不去零 —— 否则 20、100 都会归成 2、1，
+    输入里只要出现过「2 分」，编造的「下降 20%」就能混过去。"""
+    if "." in n:
+        n = n.rstrip("0").rstrip(".")
+    return n.lstrip("0") or "0"
 
 
 async def generate(inp: ReportInput) -> Generated:

@@ -85,6 +85,16 @@ class TestNumericConsistency:
     def test_千分位与小数不影响匹配(self):
         allowed = extract_numbers("日发电 2,400 kWh，等效 4.8 小时")
         assert ai.numbers_consistent(_report(verdict_detail="发电 2400 kWh，4.8 小时"), allowed)
+        assert ai.numbers_consistent(
+            _report(verdict_detail="等效 4.80 小时，12.0 点"), {"4.8", "12"}
+        )
+
+    def test_整数末尾的零不能被吞掉(self):
+        """输入有「2 分」不代表输出能写「20%」「100 kWh」"""
+        allowed = extract_numbers("温度损失 -2 分，06:00–12:00")
+        assert not ai.numbers_consistent(_report(verdict_detail="预计下降 20%"), allowed)
+        assert not ai.numbers_consistent(_report(verdict_detail="发电 100 kWh"), allowed)
+        assert ai.numbers_consistent(_report(verdict_detail="下降 2 分，12 点前"), allowed)
 
 
 class TestFallback:

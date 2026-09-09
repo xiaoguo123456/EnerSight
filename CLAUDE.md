@@ -134,6 +134,12 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 在 async 路由里同步调 numpy/OpenCV —— 阻塞事件循环，用 `run_in_executor`
 - ❌ 手写太阳位置/晴空辐射公式 —— 07 附录 A 是口径定义，实现用 pvlib
 - ❌ 用因子加权求和算环境指数 —— 已改为物理出力比，见 07 §1.2
+- ❌ 按整点算太阳位置 / 晴空基准 —— Open-Meteo 小时值是前一小时均值，太阳位置取区间中点、晴空取小时均值，见 07 §2.1
+- ❌ 把交流容量直接当 PVWatts 的 `pdc0` —— 站点容量是交流侧，`pdc0 = 容量 × 容配比`，出力按容量限幅
+- ❌ 用固定风切变指数从 10 m 外推轮毂风速 —— Open-Meteo 有 80/100/120 m，按层插值；α 只是缺数据时的降级
+- ❌ 气象缺测时把 NaN 当 0 算指数 / 发电 —— 会显示「0 分 较差」。缺测判定统一在 `services/energy.prepare`，不可算给 null
+- ❌ 再写一份光伏逐时链路 —— 指数、发电、当前功率、预测、区域汇总全部走 `metrics/pv.hourly_power`
+- ❌ 风电强风 / 切出预警看 10 m 风速 —— 要和功率曲线一样看轮毂高度
 - ❌ 拿设计稿里的数值对账 —— `packages/ui/` 中所有数字都是视觉示意值
 - ❌ 客户端硬编码图层色阶 —— 图例由 `/v1/map/layers` 下发
 - ❌ 客户端用自己请求的 bbox 贴图 —— 用服务端返回的对齐后 `bounds`
@@ -234,7 +240,7 @@ make codegen                         # openapi.json → core/types/
 | trends | ✅ | 24h 逐小时 25 点；7d 逐 3 小时 56 点（粒度待产品确认） |
 | reports | ✅ | 规则模板兜底；`ANTHROPIC_API_KEY` 配置后走 Claude |
 | geo/search / geo/reverse | ✅ | 无腾讯 key 时降级 |
-| map/layers | ✅ | 4° 块、0.5° 网格服务端渲染；云图层用 Himawari 实况 |
+| map/layers | ✅ | 4° 块、1° 网格服务端渲染；云图层用 Himawari 实况 |
 | satellite/cloud | ✅ | JMA 瓦片，白天可见光/真彩、夜间红外；光流外推见 07 §四 |
 | stations/catalog | ✅ | 公开电站目录 18,764 座（GEM + WRI），按月自动同步；站点只能从目录添加 |
 
@@ -245,7 +251,7 @@ make codegen                         # openapi.json → core/types/
 - `server/app/ai`：Provider 抽象 + 数值一致性校验 + 规则降级
 - `core/api` client：401 重登、502 重试、坐标系注入；`core/format` 单位进位
 - 小程序 27 个组件、`TrendChart` Canvas 自绘、`useMapLayer` 贴图
-- 指数已按 07 §八校准（Perez 散射、α = 0.18、风电分档断点），报告在 `docs/reports/`
+- 指数已按 07 §八校准（Perez 散射、容配比 1.2、风电按层插值 + 10% 损耗、分档断点），报告在 `docs/reports/`
 - 定时任务：预警扫描 15 分钟、卫星归档 10 分钟、发电累积、报告预生成、地址回填
 - 限流 120 次/分钟/token（429 RATE_LIMITED）；Dockerfile + `deploy/` Compose + CI 工作流
 

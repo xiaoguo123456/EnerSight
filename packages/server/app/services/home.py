@@ -93,13 +93,14 @@ def build_trend(
 
 
 def build_index(snap: energy.EnergySnapshot, station_type: str) -> EnergyIndex:
+    """不可算时 score / level 为 None，前端显示「数据获取中」。docs/06 §十二"""
     r = snap.index
     return EnergyIndex(
-        score=r.score,
-        level=IndexLevel(r.level.value),
+        score=r.score if r else None,
+        level=IndexLevel(r.level.value) if r else None,
         summary=energy.summary_text(r, station_type),
-        estimated=False,
-        attribution=r.attribution,
+        estimated=snap.estimated,
+        attribution=r.attribution if r else [],
     )
 
 
@@ -127,13 +128,14 @@ async def build_station_view(
     # 累计与减排来自逐日累积表（定时任务维护）；没有记录时为 None
     total_kwh, co2_kg = (await accumulate.totals(db, station.id)) if db else (None, None)
 
-    from app.services import prediction
-
-    estimate = await asyncio.to_thread(prediction.compute, station, fc)
+    # 日发电与当前功率取自 snapshot：与指数、预测曲线同一条链路算出，不再单独跑一遍。
+    # 目录容量口径待核验的站点不给绝对电量（指数照给，它与容量无关）
+    daily = None if snap.blocked else snap.daily_kwh
+    current = None if snap.blocked else snap.current_kw
     summary = to_summary(station, coord)
     summary.metrics = StationMetrics(
-        daily_generation=estimate.energy_kwh,
-        current_power=estimate.power_kw[fc.current_hour().hour].value,
+        daily_generation=round(daily, 1) if daily is not None else None,
+        current_power=round(current, 1) if current is not None else None,
         total_generation=round(total_kwh, 1) if total_kwh is not None else None,
         co2_reduction=round(co2_kg, 1) if co2_kg is not None else None,
     )
@@ -188,7 +190,8 @@ async def build_home(
     await db.commit()
     from app.services import prediction
 
-    forecast_prediction = await asyncio.to_thread(prediction.compute, station, v.forecast)
+    # 今日逐时出力已在 build_station_view 里算过，直接复用；明日单独算一遍供留档
+    forecast_prediction = prediction.from_hourly(v.forecast, v.snapshot.hourly_kw, station)
     from app.services import prediction_archive
 
     await asyncio.to_thread(prediction_archive.save, station, v.forecast, forecast_prediction)
