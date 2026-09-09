@@ -166,3 +166,10 @@
 
 .map-page__coverage { position: absolute; left: 12px; top: 94px; max-width: 210px; font-size: 11px; line-height: 1.5; color: #475569; background: #fff; padding: 4px 6px; border-radius: 6px; }
 .map-page__tool { width: 40px; height: 40px; }
+
+// 模拟器不支持原生图片覆盖层，使用同层图片预览；不截获地图拖动。
+.map-page__preview {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  opacity: .65;
+}
+.map-page__preview-image { position: absolute; max-width: none; pointer-events: none; }

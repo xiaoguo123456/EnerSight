@@ -1,4 +1,4 @@
-import { Map, View, Text, Input } from '@tarojs/components'
+import { Map, View, Text, Input, Image } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import { formatBeijingTime, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
@@ -63,6 +63,7 @@ export default function MapPage() {
   const dataLayer = layer === 'station' ? null : layer
   const overlay = useMapLayer('main-map', dataLayer, req.status === 'success')
   // 公开电站 marker：任何图层下都显示，视野内最多 100 个
+  useEffect(() => { const timer = setTimeout(() => void overlay.refresh(), 250); return () => clearTimeout(timer) }, [center.latitude, center.longitude, scale])
   const catalog = useCatalogMarkers('main-map', true, scale)
   useEffect(() => { if (req.status !== 'loading') void catalog.refresh() }, [req.status])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -148,6 +149,8 @@ export default function MapPage() {
           longitude={center.longitude}
           scale={scale}
           showLocation
+          enableRotate={false}
+          enableOverlooking={false}
           showScale
           enableSatellite={satellite}
           markers={[
@@ -170,10 +173,20 @@ export default function MapPage() {
             // 只响应用户手势结束；贴图本身也会触发 regionchange，不过滤会形成请求循环
             const d = e?.detail ?? e
             const isEnd = d?.type === 'end'
-            const byUser = d?.causedBy === 'drag' || d?.causedBy === 'scale'
-            if (isEnd && byUser) { void overlay.refresh(); void catalog.refresh() }
+            const kind = d?.type ?? e?.type
+            const cause = d?.causedBy ?? e?.causedBy
+            if (cause !== 'drag' && cause !== 'scale') return
+            if (kind === 'begin') overlay.invalidate()
+            if (isEnd || kind === 'end') { void overlay.refresh(); void catalog.refresh() }
           }}
         />
+
+        {overlay.preview && <View className="map-page__preview">
+          {overlay.preview.images.map((img, i) => <Image key={`${overlay.preview!.id}-${i}`}
+            className="map-page__preview-image" src={img.url} mode="scaleToFill" style={img.style}
+            onLoad={() => overlay.imageLoaded(overlay.preview!.id, i)}
+            onError={() => overlay.imageError(overlay.preview!.id, '图层图片加载失败，请重试')} />)}
+        </View>}
 
         {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、站点与公开电站 */}
         <View className="map-page__search">
@@ -231,8 +244,8 @@ export default function MapPage() {
         )}
 
         <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>
-        <MapLayerControl value={layer} onChange={(value) => { setLayer(value); if (value !== 'station') saveLayer(value) }} />
-        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? '图层绘制未完成 · 点击重试' : overlay.observedAt ? `图层 ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text></View>}
+        <MapLayerControl value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
+        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.isPreview ? "预览图层" : "图层"} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text></View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>

@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./format": "./src/format/index.ts",
     "./api": "./src/api/index.ts",
-    "./types": "./src/types/index.ts"
+    "./types": "./src/types/index.ts",
+    "./map": "./src/map/index.ts"
   },
   "scripts": {
     "test": "vitest run",
