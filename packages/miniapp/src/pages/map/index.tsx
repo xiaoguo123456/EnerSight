@@ -190,6 +190,7 @@ export default function MapPage() {
             onError={() => overlay.imageError(overlay.preview!.id, '图层图片加载失败，请重试')} />)}
         </View>}
 
+        {!layerPanelOpen && overlay.samples.map((p, i) => <View key={i} className="map-page__sample" style={{ left: p.left, top: p.top }}><Text>{p.text}</Text></View>)}
         {overlay.wind && !layerPanelOpen && <WindParticles layoutVersion={sheetHeight} vectors={overlay.wind.vectors} region={overlay.wind.region} />}
 
         {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、站点与公开电站 */}

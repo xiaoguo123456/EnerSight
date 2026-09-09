@@ -806,6 +806,11 @@ export interface components {
              * @default false
              */
             stale: boolean;
+            /**
+             * Samples
+             * @description 预报采样点，非站点实测
+             */
+            samples?: components["schemas"]["ScalarSample"][];
         };
         /**
          * LayerType
@@ -964,14 +969,23 @@ export interface components {
             times: string[];
             /**
              * Band
-             * @default infrared
+             * @default visible
              * @constant
              */
-            band: "infrared";
+            band: "visible";
             /** Start At */
             start_at: string;
             /** End At */
             end_at: string;
+        };
+        /** ScalarSample */
+        ScalarSample: {
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /** Value */
+            value: number;
         };
         /** StationCounts */
         StationCounts: {
@@ -1855,6 +1869,7 @@ export interface operations {
     satellite_history_v1_satellite_cloud_history_get: {
         parameters: {
             query?: {
+                station_id?: string | null;
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
             };

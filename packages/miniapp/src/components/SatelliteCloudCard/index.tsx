@@ -15,7 +15,7 @@ interface Props {
 }
 
 const BAND_LABEL: Record<SatelliteCloudResponse['band'], string> = {
-  visible: '可见光',
+  visible: '真彩色',
   infrared: '红外',
   vapor: '水汽',
 }
@@ -27,6 +27,7 @@ const BAND_LABEL: Record<SatelliteCloudResponse['band'], string> = {
  */
 export function SatelliteCloudCard({ satellite, onFullscreen, onRetry, onLoaded, onImageError }: Props) {
   const [imageState, setImageState] = useState<{ url: string; status: 'loaded' | 'error' } | null>(null)
+  const [shown, setShown] = useState<SatelliteCloudResponse | null>(null)
   const url = satellite?.image.url ?? ''
   const loaded = imageState?.url === url && imageState.status === 'loaded'
   const failed = imageState?.url === url && imageState.status === 'error'
@@ -50,8 +51,9 @@ export function SatelliteCloudCard({ satellite, onFullscreen, onRetry, onLoaded,
     )
   }
 
-  const { sw, ne } = satellite.image.bounds
-  const m = satellite.station_marker
+  const current = shown ?? satellite
+  const { sw, ne } = current.image.bounds
+  const m = current.station_marker
   const left = ((m.longitude - sw.longitude) / (ne.longitude - sw.longitude)) * 100
   const top = ((ne.latitude - m.latitude) / (ne.latitude - sw.latitude)) * 100
   const gradient = `linear-gradient(90deg, ${satellite.legend.colors.join(', ')})`
@@ -59,22 +61,23 @@ export function SatelliteCloudCard({ satellite, onFullscreen, onRetry, onLoaded,
 
   return (
     <View className="sat-card">
-      <Image key={url} className="sat-card__img" src={url} mode="aspectFill"
-        onLoad={() => { setImageState({ url, status: 'loaded' }); onLoaded?.() }}
+      {shown && shown.image.url !== url && <Image key={shown.image.url} className="sat-card__img" src={shown.image.url} mode="aspectFill" />}
+      <Image key={url} className="sat-card__img" src={url} mode="aspectFill" style={{ opacity: loaded ? 1 : 0 }}
+        onLoad={() => { setImageState({ url, status: 'loaded' }); setShown(satellite); onLoaded?.() }}
         onError={() => { setImageState({ url, status: 'error' }); onImageError?.() }} />
-      {!loaded && <View className="sat-card__canvas sat-card__fallback">
+      {!loaded && !shown && <View className="sat-card__canvas sat-card__fallback">
         <Text className="sat-card__placeholder">{failed ? '云图加载失败，暂时无法判断云况' : '正在加载卫星影像'}</Text>
         {failed && onRetry && <View className="sat-card__retry" onClick={onRetry}>重新加载</View>}
       </View>}
-      {loaded && <View className="sat-card__marker" style={{ left: `${left}%`, top: `${top}%` }}>
+      {(loaded || shown) && <View className="sat-card__marker" style={{ left: `${left}%`, top: `${top}%` }}>
         <View className="sat-card__marker-dot" />
       </View>}
 
       <View className="sat-card__stamp">
         <Icon name="satellite" size={12} color="#ffffff" />
         <View className="sat-card__stamp-text">
-          <Text className="sat-card__stamp-title">卫星云图 · {BAND_LABEL[satellite.band]}</Text>
-          <Text className="sat-card__stamp-time">观测 {formatBeijingTime(satellite.observed_at)}（北京时间）</Text>
+          <Text className="sat-card__stamp-title">卫星云图 · {BAND_LABEL[current.band]}</Text>
+          <Text className="sat-card__stamp-time">观测 {formatBeijingTime(current.observed_at)}（北京时间）</Text>
         </View>
       </View>
 
@@ -84,7 +87,7 @@ export function SatelliteCloudCard({ satellite, onFullscreen, onRetry, onLoaded,
         </View>
       )}
 
-      {loaded && <View className="sat-card__legend">
+      {(loaded || shown) && current.band !== 'visible' && <View className="sat-card__legend">
         <Text className="sat-card__legend-title">{satellite.legend.title}</Text>
         <View className="sat-card__legend-bar" style={{ background: gradient }} />
         <View className="sat-card__legend-scale">

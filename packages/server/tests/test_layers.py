@@ -168,3 +168,14 @@ async def test_重启缓存复用持久化网格(client, open_meteo):
     grid.clear_cache()
     await client.get("/v1/map/layers/temperature", params={"bbox": "120.5,28.5,121.5,29.5"})
     assert open_meteo.call_count == 1
+
+
+async def test_放大视野仍有插值数值且无额外回源(client, open_meteo):
+    response = await client.get(
+        "/v1/map/layers/temperature", params={"bbox": "120.51,28.51,120.61,28.61"}
+    )
+    samples = response.json()["data"]["samples"]
+    assert len(samples) == 9
+    assert all(120.51 < p["longitude"] < 120.61 and 28.51 < p["latitude"] < 28.61 for p in samples)
+    assert all(20.5 <= p["value"] <= 20.6 for p in samples)
+    assert open_meteo.call_count == 1

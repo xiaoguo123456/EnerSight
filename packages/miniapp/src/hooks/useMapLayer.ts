@@ -16,6 +16,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const [error, setError] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [wind, setWind] = useState<{ vectors: NonNullable<LayerResponse["wind_vectors"]>; region: Region } | null>(null)
+  const [samples, setSamples] = useState<{ left: string; top: string; text: string }[]>([])
   const regionRef = useRef<Region>()
   const [stale, setStale] = useState(false)
   const debounce = useRef<ReturnType<typeof setTimeout>>()
@@ -30,7 +31,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const clear = useCallback(() => {
     if (timer.current) clearTimeout(timer.current)
     pending.current = null
-    setPreview(null); setWind(null)
+    setPreview(null); setWind(null); setSamples([])
     const ctx = Taro.createMapContext(mapId)
     for (const id of overlayIds.current) {
       try { void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined) } catch { /* 已移除 */ }
@@ -50,6 +51,19 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     if (timer.current) clearTimeout(timer.current)
     pending.current = null
     setStale(!!response.stale)
+    const region = regionRef.current
+    if (region && response.samples?.length) {
+      const merc = (lat: number) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))
+      const north = merc(region.northeast.latitude), south = merc(region.southwest.latitude)
+      const selected: { x: number; y: number; text: string }[] = []
+      for (const p of response.samples) {
+        const x = (p.longitude - region.southwest.longitude) / (region.northeast.longitude - region.southwest.longitude) * 100
+        const y = (north - merc(p.latitude)) / (north - south) * 100
+        if (x < 8 || x > 82 || y < 18 || y > 62 || selected.some(q => Math.abs(q.x-x)<23 && Math.abs(q.y-y)<12)) continue
+        selected.push({ x, y, text: `${Math.round(p.value)}${response.unit === '℃' ? '℃' : ' W/m²'}` })
+      }
+      setSamples(selected.map(p => ({ left: `${p.x}%`, top: `${p.y}%`, text: p.text })))
+    }
     if (response.wind_vectors?.length && regionRef.current) setWind({ vectors: response.wind_vectors, region: regionRef.current })
     setLegend(response.legend); setObservedAt(response.observed_at); setLoading(false)
   }, [])
@@ -70,6 +84,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     try {
       const region = await new Promise<Region>((resolve, reject) => ctx.getRegion({ success: resolve, fail: reject }))
       if (mine !== seq.current) return
+      if (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5) throw new Error('当前视野过大，请放大地图查看气象分布')
       regionRef.current = region
       const response = await layersApi.get(layer, {
         west: region.southwest.longitude, south: region.southwest.latitude,
@@ -106,5 +121,5 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   useEffect(() => { void refresh(); return invalidate }, [refresh, invalidate])
-  return { wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
+  return { samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
 }

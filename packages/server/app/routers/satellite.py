@@ -51,6 +51,17 @@ async def satellite_cloud(
 
 @router.get("/cloud/history", response_model=Envelope[SatelliteHistoryResponse])
 async def satellite_history(
-    request: Request, user: CurrentUserDep, coord: CoordQuery = Coord.WGS84
+    request: Request,
+    user: CurrentUserDep,
+    db: DbDep,
+    station_id: str | None = None,
+    coord: CoordQuery = Coord.WGS84,
 ):
-    return envelope(await svc.history_times(request.app.state.http), coord)
+    station = (
+        await get_station(db, user.id, station_id)
+        if station_id
+        else await default_station(db, user.id)
+    )
+    if station is None:
+        raise StationNotFound()
+    return envelope(await svc.history_times(request.app.state.http, station), coord)

@@ -221,7 +221,7 @@ async def get_cloud(
     return to_response(scene, station, tz, coord)
 
 
-async def history_times(http: httpx.AsyncClient):
+async def history_times(http: httpx.AsyncClient, station: Station | None = None):
     from datetime import timedelta
 
     from app.schemas.satellite import SatelliteHistoryResponse
@@ -230,7 +230,12 @@ async def history_times(http: httpx.AsyncClient):
     end = times[-1]
     start = end - timedelta(hours=3)
     return SatelliteHistoryResponse(
-        times=[t.isoformat() for t in times if start <= t <= end],
+        times=[
+            t.isoformat()
+            for t in times
+            if start <= t <= end
+            and (station is None or is_day(station.latitude, station.longitude, t))
+        ],
         start_at=start.isoformat(),
         end_at=end.isoformat(),
     )
@@ -244,17 +249,17 @@ async def cloud_at(
 ):
     from app.errors import ApiError
 
-    manifest = await history_times(http)
+    manifest = await history_times(http, station)
     if when.isoformat() not in manifest.times:
         raise ApiError("SATELLITE_FRAME_UNAVAILABLE", "该观测时刻不在近三小时可用帧中", 404)
     bbox = station_bbox(station.latitude, station.longitude)
     key = f"{_bbox_key(bbox)}:{when.isoformat()}"
-    path = tiles.tile_path("satellite-history", _bbox_key(bbox), f"{when:%Y%m%dT%H%M}_infrared")
+    path = tiles.tile_path("satellite-history", _bbox_key(bbox), f"{when:%Y%m%dT%H%M}_truecolor")
 
     async def render():
         if not path.exists():
-            mosaic = await himawari.fetch_mosaic(http, when, "infrared", bbox)
-            rep = stretch_infrared(await _reproject(mosaic, bbox))
+            mosaic = await himawari.fetch_mosaic(http, when, "truecolor", bbox)
+            rep = await _reproject(mosaic, bbox)
             tiles.write_tile(path, to_png(rep.rgb))
         return path
 
@@ -263,7 +268,7 @@ async def cloud_at(
 
     w, s, e, n = bbox
     return SatelliteCloudResponse(
-        band="infrared",
+        band="visible",
         observed_at=when.isoformat(),
         image=LayerImage(
             url=f"{base_url}/tiles/{path.relative_to(tiles.tile_dir()).as_posix()}",
@@ -271,7 +276,7 @@ async def cloud_at(
         ),
         station_marker=_latlng(station.latitude, station.longitude, coord),
         legend=Legend(
-            title="红外云图",
+            title="真彩色云图",
             type="gradient",
             stops=None,
             labels=["低", "高"],

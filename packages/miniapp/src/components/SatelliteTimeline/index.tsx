@@ -10,7 +10,7 @@ import './index.scss'
 
 /** 三小时真实观测序列；按需下载当前/下一帧，缺失帧不复制伪造。 */
 export function SatelliteTimeline({ stationId }: { stationId: string }) {
-  const manifest = useRequest(() => api.get<SatelliteHistoryResponse>('/v1/satellite/cloud/history'), [])
+  const manifest = useRequest(() => api.get<SatelliteHistoryResponse>('/v1/satellite/cloud/history', { station_id: stationId }), [stationId])
   const times = manifest.data?.times ?? []
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(true)
@@ -18,6 +18,7 @@ export function SatelliteTimeline({ stationId }: { stationId: string }) {
   const [speed, setSpeed] = useState(1)
   const [loaded, setLoaded] = useState('')
   const [failed, setFailed] = useState(false)
+  const [display, setDisplay] = useState<SatelliteCloudResponse | null>(null)
   const cache = useRef(new Map<string, Promise<SatelliteCloudResponse>>())
   const when = times[index]
   const getFrame = (at: string) => {
@@ -36,6 +37,7 @@ export function SatelliteTimeline({ stationId }: { stationId: string }) {
   useDidHide(() => setVisible(false)); useDidShow(() => setVisible(true))
   useEffect(() => { setIndex(0) }, [manifest.data?.end_at])
   useEffect(() => { setLoaded(''); setFailed(false) }, [when])
+  useEffect(() => { if (frame.data) setDisplay(frame.data) }, [frame.data])
   useEffect(() => {
     if (frame.status !== 'success' || !when) return
     const next = times[index + 1]
@@ -48,11 +50,11 @@ export function SatelliteTimeline({ stationId }: { stationId: string }) {
   }, [playing, visible, loaded, when, speed, failed, times.length])
   const retry = () => { if (when) cache.current.delete(when); setFailed(false); void frame.reload() }
   return <View className="sat-timeline">
-    <View className="sat-timeline__head"><Text>近 3 小时云图</Text><Text className="sat-timeline__muted">红外连续观测</Text></View>
-    {manifest.status === 'error' ? <View onClick={manifest.reload}>时间轴加载失败 · 点击重试</View> : <>
-      {frame.status === 'loading' || manifest.status === 'loading' ? <View className="sat-timeline__loading">正在加载历史云图…</View> : <SatelliteCloudCard satellite={frame.data ?? null} onRetry={retry}
-        onLoaded={() => { setLoaded(when ?? ''); setFailed(false) }} onImageError={() => setFailed(true)} />}
-      <Text className="sat-timeline__status">{manifest.status === 'loading' ? '正在获取观测时刻…' : frame.status === 'error' || failed ? '此帧加载失败，可重试或切换其他时刻' : frame.status === 'loading' ? `正在加载第 ${index + 1} 帧…` : `第 ${index + 1} / ${times.length} 帧 · ${when ? formatBeijingTime(when) : '暂无可用帧'}（北京时间）`}</Text>
+    <View className="sat-timeline__head"><Text>近 3 小时云图</Text><Text className="sat-timeline__muted">真彩色 · 白天观测</Text></View>
+    {manifest.status === 'success' && !times.length ? <View className="sat-timeline__loading">近 3 小时暂无白天真彩色观测，请日出后查看</View> : manifest.status === 'error' ? <View onClick={manifest.reload}>时间轴加载失败 · 点击重试</View> : <>
+      {!display && (frame.status === 'loading' || manifest.status === 'loading') ? <View className="sat-timeline__loading">正在加载历史云图…</View> : <SatelliteCloudCard satellite={display} onRetry={retry}
+        onLoaded={() => { setLoaded(display?.observed_at ?? ''); setFailed(false) }} onImageError={() => setFailed(true)} />}
+      <Text className="sat-timeline__status" onClick={() => { if (frame.status === 'error' || failed) retry() }}>{manifest.status === 'loading' ? '正在获取观测时刻…' : frame.status === 'error' || failed ? '此帧加载失败 · 点击重试或切换时刻' : frame.status === 'loading' ? `正在加载第 ${index + 1} 帧…` : `第 ${index + 1} / ${times.length} 帧 · ${when ? formatBeijingTime(when) : '暂无可用帧'}（北京时间）`}</Text>
       <Slider min={0} max={Math.max(1, times.length - 1)} step={1} value={index} disabled={times.length < 2}
         activeColor="#1677ff" blockSize={18} onChanging={() => setPlaying(false)} onChange={(e) => { setPlaying(false); setIndex(Math.max(0, Math.min(times.length - 1, e.detail.value))) }} />
       <View className="sat-timeline__range"><Text>{times[0] ? formatBeijingTime(times[0]) : '—'}</Text><Text>{times.length ? formatBeijingTime(times[times.length - 1]) : '—'}</Text></View>
@@ -62,7 +64,7 @@ export function SatelliteTimeline({ stationId }: { stationId: string }) {
         <View onClick={() => { setPlaying(false); setIndex((i) => Math.max(0, Math.min(times.length - 1, i + 1))) }}>下一帧</View>
         <View onClick={() => setSpeed((s) => s === 1 ? 2 : 1)}>{speed}×</View>
       </View>
-      <Text className="sat-timeline__muted">时间轴截至最新可用观测；仅播放真实帧，空缺时刻不补造。</Text>
+      <Text className="sat-timeline__muted">仅播放近 3 小时内有日照的真彩色观测；夜间不切换红外。</Text>
     </>}
   </View>
 }

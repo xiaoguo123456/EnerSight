@@ -39,6 +39,12 @@ class WindVector(BaseModel):
     v: float = Field(description="向北风速，m/s")
 
 
+class ScalarSample(BaseModel):
+    latitude: float
+    longitude: float
+    value: float
+
+
 class LayerResponse(BaseModel):
     layer: LayerType
     observed_at: str = Field(description="数据观测时间，非请求时间")
@@ -48,3 +54,4 @@ class LayerResponse(BaseModel):
     frame_interval_ms: int | None
     wind_vectors: list[WindVector] | None = None
     stale: bool = False
+    samples: list[ScalarSample] = Field(default_factory=list, description="预报采样点，非站点实测")

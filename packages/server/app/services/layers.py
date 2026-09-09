@@ -22,6 +22,7 @@ from app.schemas.layer import (
     LayerImage,
     LayerResponse,
     Legend,
+    ScalarSample,
     WindVector,
 )
 from app.services import satellite
@@ -141,6 +142,35 @@ async def build_layer(
                             v=round(-float(speed) * math.cos(angle), 3),
                         )
                     )
+    samples = []
+    if layer in (LayerType.TEMPERATURE, LayerType.RADIATION):
+        for block in blocks:
+            data = await g.fetch_block(http, block)
+            hour = _current_hour_index(data.times)
+            # 以视野内均匀的九个位置采样，双线性插值避免放大后无网格点可读。
+            for fy in (1 / 6, 1 / 2, 5 / 6):
+                for fx in (1 / 6, 1 / 2, 5 / 6):
+                    lat, lon = s + (n - s) * fy, w + (e - w) * fx
+                    if not (block.lat0 <= lat < block.lat1 and block.lon0 <= lon < block.lon1):
+                        continue
+                    y = (lat - block.lat0) / (block.lat1 - block.lat0) * (g.N - 1)
+                    x = (lon - block.lon0) / (block.lon1 - block.lon0) * (g.N - 1)
+                    i, j = min(int(y), g.N - 2), min(int(x), g.N - 2)
+                    dy, dx = y - i, x - j
+                    field = data.fields[layer.value][hour]
+                    value = (
+                        field[i, j] * (1 - dx) * (1 - dy)
+                        + field[i, j + 1] * dx * (1 - dy)
+                        + field[i + 1, j] * (1 - dx) * dy
+                        + field[i + 1, j + 1] * dx * dy
+                    )
+                    if not np.isfinite(value):
+                        continue
+                    if coord == Coord.GCJ02:
+                        lon, lat = wgs84_to_gcj02(lon, lat)
+                    samples.append(
+                        ScalarSample(latitude=lat, longitude=lon, value=round(float(value), 1))
+                    )
     images = [
         LayerImage(url=url, bounds=_bounds(b, coord))
         for b, (url, _, _) in zip(blocks, results, strict=True)
@@ -161,5 +191,6 @@ async def build_layer(
         frames=[LayerFrame(images=images)],
         frame_interval_ms=None,
         stale=any(item[2] for item in results),
+        samples=samples,
         wind_vectors=vectors if layer == LayerType.WIND else None,
     )

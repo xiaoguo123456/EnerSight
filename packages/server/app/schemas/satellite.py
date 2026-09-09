@@ -19,6 +19,6 @@ class SatelliteCloudResponse(BaseModel):
 
 class SatelliteHistoryResponse(BaseModel):
     times: list[str] = Field(description="近三小时可用卫星观测时刻，升序；缺帧不补造")
-    band: Literal["infrared"] = "infrared"
+    band: Literal["visible"] = "visible"
     start_at: str
     end_at: str

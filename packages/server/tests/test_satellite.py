@@ -314,6 +314,7 @@ async def test_历史时轴仅包含近三小时真实帧(client, monkeypatch):
     sky = FakeSky().install(monkeypatch)
     for minutes in [0, 10, 30, 180, 190]:
         sky.add(DAY - timedelta(minutes=minutes))
+    await client.post("/v1/stations", json=SUZHOU)
     result = await client.get("/v1/satellite/cloud/history")
     assert result.status_code == 200
     times = result.json()["data"]["times"]
@@ -322,7 +323,7 @@ async def test_历史时轴仅包含近三小时真实帧(client, monkeypatch):
     assert (DAY - timedelta(minutes=20)).isoformat() not in times
 
 
-async def test_历史云图统一红外且不伪造缺帧(client, monkeypatch):
+async def test_历史云图使用真彩色且不伪造缺帧(client, monkeypatch):
     from app.errors import ApiError
     from app.models import Station
     from app.schemas.common import Coord
@@ -334,9 +335,9 @@ async def test_历史云图统一红外且不伪造缺帧(client, monkeypatch):
     )
     async with AsyncClient() as http:
         data = await satellite.cloud_at(http, station, DAY, Coord.WGS84, "http://test")
-        assert data.band == "infrared"
+        assert data.band == "visible"
         assert data.observed_at == DAY.isoformat()
-        assert all(band == "infrared" for _, band in sky.calls)
+        assert all(band == "truecolor" for _, band in sky.calls)
         assert (
             (tiles.tile_dir() / data.image.url.split("/tiles/")[1])
             .read_bytes()
@@ -346,3 +347,12 @@ async def test_历史云图统一红外且不伪造缺帧(client, monkeypatch):
             await satellite.cloud_at(
                 http, station, DAY - timedelta(minutes=10), Coord.WGS84, "http://test"
             )
+
+
+async def test_历史时轴排除夜间帧(client, monkeypatch):
+    sky = FakeSky().add(NIGHT).install(monkeypatch)
+    await client.post("/v1/stations", json=SUZHOU)
+    result = await client.get("/v1/satellite/cloud/history")
+    assert result.status_code == 200
+    assert result.json()["data"]["times"] == []
+    assert sky.calls == []
