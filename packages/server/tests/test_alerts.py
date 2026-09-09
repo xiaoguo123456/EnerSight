@@ -143,7 +143,34 @@ class TestClearing:
             await conn.run_sync(Base.metadata.create_all)
         return async_sessionmaker(engine, expire_on_commit=False)()
 
-    async def test_条件刚消失不解除_持续30分钟才解除(self):
+    @pytest.mark.parametrize(
+        "steps",
+        [
+            [(0, True, True), (15, False, True), (30, False, True), (45, False, False)],
+            # 中断一小时后首次恢复扫描，不得立即解除。
+            [(0, True, True), (60, False, True), (75, False, True), (90, False, False)],
+            # 消失计时过程中再次命中，必须重新等待完整 30 分钟。
+            [
+                (0, True, True),
+                (15, False, True),
+                (30, True, True),
+                (45, False, True),
+                (60, False, True),
+                (75, False, False),
+            ],
+            # 计时中途漏扫，恢复后重新开始稳定期。
+            [
+                (0, True, True),
+                (15, False, True),
+                (46, False, True),
+                (61, False, True),
+                (76, False, False),
+            ],
+        ],
+    )
+    async def test_解除从首次确认消失计时并处理观测中断(self, monkeypatch, steps):
+        from sqlalchemy import select
+
         from app.models import Alert, Station
 
         db = await self._db()
@@ -157,22 +184,60 @@ class TestClearing:
             capacity_kw=500,
         )
         hot = alerts.Detected("heat", "moderate", "高温", "…")
-        await alerts.apply_detections(db, st, [hot])
-        await db.commit()
-        # 第一次没检测到：刚消失，仍生效
-        await alerts.apply_detections(db, st, [])
-        await db.commit()
-        rows = (await db.execute(__import__("sqlalchemy").select(Alert))).scalars().all()
-        assert len(rows) == 1 and rows[0].active
-        # 把最近检测时刻拨回 31 分钟：再扫一次才解除
-        rows[0].last_detected_at = rows[0].last_detected_at - timedelta(minutes=31)
-        await db.commit()
-        await alerts.apply_detections(db, st, [])
-        await db.commit()
-        rows = (await db.execute(__import__("sqlalchemy").select(Alert))).scalars().all()
-        levels = sorted(a.level for a in rows)
-        assert levels == ["cleared", "moderate"] and not any(a.active for a in rows)
-        await db.close()
+        start = datetime(2026, 9, 9, 0, 0)
+        try:
+            for minute, detected, expected_active in steps:
+                now = start + timedelta(minutes=minute)
+                monkeypatch.setattr(alerts, "utcnow", lambda now=now: now)
+                await alerts.apply_detections(db, st, [hot] if detected else [])
+                await db.commit()
+                rows = (await db.execute(select(Alert))).scalars().all()
+                assert any(a.active for a in rows) == expected_active, minute
+            assert sum(a.level == "cleared" for a in rows) == 1
+        finally:
+            await db.close()
+
+    async def test_卫星未知清空稳定期(self, monkeypatch):
+        from sqlalchemy import select
+
+        from app.models import Alert, Station
+
+        db = await self._db()
+        st = Station(
+            id="s1",
+            owner_id="u",
+            name="x",
+            type="solar",
+            latitude=31.3,
+            longitude=120.6,
+            capacity_kw=500,
+        )
+        start = datetime(2026, 9, 9, 0, 0)
+        try:
+            db.add(
+                Alert(
+                    station_id=st.id,
+                    kind="cloud_motion",
+                    source="satellite",
+                    level="moderate",
+                    title="云团",
+                    description="…",
+                    published_at=start,
+                    clear_since=start,
+                    last_clear_check_at=start,
+                )
+            )
+            await db.commit()
+            monkeypatch.setattr(alerts, "utcnow", lambda: start + timedelta(minutes=15))
+            await alerts.apply_detections(db, st, [], satellite_known=False)
+            await db.commit()
+            row = (await db.execute(select(Alert))).scalar_one()
+            assert row.active and row.clear_since is None and row.last_clear_check_at is None
+            monkeypatch.setattr(alerts, "utcnow", lambda: start + timedelta(minutes=30))
+            await alerts.apply_detections(db, st, [], satellite_known=True)
+            assert row.active and row.clear_since == start + timedelta(minutes=30)
+        finally:
+            await db.close()
 
 
 class TestApi:

@@ -14,7 +14,7 @@ export function StationTrend({ stationId, type, initial, version = 0 }: { statio
     <SegmentedTabs options={OPTIONS} value={metric} onChange={(m) => setMetric(m as TrendMetric)} />
     {req.refreshError && <View style={{ fontSize: '12px', color: '#a65b16', marginTop: '8px' }} onClick={req.reload}>更新失败，当前为上次曲线 · 点击重试</View>}
     <View style={{ fontSize: '11px', color: '#718096', marginTop: '8px' }}>时间轴为电站当地时间{metric === 'wind_speed' ? ' · 离地10米预报风速' : ''}</View>
-    {metric === 'wind_speed' && type === 'wind' && <View style={{ fontSize: '12px', color: '#526174', lineHeight: 1.7, marginTop: '6px' }}>发电预测先将10米风速换算至风机轮毂高度，再代入功率曲线；不能直接用本图风速判断是否发电。</View>}
+    {metric === 'wind_speed' && type === 'wind' && <View style={{ fontSize: '12px', color: '#526174', lineHeight: 1.7, marginTop: '6px' }}>发电预测优先采用各高度层风速，换算至风机轮毂高度；仅有10米风速时采用外推估算。不能直接用本图风速判断是否发电。</View>}
     <View style={{ marginTop: '14px', minHeight: '150px' }}>
       {req.status === 'error' ? <ErrorState error={req.error} onRetry={req.reload} />
         : req.status !== 'success' || req.data.metric !== metric ? <Skeleton height={150} lines={3} />

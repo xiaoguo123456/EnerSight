@@ -35,5 +35,8 @@ class Alert(Base):
     # naive UTC，出口按站点时区格式化
     published_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
-    # 最近一次扫描仍检测到该条件的时刻；条件消失且持续 30 分钟才解除。docs/07 §5.3
+    # 最近一次扫描仍检测到该条件的时刻。docs/07 §5.3
     last_detected_at: Mapped[datetime | None] = mapped_column(default=utcnow)
+    # 有效扫描首次确认条件消失、最近一次确认消失的时刻；再次命中或观测中断后重计。
+    clear_since: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_clear_check_at: Mapped[datetime | None] = mapped_column(nullable=True)

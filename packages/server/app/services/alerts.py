@@ -24,6 +24,7 @@ from app.services.weather import Forecast
 
 # ── 规则参数（docs/07 §七 预警）──
 DEDUP_WINDOW = timedelta(hours=2)
+CLEAR_CHECK_MAX_GAP = timedelta(minutes=20)  # 15 分钟调度加 5 分钟余量，超时重计稳定期。
 CLEAR_STABLE_WINDOW = timedelta(minutes=30)  # 条件消失并持续这么久才解除，避免临界抖动。§5.3
 SATELLITE_ALERT_TTL = timedelta(hours=2)  # 外推时效上限，卫星断供时预警最多保留这么久
 LOOKAHEAD_HOURS = 6  # 云层下降只看未来 6 小时
@@ -252,6 +253,8 @@ async def apply_detections(
             # 2 小时内同类型：更新内容不新建
             cur.level, cur.title, cur.description = d.level, d.title, d.description
             cur.last_detected_at = now
+            cur.clear_since = None
+            cur.last_clear_check_at = None
             continue
         if cur:
             cur.active = False
@@ -272,14 +275,25 @@ async def apply_detections(
     for kind, cur in active.items():
         if kind in seen or cur.level == "cleared":
             continue
-        if (
+        satellite_expired = (
             cur.source == "satellite"
             and not satellite_known
-            and now - cur.published_at < SATELLITE_ALERT_TTL
-        ):
+            and now - cur.published_at >= SATELLITE_ALERT_TTL
+        )
+        if cur.source == "satellite" and not satellite_known and not satellite_expired:
+            cur.clear_since = None
+            cur.last_clear_check_at = None
             continue
-        if now - (cur.last_detected_at or cur.published_at) < CLEAR_STABLE_WINDOW:
-            continue
+        if not satellite_expired:
+            if (
+                cur.clear_since is None
+                or cur.last_clear_check_at is None
+                or now - cur.last_clear_check_at > CLEAR_CHECK_MAX_GAP
+            ):
+                cur.clear_since = now
+            cur.last_clear_check_at = now
+            if now - cur.clear_since < CLEAR_STABLE_WINDOW:
+                continue
         cur.active = False
         db.add(
             Alert(
