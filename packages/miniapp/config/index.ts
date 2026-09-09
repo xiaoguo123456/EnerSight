@@ -16,7 +16,7 @@ export default {
   sourceRoot: 'src',
   // 按平台分目录，否则 h5 构建会覆盖小程序产物
   outputRoot: `dist/${process.env.TARO_ENV}`,
-  plugins: [],
+  plugins: [path.resolve(__dirname, 'map-compat.cjs')],
   framework: 'react',
   compiler: 'vite',
   sass: {
