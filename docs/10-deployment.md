@@ -96,7 +96,7 @@ bash scripts/rollback.sh
 
 首次网关安装使用 `deploy/gateway/`。将 `.env` 中 `PLATFORM_NGINX_IMAGE` 固定为经过验证的 Nginx 镜像摘要，目录和服务名独立。使用 host 网络监听 `8089`，业务 API 的 `8001` 仅监听回环地址。
 
-网关保留 New API 的流式响应、长连接和 WebSocket；ALB 提供 HTTPS 协议头。`/enersight/` 的代理剥离路径前缀，后端 `root_path=/enersight` 负责生成包含前缀的图片地址。修改共享网关时，先备份目标配置，验证 `nginx -t`，再 reload；不通过业务发布流覆盖全部配置。
+网关保留 New API 的流式响应、长连接和 WebSocket；ALB 提供 HTTPS 协议头。`/enersight/` 的代理保留路径前缀（`proxy_pass http://127.0.0.1:8001` 不带末尾斜杠），后端 `root_path=/enersight` 统一处理接口与挂载的静态图片路径；剥离前缀会使静态图片返回 404。修改共享网关时，先备份目标配置，验证 `nginx -t`，再 reload；不通过业务发布流覆盖全部配置。
 
 切换前：验证网关本机 `/gateway-health`、`/enersight/ready` 和根路径 New API。ALB 新建独立服务器组，目标为同一 ECS 的 `8089`，检查 VPC / 安全组的最小必要连通性。仅在健康后将 platform 域名规则从原 New API 组切到新网关组，保留旧组用于回退，不改其他域名规则。
 

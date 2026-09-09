@@ -1,7 +1,7 @@
 import { View, Text } from '@tarojs/components'
-import Taro, { useRouter } from '@tarojs/taro'
+import Taro, { useRouter, usePullDownRefresh, useShareAppMessage } from '@tarojs/taro'
 import {
-  formatCo2, formatCurrency, formatEnergy, formatHours,
+  formatBeijingTime, formatCo2, formatCurrency, formatEnergy, formatHours,
 } from '@enersight/core/format'
 import { homeApi } from '@/api/home'
 import { reportsApi } from '@/api/reports'
@@ -13,6 +13,7 @@ import type { SummaryCell } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import { decodeRouteParam } from '@/route'
 import { useStationStore } from '@/store'
+import { DataFreshness } from '@/components/DataFreshness'
 import './index.scss'
 
 export default function Report() {
@@ -27,6 +28,9 @@ export default function Report() {
     return reportsApi.get(sid)
   }, [routeId])
 
+  usePullDownRefresh(async () => { await req.reload(); Taro.stopPullDownRefresh() })
+  useShareAppMessage(() => ({ title: `${req.data?.station.name || '晴川观象'} · 气象分析`, path: `/pages/report/index?id=${encodeURIComponent(req.data?.station.id || routeId)}` }))
+  const setCurrent = useStationStore((s) => s.setCurrent)
   if (req.status === 'loading') {
     return (
       <View className="report">
@@ -74,6 +78,8 @@ export default function Report() {
           <Text className="report__method">{r.method === 'ai' ? 'AI 辅助分析' : '规则分析'} · 气象模型估算，非实测</Text>
         </View>
 
+        <DataFreshness label="报告生成" time={r.generated_at_iso} staleMinutes={20} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
+        {r.data_as_of && <Text className="report__data-note">气象数据截至 {formatBeijingTime(r.data_as_of)}（北京时间）</Text>}
         {/* 先给结论，再提供风险与分时依据。 */}
         <View className="report__verdict">
           <View className="report__verdict-head">
@@ -90,7 +96,7 @@ export default function Report() {
               <Text className="report__risk-label">风险提醒</Text>
               <View
                 className="report__risk-more"
-                onClick={() => Taro.switchTab({ url: '/pages/alert/index' })}
+                onClick={() => { setCurrent(r.station.id); Taro.switchTab({ url: '/pages/alert/index' }) }}
               >
                 <Text>查看预警</Text>
                 <Icon name="chevronRight" size={12} color="#9ca3af" />
@@ -114,9 +120,9 @@ export default function Report() {
         <View className="report__card">
           <SectionHeader icon="barChart" title="估算数据" />
           <DataSummaryGrid cells={cells} />
-          <Text className="report__data-note">发电量与收益为模型估算，收益采用电价假设，非实际结算。</Text>
+          <Text className="report__data-note">发电量与收益为模型估算，非实际结算。电价假设：{r.tariff_yuan_per_kwh ?? '未记录'} 元/kWh；减排系数：{r.co2_factor_kg_per_kwh ?? '未记录'} kg/kWh。</Text>
         </View>
-        <Text className="report__generated">生成时间：{r.generated_at}</Text>
+        <Text className="report__generated">生成时间：{r.generated_at_iso ? `${formatBeijingTime(r.generated_at_iso)}（北京时间）` : r.generated_at}</Text>
       </View>
     </View>
   )

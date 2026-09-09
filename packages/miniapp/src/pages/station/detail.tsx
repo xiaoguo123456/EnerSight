@@ -1,27 +1,21 @@
-import { View, Text } from '@tarojs/components'
-import Taro, { useRouter } from '@tarojs/taro'
-import { useEffect, useState } from 'react'
+import { View, Text, Button } from '@tarojs/components'
+import Taro, { useRouter, usePullDownRefresh } from '@tarojs/taro'
+import { useEffect } from 'react'
 import {
-  formatCoordinate, formatPercent, formatPower, formatRadiation,
+  formatBeijingTime, formatCoordinate, formatPercent, formatPower, formatRadiation,
   formatTemperature, formatWindSpeed,
 } from '@enersight/core/format'
-import type { TrendMetric, TrendSeries } from '@enersight/core/types'
 import { useStationStore } from '@/store'
 import { homeApi } from '@/api/home'
 import {
   EnergyScoreCard, ErrorState, Icon, MetricCard, MetricGrid, PageHeader,
-  SectionHeader, SegmentedTabs, Skeleton, StatusBadge,
-  TrendChart, fromTrendSeries,
+  SectionHeader, Skeleton, StatusBadge,
 } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import { decodeRouteParam } from '@/route'
+import { StationTrend } from '@/components/StationTrend'
+import { DataFreshness } from '@/components/DataFreshness'
 import './detail.scss'
-
-const TREND_TABS: { value: TrendMetric; label: string }[] = [
-  { value: 'radiation', label: '辐射' },
-  { value: 'wind_speed', label: '风速' },
-  { value: 'cloud_cover', label: '云量' },
-]
 
 export default function StationDetail() {
   const { params } = useRouter()
@@ -35,17 +29,11 @@ export default function StationDetail() {
   const remember = useStationStore((s) => s.remember)
   useEffect(() => { if (req.data?.station) remember(req.data.station) }, [req.data, remember])
   const setCurrent = useStationStore((s) => s.setCurrent)
-  useEffect(() => {
-    if (req.data?.station) setCurrent(req.data.station.id)
-  }, [req.data, setCurrent])
-  const [metric, setMetric] = useState<TrendMetric>('radiation')
-  const [trendOverride, setTrendOverride] = useState<TrendSeries | null>(null)
-
-  const switchTrend = async (m: TrendMetric) => {
-    setMetric(m)
-    if (m === 'radiation') { setTrendOverride(null); return }
-    try { setTrendOverride(await homeApi.trends(id, m)) } catch { /* 保留上一条 */ }
-  }
+  const favorites = useStationStore((s) => s.favorites)
+  const toggleFavorite = useStationStore((s) => s.toggleFavorite)
+  const currentId = useStationStore((s) => s.currentId)
+  usePullDownRefresh(async () => { await req.reload(); Taro.stopPullDownRefresh() })
+  const selectStation = () => { setCurrent(id); void Taro.showToast({ title: '已设为当前电站', icon: 'success' }) }
 
   if (req.status === 'loading') {
     return (
@@ -69,7 +57,6 @@ export default function StationDetail() {
   }
 
   const { station, weather, index, updated_at } = req.data
-  const trend = trendOverride ?? req.data.trends
   const cap = formatPower(station.capacity)
 
   return (
@@ -86,14 +73,16 @@ export default function StationDetail() {
             </View>
             <Text className="detail__station-name">{station.name}</Text>
             <View className="detail__capacity">
-              <Text className="detail__capacity-label">装机容量</Text>
+              <Text className="detail__capacity-label">目录装机容量</Text>
               <Text className="detail__capacity-value">{cap.value}<Text className="detail__capacity-unit"> {cap.unit}</Text></Text>
             </View>
+            <View className="detail__favorite" onClick={() => toggleFavorite(station)}>{favorites.some((s) => s.id === id) ? '已收藏 · 点击取消' : '收藏到常看电站'}</View>
+            <View className="detail__selection" onClick={selectStation}>{currentId === id ? '✓ 当前查看电站' : '设为当前电站'}</View>
             <View className="detail__actions">
               <View className="detail__action detail__action--primary" onClick={() => Taro.navigateTo({ url: `/pages/report/index?id=${encodeURIComponent(id)}` })}>
                 <Icon name="fileText" size={16} color="#1264d6" /><Text>分析报告</Text>
               </View>
-              <View className="detail__action" onClick={() => Taro.switchTab({ url: '/pages/map/index' })}>
+              <View className="detail__action" onClick={() => { setCurrent(id); Taro.switchTab({ url: '/pages/map/index' }) }}>
                 <Icon name="map" size={16} color="#475569" /><Text>地图查看</Text>
               </View>
             </View>
@@ -106,21 +95,14 @@ export default function StationDetail() {
           />
         </View>
 
-        {trend && (
-          <View className="detail__card">
-            <SectionHeader icon="trendingUp" title="24 小时气象趋势" />
-            <SegmentedTabs options={TREND_TABS} value={metric} onChange={(v) => void switchTrend(v as TrendMetric)} />
-            <View className="detail__chart">
-              <TrendChart id="detail-trend" data={fromTrendSeries(trend)} />
-            </View>
-          </View>
-        )}
+        <DataFreshness time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
+        <View className="detail__card"><StationTrend key={id} stationId={id} type={station.type} initial={req.data.trends} /></View>
 
         {weather && (
           <View className="detail__card">
             <View className="detail__weather-head">
               <SectionHeader icon="sun" iconColor="#f59e0b" title="当前气象" />
-              <Text className="detail__updated">更新 {updated_at.slice(5, 10)} {updated_at.slice(11, 16)}</Text>
+
             </View>
             <MetricGrid>
               <MetricCard icon="cloudSun" label="气温"
@@ -143,6 +125,16 @@ export default function StationDetail() {
           <SectionHeader icon="mapPin" title="电站资料" />
           <View className="detail__info-row"><Text className="detail__info-label">所在地区</Text><Text className="detail__info-value">{station.address || '暂无地区信息'}</Text></View>
           <View className="detail__info-row"><Text className="detail__info-label">地理坐标</Text><Text className="detail__info-value">{formatCoordinate(station.latitude, station.longitude)}</Text></View>
+          <View className="detail__info-row"><Text className="detail__info-label">原始名称</Text><Text className="detail__info-value">{station.original_name || station.name}</Text></View>
+          {station.local_name && <View className="detail__info-row"><Text className="detail__info-label">中文名称</Text><Text className="detail__info-value">{station.local_name}</Text></View>}
+          <View className="detail__info-row"><Text className="detail__info-label">资料来源</Text><Text className="detail__info-value">{station.source === 'gem' ? 'Global Energy Monitor' : station.source === 'wri' ? 'WRI 全球电站数据库' : '来源待核实'}</Text></View>
+          <View className="detail__info-row"><Text className="detail__info-label">目录入库</Text><Text className="detail__info-value">{formatBeijingTime(station.catalog_updated_at)}（北京时间，非源数据发布日期）</Text></View>
+          {station.owner_name && <View className="detail__info-row"><Text className="detail__info-label">业主</Text><Text className="detail__info-value">{station.owner_name}</Text></View>}
+          <View className="detail__actions">
+            <View className="detail__action" onClick={() => Taro.setClipboardData({ data: `电站：${station.name}\nID：${id}\n地区：${station.address || '暂无'}\n坐标：${formatCoordinate(station.latitude, station.longitude)}\n来源：${station.source || '待核实'}\n页面：站点详情\n反馈时间：${new Date().toISOString()}` })}>复制资料</View>
+            <Button className="detail__action detail__feedback" openType="feedback">资料纠错</Button>
+          </View>
+          <Text className="detail__note">反馈前可复制资料，附上需要更正的字段和来源。</Text>
           <Text className="detail__note">电站资料来自公开目录，气象与发电适宜度为模型估算。</Text>
         </View>
       </View>

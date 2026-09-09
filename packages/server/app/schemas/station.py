@@ -35,6 +35,13 @@ class StationSummary(BaseModel):
     address: str | None
     image: str | None
     metrics: StationMetrics
+    source: str | None = None
+    original_name: str | None = None
+    local_name: str | None = None
+    catalog_updated_at: str | None = Field(
+        default=None, description="目录入库更新时间，不代表数据源发布日"
+    )
+    owner_name: str | None = None
 
 
 class StationCounts(BaseModel):

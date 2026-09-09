@@ -10,6 +10,8 @@ const CURRENT_KEY = 'enersight_current_public_station'
 interface StationState {
   currentId: string | null
   recent: StationSummary[]
+  favorites: StationSummary[]
+  toggleFavorite: (station: StationSummary) => void
   remember: (station: StationSummary) => void
   clearRecent: () => void
   setCurrent: (id: string) => void
@@ -19,6 +21,14 @@ interface StationState {
 export const useStationStore = create<StationState>((set) => ({
   currentId: null,
   recent: [],
+  favorites: [],
+  toggleFavorite: (station) => set((state) => {
+    const favorites = state.favorites.some((s) => s.id === station.id)
+      ? state.favorites.filter((s) => s.id !== station.id)
+      : [station, ...state.favorites].slice(0, 20)
+    try { Taro.setStorageSync('enersight_favorite_stations', favorites) } catch { /* 存储不可用时保留当前会话 */ }
+    return { favorites }
+  }),
   remember: (station) => set((state) => {
     const recent = [station, ...state.recent.filter((s) => s.id !== station.id)].slice(0, 6)
     try { Taro.setStorageSync('enersight_recent_stations', recent) } catch { /* 本机存储不可用不影响查看 */ }
@@ -34,6 +44,8 @@ export const useStationStore = create<StationState>((set) => ({
   },
   restore: () => {
     try {
+      const favorites = Taro.getStorageSync('enersight_favorite_stations')
+      if (Array.isArray(favorites)) set({ favorites: favorites.filter((s) => s && typeof s.id === 'string' && typeof s.name === 'string' && /^(gem|wri):/.test(s.id)).slice(0, 20) })
       const recent = Taro.getStorageSync('enersight_recent_stations')
       if (Array.isArray(recent)) set({ recent: recent.filter((s) =>
         s && typeof s.id === 'string' && typeof s.name === 'string' && /^(gem|wri):/.test(s.id)

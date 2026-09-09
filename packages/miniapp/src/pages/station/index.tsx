@@ -25,7 +25,7 @@ export default function Stations() {
   const [retry, setRetry] = useState(0)
   const [result, setResult] = useState({ items: [] as StationSummary[], total: 0, hasMore: false, regions: [] as string[], loading: true, error: false })
   const pending = useRef(false)
-  const { currentId, setCurrent, recent, remember } = useStationStore()
+  const { currentId, recent, favorites, remember } = useStationStore()
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery((q) => q.keyword === keyword.trim() ? q : { ...q, keyword: keyword.trim(), offset: 0 }), 300)
@@ -59,7 +59,6 @@ export default function Stations() {
   useReachBottom(loadMore)
   const pick = (station: StationSummary) => {
     remember(station)
-    setCurrent(station.id)
     void Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })
   }
   const regions = ['全部地区', ...result.regions]
@@ -90,6 +89,10 @@ export default function Stations() {
       </View>
     </View>
 
+    {unfiltered && favorites.length > 0 && <View className="catalog__recent">
+      <Text className="catalog__eyebrow">常看电站 · 本机收藏</Text>
+      <ScrollView scrollX className="catalog__recent-scroll">{favorites.map((s) => <View key={s.id} className="catalog__recent-item" onClick={() => pick(s)}><Text>{s.name}</Text></View>)}</ScrollView>
+    </View>}
     {unfiltered && recent.length > 0 && <View className="catalog__recent">
       <Text className="catalog__eyebrow">最近浏览</Text>
       <ScrollView scrollX className="catalog__recent-scroll">
@@ -99,6 +102,11 @@ export default function Stations() {
       </ScrollView>
     </View>}
 
+    {(query.keyword || query.province || query.type !== 'all') && <View className="catalog__active-filters">
+      {query.keyword && <Text onClick={() => setKeyword('')}>关键词：{query.keyword} ×</Text>}
+      {query.province && <Text onClick={() => change({ province: '' })}>{query.province} ×</Text>}
+      {query.type !== 'all' && <Text onClick={() => change({ type: 'all' })}>{query.type === 'solar' ? '光伏' : '风电'} ×</Text>}
+    </View>}
     <View className="catalog__results-head">
       <Text>{result.loading && !result.items.length ? '正在查找电站' : `共 ${result.total.toLocaleString()} 座电站`}</Text>
       <Picker mode="selector" range={['容量优先', '名称排序']} value={query.sort === 'capacity' ? 0 : 1}

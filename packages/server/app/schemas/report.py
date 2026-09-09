@@ -24,6 +24,10 @@ class AIReportResponse(BaseModel):
     station: StationSummary
     report_date: str
     generated_at: str
+    generated_at_iso: str | None = None
+    data_as_of: str | None = None
+    tariff_yuan_per_kwh: float | None = None
+    co2_factor_kg_per_kwh: float | None = None
     method: Literal["rule", "ai"] = Field(description="实际生成方式")
     is_fallback: bool = Field(description="供埋点统计，不用于改变展示")
 

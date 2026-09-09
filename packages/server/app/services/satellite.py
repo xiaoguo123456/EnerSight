@@ -183,6 +183,8 @@ def to_cloud_motion(
         impact_in_minutes=est.impact_minutes,
         impact_start_time=start.strftime("%H:%M"),
         reference_station=f"距{station.name}",
+        observed_at=observed_at.isoformat(),
+        impact_start_at=start.isoformat(),
     )
 
 

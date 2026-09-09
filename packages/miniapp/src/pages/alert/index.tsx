@@ -1,6 +1,6 @@
 import { View, Text } from '@tarojs/components'
 import { useState } from 'react'
-import Taro from '@tarojs/taro'
+import Taro, { usePullDownRefresh } from '@tarojs/taro'
 import type { AlertLevel } from '@enersight/core/types'
 import { alertsApi } from '@/api/alerts'
 import {
@@ -9,6 +9,8 @@ import {
 } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import { useMapStore, useStationStore } from '@/store'
+import { DataFreshness } from '@/components/DataFreshness'
+import { formatBeijingTime } from '@enersight/core/format'
 import './index.scss'
 
 type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
@@ -25,6 +27,7 @@ export default function AlertCenter() {
   // cleared 只在「全部」里出现，等级筛选由服务端做。docs/06 §9.1
   const list = useRequest(() => alertsApi.list(currentId ?? undefined, filter), [currentId, filter])
 
+  usePullDownRefresh(async () => { await Promise.all([cur.reload(), list.reload()]); Taro.stopPullDownRefresh() })
   const noStation = cur.status === 'error' && cur.error.status === 404
   const setActiveLayer = useMapStore((s) => s.setActiveLayer)
 
@@ -44,8 +47,9 @@ export default function AlertCenter() {
       <View className="alerts__body">
         {cur.status === 'success' && cur.data.station && <View className="alerts__context" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>
           <Text className="alerts__station">{cur.data.station.name}</Text>
-          <Text className="alerts__checked">切换电站 · {new Date(cur.data.checked_at).toLocaleTimeString('zh-CN', { hour12: false })} 检查</Text>
+          <Text className="alerts__checked">切换电站 · {formatBeijingTime(cur.data.checked_at)} 检查（北京时间）</Text>
         </View>}
+        {cur.status === 'success' && <DataFreshness label="规则检查" time={cur.data.checked_at} staleMinutes={15} refreshing={cur.refreshing || list.refreshing} failed={!!cur.refreshError || !!list.refreshError} onRefresh={() => { void cur.reload(); void list.reload() }} />}
         {cur.status === 'loading' && <Skeleton height={120} lines={3} />}
 
         {noStation && (
@@ -56,11 +60,12 @@ export default function AlertCenter() {
         {cur.status === 'success' && (
           cur.data.alert ? (
             <View className="alerts__group">
+              <DataFreshness label="预警发布" time={cur.data.alert.published_at} staleMinutes={30} />
               <AlertCard
                 level={cur.data.alert.level}
                 title={cur.data.alert.title}
                 description={cur.data.alert.description}
-                publishedAt={cur.data.alert.published_at.slice(0, 16).replace('T', ' ')}
+                publishedAt={`${formatBeijingTime(cur.data.alert.published_at)}（北京时间）`}
               />
               {cur.data.cloud_motion && (
                 <CloudMotionStats
@@ -70,6 +75,7 @@ export default function AlertCenter() {
                   impactInMinutes={cur.data.cloud_motion.impact_in_minutes}
                   impactStartTime={cur.data.cloud_motion.impact_start_time}
                   referenceStation={cur.data.cloud_motion.reference_station}
+                  impactStartAt={cur.data.cloud_motion.impact_start_at}
                 />
               )}
             </View>
@@ -90,6 +96,7 @@ export default function AlertCenter() {
           />
         )}
 
+        {cur.status === 'success' && cur.data.satellite && <DataFreshness label="卫星观测" time={cur.data.satellite.observed_at} staleMinutes={30} />}
         {!noStation && (
           <View className="alerts__card">
             <SectionHeader icon="clipboard" title="预警记录" />
@@ -98,7 +105,7 @@ export default function AlertCenter() {
               onChange={(v) => setFilter(v as Filter)}
               options={[
                 { value: 'all', label: '全部' },
-                { value: 'minor', label: '轻度', dotColor: '#16a34a' },
+                { value: 'minor', label: '轻度', dotColor: '#b45309' },
                 { value: 'moderate', label: '中度', dotColor: '#f59e0b' },
                 { value: 'severe', label: '重度', dotColor: '#ef4444' },
               ]}
@@ -112,7 +119,7 @@ export default function AlertCenter() {
               <AlertRecordList
                 records={list.data.alerts.map((a) => ({
                   id: a.id, level: a.level, title: a.title, description: a.description,
-                  published_at: a.published_at.slice(0, 16).replace('T', ' '),
+                  published_at: formatBeijingTime(a.published_at),
                 }))}
               />
             )}

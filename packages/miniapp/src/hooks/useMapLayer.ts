@@ -34,7 +34,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     if (!layer || !active) { ++seq.current; clear(); setLegend(null); setObservedAt(null); setLoading(false); setError(false); return }
     const ctx = Taro.createMapContext(mapId)
     const mine = ++seq.current
-    setLoading(true); setError(false)
+    setLoading(true); setError(false); setLegend(null); setObservedAt(null)
     let region: { southwest: { latitude: number; longitude: number }; northeast: { latitude: number; longitude: number } }
     let scale = 8
     try {
@@ -62,30 +62,33 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     clear()
     const frame = res.frames[0]
     if (!frame) { setLoading(false); setError(true); return }
-    frame.images.forEach((img, i) => {
-      const id = 1000 + i
-      overlayIds.current.push(id)
-      // Taro 4 的 MapContext 方法返回 Promise；opts 里的 success/fail 不一定被调用
-      const p: any = ctx.addGroundOverlay({
-        id,
-        src: img.url,
-        bounds: {
-          southwest: { latitude: img.bounds.sw.latitude, longitude: img.bounds.sw.longitude },
-          northeast: { latitude: img.bounds.ne.latitude, longitude: img.bounds.ne.longitude },
-        },
-        opacity: 0.75,
-        zIndex: 1,
-      } as any)
-      if (p && typeof p.then === 'function') {
-        p.then(() => clientLog('map.overlay', `ok id=${id}`, { src: img.url }))
-         .catch((e: any) => clientLog('map.overlay', `fail id=${id}: ${e?.errMsg ?? JSON.stringify(e)}`, { src: img.url }))
-      } else {
-        clientLog('map.overlay', `called id=${id} (no promise)`, { src: img.url })
-      }
-    })
-    setLoading(false)
-    setLegend(res.legend)
-    setObservedAt(res.observed_at)
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      const drawing = frame.images.map((img, i) => {
+        const id = 1000 + i
+        overlayIds.current.push(id)
+        return new Promise<void>((resolve, reject) => ctx.addGroundOverlay({
+          id, src: img.url,
+          bounds: { southwest: { latitude: img.bounds.sw.latitude, longitude: img.bounds.sw.longitude }, northeast: { latitude: img.bounds.ne.latitude, longitude: img.bounds.ne.longitude } },
+          opacity: 0.75, zIndex: 1, success: () => resolve(), fail: reject,
+        } as any))
+      })
+      if (!drawing.length) throw new Error('没有可绘制的图层图片')
+      await Promise.race([
+        Promise.all(drawing),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('图层绘制超时')), 10_000) }),
+      ])
+      if (mine !== seq.current) return
+      setLegend(res.legend); setObservedAt(res.observed_at)
+    } catch (e) {
+      if (mine !== seq.current) return
+      clear(); setLegend(null); setObservedAt(null); setError(true)
+      clientLog('map.overlay', String((e as any)?.errMsg ?? e))
+    } finally {
+      if (timeout) clearTimeout(timeout)
+      if (mine === seq.current) setLoading(false)
+    }
+
   }, [mapId, layer, active, clear])
 
   useEffect(() => { void refresh() }, [refresh])

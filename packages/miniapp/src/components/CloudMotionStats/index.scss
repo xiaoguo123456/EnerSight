@@ -27,6 +27,6 @@
     font-size: 11px; line-height: 1.3;
     color: var(--color-text-weak);
     text-align: center;
-    @include ellipsis;
+    overflow-wrap: anywhere;
   }
 }

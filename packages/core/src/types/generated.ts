@@ -309,6 +309,14 @@ export interface components {
             report_date: string;
             /** Generated At */
             generated_at: string;
+            /** Generated At Iso */
+            generated_at_iso?: string | null;
+            /** Data As Of */
+            data_as_of?: string | null;
+            /** Tariff Yuan Per Kwh */
+            tariff_yuan_per_kwh?: number | null;
+            /** Co2 Factor Kg Per Kwh */
+            co2_factor_kg_per_kwh?: number | null;
             /**
              * Method
              * @description 实际生成方式
@@ -444,6 +452,10 @@ export interface components {
             impact_start_time: string;
             /** Reference Station */
             reference_station: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /** Impact Start At */
+            impact_start_at?: string | null;
         };
         /**
          * Coord
@@ -1000,6 +1012,19 @@ export interface components {
             /** Image */
             image: string | null;
             metrics: components["schemas"]["StationMetrics"];
+            /** Source */
+            source?: string | null;
+            /** Original Name */
+            original_name?: string | null;
+            /** Local Name */
+            local_name?: string | null;
+            /**
+             * Catalog Updated At
+             * @description 目录入库更新时间，不代表数据源发布日
+             */
+            catalog_updated_at?: string | null;
+            /** Owner Name */
+            owner_name?: string | null;
         };
         /**
          * StationType

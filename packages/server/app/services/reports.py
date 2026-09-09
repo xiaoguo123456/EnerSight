@@ -4,7 +4,7 @@
 常态由每日 08:00 的定时任务预生成。
 """
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -16,6 +16,7 @@ from app.ai.input import PERIODS, build_input
 from app.ai.schema import AIReport
 from app.config import settings
 from app.db import upsert_insert
+from app.errors import ApiError
 from app.models import DailyGeneration, Report, Station
 from app.schemas.common import Coord, MetricWithDelta
 from app.schemas.report import AIReportResponse, ReportPeriodOut, ReportSummary
@@ -71,12 +72,19 @@ async def generate_and_store(
     inp = build_input(station, v.forecast, v.snapshot.index, v.snapshot.daily_kwh, alert)
 
     gen = await ai.generate(inp)
+    content = gen.report.model_dump()
+    content["_meta"] = {
+        "version": 2,
+        "data_as_of": v.current.observed_at if v.current else None,
+        "tariff_yuan_per_kwh": settings.tariff_yuan_per_kwh,
+        "co2_factor_kg_per_kwh": settings.co2_factor_kg_per_kwh,
+    }
     summary = await _summary(db, station, v.snapshot.daily_kwh, day)
 
     stmt = upsert_insert(db, Report).values(
         station_id=station.id,
         day=day,
-        content=gen.report.model_dump(),
+        content=content,
         summary=summary,
         provider=gen.provider,
         is_fallback=gen.is_fallback,
@@ -104,15 +112,19 @@ async def generate_and_store(
 async def get_or_generate(
     db: AsyncSession, http: httpx.AsyncClient, station: Station, day: date | None
 ) -> Report:
-    if day is None:
-        # 站点当地日期
-        v_tz = (await build_station_view(http, station, Coord.WGS84, db)).forecast.tz
-        day = datetime.now(ZoneInfo(v_tz)).date()
+    v_tz = (await build_station_view(http, station, Coord.WGS84, db)).forecast.tz
+    today = datetime.now(ZoneInfo(v_tz)).date()
+    day = day or today
     row = (
         await db.execute(select(Report).where(Report.station_id == station.id, Report.day == day))
     ).scalar_one_or_none()
     if row is not None:
-        return row
+        # 公开目录不依赖个人站点定时任务；当天报告按需更新，历史保持原样。
+        fresh = datetime.now(UTC).replace(tzinfo=None) - row.generated_at < timedelta(minutes=10)
+        if day != today or (fresh and row.content.get("_meta", {}).get("version") == 2):
+            return row
+    if day != today:
+        raise ApiError("REPORT_NOT_FOUND", "该日期暂无已存档报告", 404)
     return await generate_and_store(db, http, station, day)
 
 
@@ -124,6 +136,10 @@ def to_response(row: Report, station_summary, tz: str) -> AIReportResponse:
         station=station_summary,
         report_date=row.day.strftime("%Y年%-m月%-d日"),
         generated_at=generated.strftime("%Y年%-m月%-d日 %H:%M"),
+        generated_at_iso=generated.isoformat(),
+        data_as_of=row.content.get("_meta", {}).get("data_as_of"),
+        tariff_yuan_per_kwh=row.content.get("_meta", {}).get("tariff_yuan_per_kwh"),
+        co2_factor_kg_per_kwh=row.content.get("_meta", {}).get("co2_factor_kg_per_kwh"),
         is_fallback=row.is_fallback,
         method="rule" if row.provider == "rule" else "ai",
         verdict_title=report.verdict_title,

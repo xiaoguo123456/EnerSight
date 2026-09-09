@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { formatBeijingTime } from '@enersight/core/format'
 import { View, Text } from '@tarojs/components'
 import { Icon, type IconName } from '../Icon'
 import './index.scss'
@@ -9,20 +11,25 @@ interface Props {
   impactInMinutes: number
   impactStartTime: string
   referenceStation: string
+  impactStartAt?: string | null
 }
 
 /** 云团短临外推三宫格。字段与计算见 docs/07 §四 */
 export function CloudMotionStats({
   distanceKm, direction, directionDetail,
-  impactInMinutes, impactStartTime, referenceStation,
+  impactInMinutes, impactStartTime, referenceStation, impactStartAt,
 }: Props) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
+  const remaining = impactStartAt ? Math.ceil((Date.parse(impactStartAt) - now) / 60_000) : null
+  const elapsed = remaining !== null && remaining <= 0
   const cells: { icon: IconName; tone: string; label: string; value: string; unit?: string; sub: string }[] = [
     { icon: 'cloud', tone: '#60a5fa', label: '云团距离',
       value: String(distanceKm), unit: 'km', sub: referenceStation ? '距所选电站' : '参考位置待确认' },
     { icon: 'navigation', tone: '#1677ff', label: '移动方向',
       value: direction, sub: directionDetail },
-    { icon: 'clock', tone: '#f59e0b', label: '预计影响时间',
-      value: String(impactInMinutes), unit: '分钟', sub: `约 ${impactStartTime} 开始影响` },
+    { icon: 'clock', tone: '#f59e0b', label: remaining === null ? '观测后推算' : '距推算时刻',
+      value: elapsed ? '已到时刻' : String(remaining ?? impactInMinutes), unit: elapsed ? undefined : '分钟', sub: impactStartAt ? `${formatBeijingTime(impactStartAt)} 北京时间 · 需复核` : `观测推算约 ${impactStartTime}` },
   ]
 
   return (

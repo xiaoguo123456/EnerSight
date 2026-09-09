@@ -23,3 +23,8 @@
   &__note { display: block; padding-top: 12px; margin-top: 8px; border-top: 1px solid var(--color-divider); font-size: 12px; line-height: 1.7; color: var(--color-text-sub); }
   .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; padding: 0; background: transparent; > view + view { border-left: 0; } }
 }
+
+.detail__selection { margin-top: 12px; min-height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 10px; color: #1264d6; background: #eaf3ff; font-size: 14px; }
+.detail__feedback { margin: 0; padding: 0; line-height: 1.5; border: 0; &::after { border: 0; } }
+
+.detail__favorite { font-size: 13px; color: #1264d6; display: flex; align-items: center; min-height: 40px; }

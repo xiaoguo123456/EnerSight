@@ -1,3 +1,4 @@
+import { formatBeijingTime } from '@enersight/core/format'
 import { useState } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import type { SatelliteCloudResponse } from '@enersight/core/types'
@@ -15,11 +16,6 @@ const BAND_LABEL: Record<SatelliteCloudResponse['band'], string> = {
   visible: '可见光',
   infrared: '红外',
   vapor: '水汽',
-}
-
-/** "2026-09-08T14:20+08:00" → "09-08 14:20" */
-function formatObserved(iso: string): string {
-  return `${iso.slice(5, 10)} ${iso.slice(11, 16)}`
 }
 
 /**
@@ -76,7 +72,7 @@ export function SatelliteCloudCard({ satellite, onFullscreen, onRetry }: Props) 
         <Icon name="satellite" size={12} color="#ffffff" />
         <View className="sat-card__stamp-text">
           <Text className="sat-card__stamp-title">卫星云图 · {BAND_LABEL[satellite.band]}</Text>
-          <Text className="sat-card__stamp-time">观测 {formatObserved(satellite.observed_at)}</Text>
+          <Text className="sat-card__stamp-time">观测 {formatBeijingTime(satellite.observed_at)}（北京时间）</Text>
         </View>
       </View>
 

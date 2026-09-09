@@ -10,3 +10,5 @@
 .mine__row-value { font-size: 12px; color: var(--color-text-sub); }
 .mine__feedback { margin: 0; padding: 0; background: transparent; border-radius: 0; line-height: 1.5; border: 0; &::after { border: 0; } }
 .mine__note { font-size: 12px; line-height: 1.7; color: var(--color-text-sub); text-align: center; }
+
+.mine__group-title { display: block; margin-bottom: 8px; font-size: 12px; color: #64748b; }

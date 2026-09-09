@@ -48,6 +48,7 @@ def to_summary(s: Station, coord: Coord) -> StationSummary:
         image=s.image,
         # 指标由气象推算，属于 /v1/home 那一步的服务；此处先给 None
         metrics=StationMetrics.empty(),
+        **getattr(s, "_catalog_metadata", {}),
     )
 
 
@@ -96,7 +97,7 @@ def from_catalog(p: CatalogPlant) -> Station:
     """公开电站直接参与计算，不复制个人记录，也不加入会话持久化。"""
     from app.services.catalog import join_address
 
-    return Station(
+    station = Station(
         id=p.id,
         owner_id="__catalog__",
         catalog_id=p.id,
@@ -112,6 +113,18 @@ def from_catalog(p: CatalogPlant) -> Station:
         azimuth=None,
         hub_height=None,
     )
+    from datetime import UTC
+
+    station._catalog_metadata = {
+        "source": p.source,
+        "original_name": p.name,
+        "local_name": p.name_local,
+        "catalog_updated_at": p.updated_at.replace(tzinfo=UTC).isoformat()
+        if p.updated_at
+        else None,
+        "owner_name": p.owner_name,
+    }
+    return station
 
 
 async def list_public_stations(

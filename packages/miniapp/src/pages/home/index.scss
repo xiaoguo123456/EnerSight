@@ -27,3 +27,6 @@
 
 .home__data-note { font-size: 12px; line-height: 1.5; color: var(--color-text-sub); }
 .home .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; padding: 18px 10px; > view + view { border-left: 0; } }
+
+.home .station-title { position: sticky; top: 0; z-index: 10; }
+.home__detail-link { font-size: 13px; color: #1264d6; min-height: 36px; display: flex; align-items: center; }

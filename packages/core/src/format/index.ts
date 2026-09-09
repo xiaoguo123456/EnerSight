@@ -116,3 +116,16 @@ export function formatDelta(deltaPercent: number | null): FormattedDelta | null 
     direction: rounded > 0 ? 'up' : 'down',
   }
 }
+
+/** 所有界面时间统一为北京时间，不依赖设备时区。输入必须包含时区。 */
+export function formatBeijingTime(value: string | null | undefined): string {
+  if (!value || !/(Z|[+-]\d{2}:\d{2})$/.test(value)) return '暂无时间'
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return '暂无时间'
+  return new Date(timestamp + 8 * 3600_000).toISOString().slice(5, 16).replace('T', ' ')
+}
+export function isDataStale(value: string | null | undefined, minutes = 120, now = Date.now()): boolean {
+  if (!value) return true
+  const timestamp = Date.parse(value)
+  return !Number.isFinite(timestamp) || now - timestamp > minutes * 60_000
+}

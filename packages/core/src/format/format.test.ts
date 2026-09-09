@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formatCo2, formatCoordinate, formatCurrency, formatDelta, formatEnergy,
+  formatBeijingTime, isDataStale, formatCo2, formatCoordinate, formatCurrency, formatDelta, formatEnergy,
   formatHours, formatPercent, formatPower, formatRadiation,
   formatTemperature, formatWindSpeed, thousands,
 } from './index'
@@ -107,5 +107,24 @@ describe('缺测与微小值', () => {
   it('少量等效小时不舍入成零', () => {
     expect(formatHours(0.015).value).toBe('<0.1')
     expect(formatHours(0).value).toBe('0.0')
+  })
+})
+
+
+describe('数据时间与时效', () => {
+  it('同一时刻的 UTC 和当地时间统一为北京时间', () => {
+    expect(formatBeijingTime('2026-09-09T05:00:00Z')).toBe('09-09 13:00')
+    expect(formatBeijingTime('2026-09-09T13:00:00+08:00')).toBe('09-09 13:00')
+    expect(formatBeijingTime('2026-09-09T00:00:00-05:00')).toBe('09-09 13:00')
+  })
+  it('无时区或错误时间不能伪装成当前时间', () => {
+    expect(formatBeijingTime('2026-09-09T05:00:00')).toBe('暂无时间')
+    expect(formatBeijingTime(null)).toBe('暂无时间')
+    expect(formatBeijingTime('错误')).toBe('暂无时间')
+  })
+  it('按实际时间判断过期而非显示字符串', () => {
+    const now = Date.parse('2026-09-09T06:00:00Z')
+    expect(isDataStale('2026-09-09T05:00:00Z', 30, now)).toBe(true)
+    expect(isDataStale('2026-09-09T13:45:00+08:00', 30, now)).toBe(false)
   })
 })

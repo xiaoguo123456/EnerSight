@@ -34,3 +34,5 @@
   &__more { margin: 0; width: 100%; background: #f1f5f9; color: #334155; font-size: 14px; border-radius: 10px; &::after { border: 0; } }
   &__credit { font-size: 11px; line-height: 1.6; }
 }
+
+.catalog__active-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px; font-size: 12px; color: #1264d6; > text { padding: 10px; background: #eaf3ff; border-radius: 8px; } }

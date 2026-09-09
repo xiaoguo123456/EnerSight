@@ -207,3 +207,14 @@ class TestApi:
         other, _ = auth.issue_token("someone-else")
         r = await client.get(f"/v1/reports/{sid}", headers={"Authorization": f"Bearer {other}"})
         assert r.status_code == 403
+
+
+class TestReferenceWording:
+    def test_规则不把资源与设备效率混为一谈(self):
+        from app.ai.rule_provider import render
+
+        report = render(_dummy_input())
+        assert "效率可能下降" not in report.periods[1].generation_impact
+        assert "次日请查看新预报" in report.periods[2].generation_impact
+        assert "满负荷" not in " ".join(report.suggestions)
+        assert "不代表设备健康" in report.verdict_detail

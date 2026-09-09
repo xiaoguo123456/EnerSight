@@ -111,3 +111,31 @@ async def test_预警上下文和报告生成方式(client: AsyncClient):
     response = await client.get("/v1/reports/gem:B")
     assert response.status_code == 200, response.text
     assert response.json()["data"]["method"] == "rule"
+
+
+async def test_公共报告过期按需更新并保留计算口径(client: AsyncClient):
+    from datetime import UTC, datetime, timedelta
+
+    from app.models import Report
+
+    first = (await client.get("/v1/reports/gem:B")).json()["data"]
+    assert first["data_as_of"] and first["generated_at_iso"]
+    assert first["tariff_yuan_per_kwh"] == 0.4
+    async for db in app.dependency_overrides[get_session]():
+        row = (await db.execute(select(Report).where(Report.station_id == "gem:B"))).scalar_one()
+        row.generated_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=11)
+        old = row.generated_at
+        await db.commit()
+    second = (await client.get("/v1/reports/gem:B")).json()["data"]
+    assert datetime.fromisoformat(second["generated_at_iso"]).replace(tzinfo=None) > old
+    assert "满负荷" not in str(second["suggestions"])
+    assert second["station"]["source"] == "gem"
+    assert second["station"]["original_name"]
+    assert second["station"]["local_name"]
+    assert second["station"]["catalog_updated_at"]
+
+
+async def test_不存在的历史报告不能使用今日天气伪造(client: AsyncClient):
+    response = await client.get("/v1/reports/gem:B", params={"date": "2000-01-01"})
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "REPORT_NOT_FOUND"

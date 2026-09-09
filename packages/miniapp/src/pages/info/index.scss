@@ -5,3 +5,5 @@
 .info-page__text { display: block; font-size: 14px; color: #475569; line-height: 1.85; }
 
 .info-page .page-header { position: sticky; top: 0; z-index: 10; background: #fff; }
+
+.info-page__source { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; font-size: 13px; color: #1264d6; border-bottom: 1px solid #edf0f3; }

@@ -163,7 +163,7 @@ def detect_cloud_motion(scene: satellite.CloudScene, station: Station, tz: str) 
         return Detected(
             kind="cloud_motion",
             level="moderate",
-            title="云团正在过境，辐射受影响",
+            title="观测显示云团过境，需关注辐射变化",
             description=(
                 f"卫星云图显示站点上空有云，云团向{est.heading_text}方向移动，"
                 f"速度约 {est.speed_kmh:.0f} km/h。"
@@ -176,10 +176,11 @@ def detect_cloud_motion(scene: satellite.CloudScene, station: Station, tz: str) 
     return Detected(
         kind="cloud_motion",
         level=level,
-        title=f"云团逼近，预计 {at} 前后影响",
+        title=f"云团逼近，观测推算约 {at} 前后影响",
         description=(
             f"卫星云图显示{est.origin_text}方向约 {est.distance_km:.0f} km 处有云团，"
-            f"以约 {est.speed_kmh:.0f} km/h 向{est.heading_text}移动，预计 {m} 分钟后到达站点。"
+            f"以约 {est.speed_kmh:.0f} km/h 向{est.heading_text}移动，"
+            f"推算在该观测时刻后约 {m} 分钟到达，需结合最新影像复核。"
         ),
         source="satellite",
     )

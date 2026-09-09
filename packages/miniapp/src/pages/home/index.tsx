@@ -1,19 +1,19 @@
 import { View, Text } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
-import { useEffect, useState } from 'react'
+import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
+import { useState } from 'react'
 import {
   formatPercent, formatRadiation, formatTemperature, formatWindSpeed,
 } from '@enersight/core/format'
-import type { TrendMetric, TrendSeries } from '@enersight/core/types'
 import { homeApi } from '@/api/home'
 import {
   AlertBanner, EmptyState, EnergyScoreCard, ErrorState, MetricCard, MetricGrid,
-  QuickEntryGrid, SectionHeader, SegmentedTabs, Skeleton, StationTitleBar,
-  TrendChart, fromTrendSeries,
+  QuickEntryGrid, SectionHeader, Skeleton, StationTitleBar,
 } from '@/components'
 import type { QuickEntry } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
+import { StationTrend } from '@/components/StationTrend'
+import { DataFreshness } from '@/components/DataFreshness'
 import './index.scss'
 
 const ENTRIES: QuickEntry[] = [
@@ -25,12 +25,6 @@ const ENTRIES: QuickEntry[] = [
     onTap: () => Taro.navigateTo({ url: '/pages/report/index' }) },
   { icon: 'factory', title: '电站目录', subtitle: '浏览全部公开电站', tone: 'primary',
     onTap: () => Taro.switchTab({ url: '/pages/station/index' }) },
-]
-
-const TREND_TABS: { value: TrendMetric; label: string }[] = [
-  { value: 'radiation', label: '辐射' },
-  { value: 'wind_speed', label: '风速' },
-  { value: 'cloud_cover', label: '云量' },
 ]
 
 /**
@@ -49,26 +43,7 @@ export default function Home() {
   const currentId = useStationStore((s) => s.currentId)
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId])
 
-  const [metric, setMetric] = useState<TrendMetric>('radiation')
-  // 首屏用 home 带回的辐射趋势；切 Tab 后单独拉
-  const [trendOverride, setTrendOverride] = useState<TrendSeries | null>(null)
-
-  useEffect(() => { setMetric('radiation'); setTrendOverride(null) }, [currentId])
-
-  const switchTrend = async (m: TrendMetric) => {
-    setMetric(m)
-    const sid = home.data?.station?.id
-    if (!sid) return
-    if (m === 'radiation' && home.data?.trends) {
-      setTrendOverride(null)
-      return
-    }
-    try {
-      setTrendOverride(await homeApi.trends(sid, m))
-    } catch {
-      // 趋势切换失败不打断页面，保留上一条曲线
-    }
-  }
+  usePullDownRefresh(async () => { await home.reload(); Taro.stopPullDownRefresh() })
 
   if (home.status === 'loading') {
     return (
@@ -110,7 +85,6 @@ export default function Home() {
   }
 
   const { station, index, weather, alert } = d
-  const trend = trendOverride ?? d.trends
 
   return (
     <View className="home">
@@ -122,7 +96,9 @@ export default function Home() {
       />
 
       <View className="home__body">
-        <Text className="home__data-note">气象估算 · {weather?.observed_at ? `${weather.observed_at.slice(5, 16).replace('T', ' ')} 更新` : '暂无更新时间'}</Text>
+        <DataFreshness time={weather?.observed_at} refreshing={home.refreshing} failed={!!home.refreshError} onRefresh={home.reload} />
+        {!currentId && <Text className="home__data-note" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>当前为目录示例电站，点击选择关注的电站</Text>}
+        <View className="home__detail-link" onClick={() => Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>查看完整电站资料 ›</View>
         <View className="home__group">
           <EnergyScoreCard
             score={index?.score ?? null}
@@ -147,15 +123,7 @@ export default function Home() {
           )}
         </View>
 
-        {trend && (
-          <View className="home__card">
-            <SectionHeader icon="trendingUp" title="24小时趋势" action="查看更多" />
-            <SegmentedTabs options={TREND_TABS} value={metric} onChange={(v) => void switchTrend(v as TrendMetric)} />
-            <View className="home__chart">
-              <TrendChart key={`${station.id}-${chartVersion}`} id="home-trend" data={fromTrendSeries(trend)} />
-            </View>
-          </View>
-        )}
+        <View className="home__card"><StationTrend key={station.id} stationId={station.id} type={station.type} initial={d.trends} version={chartVersion} /></View>
 
         {alert && (
           <AlertBanner

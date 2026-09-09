@@ -1,7 +1,7 @@
 import { Map, View, Text, Input } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
-import { formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
+import { formatBeijingTime, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
 import type { CatalogPlant, GeoPlace } from '@enersight/core/types'
 import {
   EmptyState, Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, Skeleton, StatusBadge,
@@ -45,11 +45,15 @@ export default function MapPage() {
   const [results, setResults] = useState<GeoPlace[] | null>(null)
   // 选中的公开电站（搜索结果或点 marker），底部提供直接查看入口
   const [picked, setPicked] = useState<CatalogPlant | GeoPlace | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout>>()
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [searchRetry, setSearchRetry] = useState(0)
+  const searchSeq = useRef(0)
   const safe = getSafeArea()
   const currentId = useStationStore((s) => s.currentId)
   const req = useRequest(() => homeApi.mapOverview(currentId ?? undefined), [currentId])
 
+  useEffect(() => { setFocus(null); setPicked(null) }, [currentId])
+  useDidShow(() => { setFocus(null); setPicked(null) })
   const station = req.data?.station
   const index = req.data?.index
   const weather = req.data?.weather
@@ -62,16 +66,20 @@ export default function MapPage() {
   const catalog = useCatalogMarkers('main-map', true, scale)
   useEffect(() => { if (req.status !== 'loading') void catalog.refresh() }, [req.status])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 搜索：300ms 防抖，空串清空
+  // 输入变化立即使旧请求失效；失败与空结果分别展示。
   useEffect(() => {
-    clearTimeout(timer.current)
+    const mine = ++searchSeq.current
     const kw = keyword.trim()
-    if (!kw) { setResults(null); return }
-    timer.current = setTimeout(async () => {
-      try { setResults((await geoApi.search(kw)).results) } catch { setResults([]) }
+    if (!kw) { setResults(null); setSearchStatus('idle'); return }
+    setSearchStatus('loading'); setResults(null)
+    const timer = setTimeout(async () => {
+      try {
+        const data = await geoApi.search(kw)
+        if (mine === searchSeq.current) { setResults(data.results); setSearchStatus('success') }
+      } catch { if (mine === searchSeq.current) setSearchStatus('error') }
     }, 300)
-    return () => clearTimeout(timer.current)
-  }, [keyword])
+    return () => { clearTimeout(timer); ++searchSeq.current }
+  }, [keyword, searchRetry])
 
   const choose = (r: GeoPlace) => {
     setResults(null)
@@ -94,11 +102,9 @@ export default function MapPage() {
     if (p) setPicked(p)
   }
 
-  const setCurrent = useStationStore((s) => s.setCurrent)
   const viewPicked = () => {
     const id = picked && ('capacity' in picked ? picked.id : picked.catalog_id)
     if (!id) return
-    setCurrent(id)
     setPicked(null)
     void Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(id)}` })
   }
@@ -174,10 +180,10 @@ export default function MapPage() {
           <Icon name="search" size={15} color="#9ca3af" />
           <Input
             className="map-page__search-input"
-            placeholder="搜索城市 / 坐标 / 站点 / 公开电站"
+            placeholder="搜索城市、坐标或电站"
             placeholderClass="map-page__ph"
             value={keyword}
-            onInput={(e) => setKeyword(e.detail.value)}
+            onInput={(e) => { ++searchSeq.current; setKeyword(e.detail.value) }}
           />
           {keyword && (
             <View className="map-page__search-clear" onClick={() => { setKeyword(''); setResults(null) }}>
@@ -185,10 +191,12 @@ export default function MapPage() {
             </View>
           )}
         </View>
-        {results && (
+        {searchStatus !== 'idle' && (
           <View className="map-page__results">
-            {results.length === 0 && <Text className="map-page__result-empty">没有匹配结果</Text>}
-            {results.map((r, i) => (
+            {searchStatus === 'loading' && <Text className="map-page__result-empty">正在搜索…</Text>}
+            {searchStatus === 'error' && <Text className="map-page__result-empty" onClick={() => setSearchRetry((v) => v + 1)}>搜索失败，点击重试</Text>}
+            {searchStatus === 'success' && results?.length === 0 && <Text className="map-page__result-empty">没有匹配结果</Text>}
+            {results?.map((r, i) => (
               <View className="map-page__result" key={`${r.type}-${i}`} hoverClass="pressed" onClick={() => choose(r)}>
                 <Icon name={PLACE_ICON[r.type]} size={14} color={r.type === 'plant' ? '#7c3aed' : '#6b7280'} />
                 <View className="map-page__result-text">
@@ -222,10 +230,11 @@ export default function MapPage() {
           </View>
         )}
 
+        <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>
         <MapLayerControl value={layer} onChange={(value) => { setLayer(value); if (value !== 'station') saveLayer(value) }} />
-        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? '图层暂不可用 · 点击重试' : overlay.observedAt ? `图层数据 ${overlay.observedAt.slice(5, 16).replace('T', ' ')}` : '等待图层数据'}</Text></View>}
+        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? '图层绘制未完成 · 点击重试' : overlay.observedAt ? `图层 ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text></View>}
 
-        {overlay.legend && !picked && (
+        {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
             <MapLegend
               spec={{
@@ -250,7 +259,7 @@ export default function MapPage() {
               fill={satellite ? 'rgba(255,255,255,0.3)' : false}
             />
           </View>
-          <View className="map-page__tool" hoverClass="pressed" onClick={locate}>
+          <View className="map-page__tool" aria-label="回到当前电站" hoverClass="pressed" onClick={locate}>
             <Icon name="crosshair" size={17} color="#1f2937" />
           </View>
           <View className="map-page__tool" hoverClass="pressed" onClick={() => zoom(1)}>
@@ -288,7 +297,7 @@ export default function MapPage() {
               </View>
 
               {!collapsed && <MetricGrid>
-                <MetricCard icon="leaf" iconColor="#16a34a" label="环境指数"
+                <MetricCard icon="leaf" iconColor="#16a34a" label="发电适宜度"
                   metric={{ value: index?.score != null ? String(Math.round(index.score)) : '—', unit: '分' }}
                   caption={LEVEL_TEXT[index?.level ?? ''] ?? '—'} />
                 <MetricCard icon="cloudSun" label="天气"

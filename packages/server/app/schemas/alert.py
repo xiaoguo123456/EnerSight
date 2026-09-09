@@ -23,6 +23,8 @@ class CloudMotion(BaseModel):
     impact_in_minutes: int
     impact_start_time: str
     reference_station: str
+    observed_at: str | None = None
+    impact_start_at: str | None = None
 
 
 class CurrentAlertResponse(BaseModel):
