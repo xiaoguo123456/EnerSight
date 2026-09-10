@@ -10,4 +10,5 @@ __pycache__/
 tests/
 scripts/*
 !scripts/prepare_map.py
+!scripts/check_map_runtime.py
 openapi.json

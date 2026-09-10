@@ -11,7 +11,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app
-COPY scripts/prepare_map.py ./scripts/prepare_map.py
+COPY scripts/prepare_map.py scripts/check_map_runtime.py ./scripts/
 COPY alembic ./alembic
 COPY alembic.ini ./
 RUN uv sync --frozen --no-dev
@@ -21,7 +21,7 @@ FROM python:3.12-slim AS runtime
 
 # opencv-headless / scipy 的运行时共享库
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libglib2.0-0 libgomp1 curl \
+    && apt-get install -y --no-install-recommends libglib2.0-0 libgomp1 libexpat1 curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 enersight
 

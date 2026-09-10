@@ -97,6 +97,16 @@ jobs:
           tags: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ needs.checks.outputs.tag }}
           cache-from: type=gha,scope=production
           cache-to: type=gha,mode=max,scope=production
+      - name: 验证实际生产镜像启动和地图运行库
+        env:
+          REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          TAG: ${{ needs.checks.outputs.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG@$DIGEST"
+          docker run --rm --memory 768m --cpus 1 --network none \
+            --entrypoint /app/.venv/bin/python "$IMAGE" -m scripts.check_map_runtime
       - name: 准备已验证的 SSH 凭据
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
