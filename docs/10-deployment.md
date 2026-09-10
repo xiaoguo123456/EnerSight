@@ -180,7 +180,7 @@ aliyun alb UpdateRuleAttribute --region cn-beijing --force \
 
 数据卷目录：
 - `map-rasters-v3/{run}/{valid}/`：浮点 COG、显示用 GCJ COG、完整成果清单及锁。
-- `tiles/hres-v3/{run}/{valid}/{layer}/{coord}/{z}/{x}/{y}.png`：固定版本图片。
+- `tiles/hres-v3/{run}/{valid}/{layer}/{coord}/smooth-v2/{z}/{x}/{y}.png`：固定版本图片。
 - `hres-grid-v1/`：原生解码中间缓存，仍保留 24 小时；COG/新瓦片按有效时刻保留 48 小时。
 
 同容器的预处理/渲染各一个子进程，数值库内部线程设为 1，沿用 1.5 CPU/1536MB 容器上限。

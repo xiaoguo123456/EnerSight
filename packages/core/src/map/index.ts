@@ -35,3 +35,14 @@ export function interpolateWind(points: { x: number; y: number; u: number; v: nu
   }
   return weight ? { u: u / weight, v: v / weight } : { u: 0, v: 0 }
 }
+
+/** 忽略浮点抖动，识别真实视野变化，供原生事件和程序缩放共用。 */
+export function mapRegionKey(region: Region): string {
+  return [region.southwest.latitude, region.southwest.longitude, region.northeast.latitude, region.northeast.longitude]
+    .map(v => v.toFixed(6)).join(',')
+}
+
+/** 开发工具可能把阶段放在顶层，而真机通常放在 detail。 */
+export function mapRegionPhase(event: { type?: string; detail?: { type?: string } }): string | undefined {
+  return event.detail?.type === 'begin' || event.detail?.type === 'end' ? event.detail.type : event.type
+}

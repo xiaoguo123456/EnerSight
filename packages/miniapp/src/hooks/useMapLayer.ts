@@ -4,7 +4,7 @@ import type { LayerResponse, LayerType } from '@enersight/core/types'
 import { useWeatherModel } from '@/store/weatherModel'
 import { clientLog } from '@/api/debug'
 import { layersApi } from '@/api/layers'
-import { projectLayerImage } from '@enersight/core/map'
+import { mapRegionKey, projectLayerImage } from '@enersight/core/map'
 
 type Region = { southwest: { latitude: number; longitude: number }; northeast: { latitude: number; longitude: number } }
 type Preview = { id: number; images: { url: string; style: Record<string, string> }[] }
@@ -24,6 +24,8 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const [wind, setWind] = useState<{ vectors: NonNullable<LayerResponse["wind_vectors"]>; region: Region } | null>(null)
   const [samples, setSamples] = useState<{ left: string; top: string; text: string }[]>([])
   const regionRef = useRef<Region>()
+  const requestedRegion = useRef('')
+  const regionCheck = useRef(0)
   const [stale, setStale] = useState(false)
   const debounce = useRef<ReturnType<typeof setTimeout>>()
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -45,7 +47,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     overlayIds.current = []
     setLegend(null); setObservedAt(null); setSourceLabel(''); setAttribution(''); setModelName(''); setCoverage('')
   }, [mapId])
-  const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; clear(); setLoading(false) }, [clear])
+  const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; ++regionCheck.current; requestedRegion.current = ''; clear(); setLoading(false) }, [clear])
   const fail = useCallback((id: number, message: string) => {
     if (id !== seq.current) return
     ++seq.current
@@ -95,6 +97,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       const region = await new Promise<Region>((resolve, reject) => ctx.getRegion({ success: resolve, fail: reject }))
       if (mine !== seq.current) return
       if (layer === 'cloud' && (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5)) throw new Error('当前视野过大，请放大地图查看气象分布')
+      requestedRegion.current = mapRegionKey(region)
       regionRef.current = region
       const response = await layersApi.get(layer, {
         west: region.southwest.longitude, south: region.southwest.latitude,
@@ -130,6 +133,24 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   }, [mapId, layer, active, isPreview, clear, fail, finish, model])
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
+  // 原生贴图更新也会发出 end；比较实际视野，既兼容无 causedBy 的模拟器事件，也避免循环请求。
+  const viewportChanged = useCallback(async () => {
+    if (!active || !layer) return
+    const check = ++regionCheck.current
+    try {
+      const region = await new Promise<Region>((resolve, reject) => Taro.createMapContext(mapId).getRegion({ success: resolve, fail: reject }))
+      if (check !== regionCheck.current || mapRegionKey(region) === requestedRegion.current) return
+      invalidate()
+      requestedRegion.current = mapRegionKey(region)
+      refresh()
+    } catch { /* 地图尚未就绪，首次加载仍由 refresh 负责 */ }
+  }, [active, layer, mapId, invalidate, refresh])
+  // 模拟器缩放事件存在缺失；轻量读取视野兜底，视野不变时不发网络请求。
+  useEffect(() => {
+    if (!isPreview || !active || !layer) return
+    const watch = setInterval(() => void viewportChanged(), 400)
+    return () => clearInterval(watch)
+  }, [isPreview, active, layer, viewportChanged])
   useEffect(() => { void refresh(); return invalidate }, [refresh, invalidate])
-  return { coverage, modelName, attribution, sourceLabel, samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
+  return { viewportChanged, coverage, modelName, attribution, sourceLabel, samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
 }

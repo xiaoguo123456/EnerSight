@@ -29,6 +29,7 @@ from app.render import hres
 from app.render.colormap import SCALES
 
 VERSION = "hres-v3"
+TILE_STYLE = "smooth-v2"
 COVERAGE = (60.0, 0.0, 150.0, 65.0)
 MAX_TILES = 12
 PIXELS = 256
@@ -224,6 +225,7 @@ def tile_path(data_dir, record, coord, z, x, y):
         / stamp(record["valid_at"])
         / record["layer"]
         / coord
+        / TILE_STYLE
         / str(z)
         / str(x)
         / f"{y}.png"
@@ -259,14 +261,6 @@ def render_tile(cog, output, layer, z, x, y):
             data = local.read()
     field = np.hypot(data[0], data[1]) if layer == "wind" else data[0]
     rgba = SCALES[layer].rgba(field)
-    if layer == "temperature":
-        # 固定 2℃ 等温边界，凸显局地变化；缺测边缘不画假等温线。
-        valid = np.isfinite(field)
-        bins = np.floor(np.where(valid, field, 0) / 2)
-        edge = np.zeros(field.shape, dtype=bool)
-        edge[1:] |= valid[1:] & valid[:-1] & (bins[1:] != bins[:-1])
-        edge[:, 1:] |= valid[:, 1:] & valid[:, :-1] & (bins[:, 1:] != bins[:, :-1])
-        rgba[edge, :3] = (rgba[edge, :3].astype(float) * 0.65).astype(np.uint8)
     out = io.BytesIO()
     Image.fromarray(rgba).save(out, "PNG")
     output.parent.mkdir(parents=True, exist_ok=True)

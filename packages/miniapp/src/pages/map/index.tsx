@@ -1,7 +1,8 @@
 import { Map, View, Text, Input, Image } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import { formatBeijingTime, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
+import { mapRegionPhase } from '@enersight/core/map'
 import type { CatalogPlant, GeoPlace } from '@enersight/core/types'
 import {
   EmptyState, Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, Skeleton, StatusBadge,
@@ -37,6 +38,8 @@ export default function MapPage() {
   const saveLayer = useMapStore((s) => s.setActiveLayer)
   const [layer, setLayer] = useState<MapLayer>(activeLayer)
   const [layerPanelOpen, setLayerPanelOpen] = useState(false)
+  const [pageVisible, setPageVisible] = useState(true)
+  useDidHide(() => setPageVisible(false))
   const [collapsed, setCollapsed] = useState(false)
   const sheetHeight = collapsed ? 68 : SHEET_HEIGHT
   useEffect(() => setLayer(activeLayer), [activeLayer])
@@ -57,7 +60,7 @@ export default function MapPage() {
   const req = useRequest(() => homeApi.mapOverview(currentId ?? undefined), [currentId])
 
   useEffect(() => { setFocus(null); setPicked(null) }, [currentId])
-  useDidShow(() => { setFocus(null); setPicked(null) })
+  useDidShow(() => { setPageVisible(true); setFocus(null); setPicked(null) })
   const station = req.data?.station
   const index = req.data?.index
   const weather = req.data?.weather
@@ -65,9 +68,9 @@ export default function MapPage() {
 
   // 「站点」图层只显示 marker，不贴图
   const dataLayer = layer === 'station' ? null : layer
-  const overlay = useMapLayer('main-map', dataLayer, req.status === 'success')
+  const overlay = useMapLayer('main-map', dataLayer, pageVisible && req.status === 'success')
   // 公开电站 marker：任何图层下都显示，视野内最多 100 个
-  useEffect(() => { const timer = setTimeout(() => void overlay.refresh(), 250); return () => clearTimeout(timer) }, [center.latitude, center.longitude, scale])
+  useEffect(() => { const timer = setTimeout(() => void overlay.viewportChanged(), 250); return () => clearTimeout(timer) }, [center.latitude, center.longitude, scale, sheetHeight])
   const catalog = useCatalogMarkers('main-map', true, scale)
   useEffect(() => { if (req.status !== 'loading') void catalog.refresh() }, [req.status])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -119,7 +122,13 @@ export default function MapPage() {
     setFocus(null)
     Taro.createMapContext('main-map').moveToLocation({ latitude: station.latitude, longitude: station.longitude })
   }
-  const zoom = (delta: number) => setScale((v) => Math.min(18, Math.max(3, v + delta)))
+  const zoom = (delta: number) => {
+    overlay.invalidate()
+    Taro.createMapContext('main-map').getScale({
+      success: (r) => setScale(Math.min(18, Math.max(3, r.scale + delta))),
+      fail: () => setScale((v) => Math.min(18, Math.max(3, v + delta))),
+    })
+  }
 
   return (
     <View className="map-page">
@@ -174,14 +183,16 @@ export default function MapPage() {
           onMarkerTap={onMarkerTap}
           onError={(e) => console.error('[map] 加载失败', e)}
           onRegionChange={(e: any) => {
-            // 只响应用户手势结束；贴图本身也会触发 regionchange，不过滤会形成请求循环
-            const d = e?.detail ?? e
-            const isEnd = d?.type === 'end'
-            const kind = d?.type ?? e?.type
-            const cause = d?.causedBy ?? e?.causedBy
-            if (cause !== 'drag' && cause !== 'scale') return
-            if (kind === 'begin') overlay.invalidate()
-            if (isEnd || kind === 'end') { void overlay.refresh(); void catalog.refresh() }
+            const kind = mapRegionPhase(e)
+            const cause = e?.detail?.causedBy ?? e?.causedBy
+            // 模拟器图片不随原生地图运动，手势开始即撤下旧图，结束按新视野装载。
+            if (kind === 'begin' && (cause === 'drag' || cause === 'scale')) overlay.invalidate()
+            if (kind === 'end') {
+              void overlay.viewportChanged()
+              if (cause !== 'update') {
+                void catalog.refresh()
+              }
+            }
           }}
         />
 
@@ -252,7 +263,13 @@ export default function MapPage() {
 
         {!dataLayer && <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>}
         <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
-        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.stale ? "缓存预报 · " : ""}${overlay.sourceLabel || (overlay.isPreview ? "预览图层" : "图层")} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text>{!overlay.loading && !overlay.error && overlay.attribution && <View><Text>{overlay.attribution}</Text>{overlay.coverage && <View><Text>{overlay.coverage}</Text></View>}</View>}</View>}
+        {dataLayer && <View className="map-page__data-state" onClick={() => {
+          if (overlay.error) { overlay.refresh(); return }
+          if (overlay.observedAt) void Taro.showModal({
+            title: '图层数据', showCancel: false,
+            content: `${overlay.sourceLabel || '卫星云图'}\n${formatBeijingTime(overlay.observedAt)}（北京时间）\n${overlay.attribution}\n${overlay.coverage}${overlay.stale ? '\n当前显示缓存预报' : ''}`,
+          })
+        }}><Text>{overlay.loading ? '图层加载中…' : overlay.error ? '图层暂不可用 · 重试' : overlay.observedAt ? `${overlay.modelName || '云图'} · ${formatBeijingTime(overlay.observedAt).slice(-5)}${overlay.stale ? ' · 缓存' : ''} ⓘ` : '等待图层数据'}</Text></View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
