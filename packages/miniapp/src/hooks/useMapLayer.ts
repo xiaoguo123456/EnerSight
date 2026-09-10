@@ -14,6 +14,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const model = useWeatherModel(s => s.model)
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
   const [attribution, setAttribution] = useState('')
+  const [modelName, setModelName] = useState('')
   const [sourceLabel, setSourceLabel] = useState('')
   const [observedAt, setObservedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -41,7 +42,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       try { void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined) } catch { /* 已移除 */ }
     }
     overlayIds.current = []
-    setLegend(null); setObservedAt(null); setSourceLabel(''); setAttribution('')
+    setLegend(null); setObservedAt(null); setSourceLabel(''); setAttribution(''); setModelName('')
   }, [mapId])
   const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; clear(); setLoading(false) }, [clear])
   const fail = useCallback((id: number, message: string) => {
@@ -56,6 +57,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     pending.current = null
     setStale(!!response.stale)
     setAttribution(response.source || '')
+    setModelName(response.model || '')
     setSourceLabel(response.model ? `${response.model} · ${response.resolution_km} km 预报` : '')
     const region = regionRef.current
     if (region && response.samples?.length) {
@@ -127,5 +129,5 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   useEffect(() => { void refresh(); return invalidate }, [refresh, invalidate])
-  return { attribution, sourceLabel, samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
+  return { modelName, attribution, sourceLabel, samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
 }

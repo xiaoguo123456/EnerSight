@@ -258,7 +258,7 @@ export default function MapPage() {
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
             <MapLegend
               spec={{
-                title: `${overlay.legend.title} · ${layer === 'cloud' && overlay.legend.title !== '云量预报' ? '卫星观测' : weatherModelLabel(model)}`,
+                title: `${overlay.legend.title} · ${layer === 'cloud' && overlay.legend.title !== '云量预报' ? '卫星观测' : overlay.modelName || weatherModelLabel(model)}`,
                 colors: overlay.legend.colors,
                 stops: overlay.legend.stops ?? undefined,
                 labels: overlay.legend.labels ? [overlay.legend.labels[0]!, overlay.legend.labels[1]!] : undefined,
