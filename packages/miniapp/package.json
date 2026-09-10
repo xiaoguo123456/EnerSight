@@ -7,7 +7,8 @@
     "build:weapp": "taro build --type weapp",
     "typecheck": "tsc --noEmit",
     "dev:h5": "taro build --type h5 --watch",
-    "build:h5": "taro build --type h5"
+    "build:h5": "taro build --type h5",
+    "test": "node --test scripts/test-map-native.cjs"
   },
   "dependencies": {
     "@enersight/core": "workspace:*",

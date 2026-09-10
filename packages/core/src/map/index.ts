@@ -46,3 +46,14 @@ export function mapRegionKey(region: Region): string {
 export function mapRegionPhase(event: { type?: string; detail?: { type?: string } }): string | undefined {
   return event.detail?.type === 'begin' || event.detail?.type === 'end' ? event.detail.type : event.type
 }
+
+/** 原生地图读取范围有轻微抖动；不足视野千分之一的变化不重载瓦片。 */
+export function sameMapRegion(a: Region | undefined, b: Region): boolean {
+  if (!a) return false
+  const latTolerance = Math.max(1e-6, Math.abs(a.northeast.latitude - a.southwest.latitude) * .001)
+  const lonTolerance = Math.max(1e-6, Math.abs(a.northeast.longitude - a.southwest.longitude) * .001)
+  return Math.abs(a.southwest.latitude - b.southwest.latitude) < latTolerance
+    && Math.abs(a.northeast.latitude - b.northeast.latitude) < latTolerance
+    && Math.abs(a.southwest.longitude - b.southwest.longitude) < lonTolerance
+    && Math.abs(a.northeast.longitude - b.northeast.longitude) < lonTolerance
+}

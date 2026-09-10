@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { projectLayerImage, interpolateWind, mapRegionKey, mapRegionPhase } from './index'
+import { projectLayerImage, interpolateWind, mapRegionKey, mapRegionPhase, sameMapRegion } from './index'
 const region = { southwest: { latitude: 30, longitude: 110 }, northeast: { latitude: 34, longitude: 114 } }
 describe('图层预览投影', () => {
   it('同一范围准确覆盖视野', () => expect(projectLayerImage(region, { sw: region.southwest, ne: region.northeast })).toEqual({ left: '0%', top: '0%', width: '100%', height: '100%' }))
@@ -33,5 +33,14 @@ describe('地图视野事件', () => {
   it('缩放改变视野键，浮点抖动不会触发反复装载', () => {
     expect(mapRegionKey(region)).not.toBe(mapRegionKey({ ...region, northeast: { latitude: 35, longitude: 115 } }))
     expect(mapRegionKey(region)).toBe(mapRegionKey({ ...region, northeast: { latitude: 34 + 1e-9, longitude: 114 } }))
+  })
+})
+
+describe('真机视野抖动过滤', () => {
+  it('贴图引起的微小边界抖动不刷新，实际拖动和缩放仍刷新', () => {
+    expect(sameMapRegion(undefined, region)).toBe(false)
+    expect(sameMapRegion(region, { southwest: { latitude: 30.0001, longitude: 110.0001 }, northeast: { latitude: 34.0001, longitude: 114.0001 } })).toBe(true)
+    expect(sameMapRegion(region, { southwest: { latitude: 30.1, longitude: 110 }, northeast: { latitude: 34.1, longitude: 114 } })).toBe(false)
+    expect(sameMapRegion(region, { southwest: { latitude: 31, longitude: 111 }, northeast: { latitude: 33, longitude: 113 } })).toBe(false)
   })
 })

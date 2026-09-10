@@ -123,7 +123,7 @@ export default function MapPage() {
     Taro.createMapContext('main-map').moveToLocation({ latitude: station.latitude, longitude: station.longitude })
   }
   const zoom = (delta: number) => {
-    overlay.invalidate()
+    if (overlay.isPreview) overlay.invalidate()
     Taro.createMapContext('main-map').getScale({
       success: (r) => setScale(Math.min(18, Math.max(3, r.scale + delta))),
       fail: () => setScale((v) => Math.min(18, Math.max(3, v + delta))),
@@ -186,8 +186,8 @@ export default function MapPage() {
             const kind = mapRegionPhase(e)
             const cause = e?.detail?.causedBy ?? e?.causedBy
             // 模拟器图片不随原生地图运动，手势开始即撤下旧图，结束按新视野装载。
-            if (kind === 'begin' && (cause === 'drag' || cause === 'scale')) overlay.invalidate()
-            if (kind === 'end') {
+            if (overlay.isPreview && kind === 'begin' && (cause === 'drag' || cause === 'scale')) overlay.invalidate()
+            if (kind === 'end' && (overlay.isPreview || cause !== 'update')) {
               void overlay.viewportChanged()
               if (cause !== 'update') {
                 void catalog.refresh()

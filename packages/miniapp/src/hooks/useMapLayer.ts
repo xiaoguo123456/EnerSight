@@ -4,7 +4,7 @@ import type { LayerResponse, LayerType } from '@enersight/core/types'
 import { useWeatherModel } from '@/store/weatherModel'
 import { clientLog } from '@/api/debug'
 import { layersApi } from '@/api/layers'
-import { mapRegionKey, projectLayerImage } from '@enersight/core/map'
+import { sameMapRegion, projectLayerImage } from '@enersight/core/map'
 
 type Region = { southwest: { latitude: number; longitude: number }; northeast: { latitude: number; longitude: number } }
 type Preview = { id: number; images: { url: string; style: Record<string, string> }[] }
@@ -24,19 +24,28 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const [wind, setWind] = useState<{ vectors: NonNullable<LayerResponse["wind_vectors"]>; region: Region } | null>(null)
   const [samples, setSamples] = useState<{ left: string; top: string; text: string }[]>([])
   const regionRef = useRef<Region>()
-  const requestedRegion = useRef('')
+  const requestedRegion = useRef<Region>()
   const regionCheck = useRef(0)
   const [stale, setStale] = useState(false)
   const debounce = useRef<ReturnType<typeof setTimeout>>()
   const [preview, setPreview] = useState<Preview | null>(null)
   const [isPreview] = useState(() => Taro.getDeviceInfo().platform === 'devtools')
   const overlayIds = useRef<number[]>([])
+  const stagedIds = useRef<number[]>([])
   const nextId = useRef(1000)
   const seq = useRef(0)
   const pending = useRef<{ id: number; remaining: Set<number>; response: LayerResponse } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>()
 
+  const discardStaged = useCallback(() => {
+    const ctx = Taro.createMapContext(mapId)
+    for (const id of stagedIds.current) {
+      try { void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined) } catch { /* 已移除 */ }
+    }
+    stagedIds.current = []
+  }, [mapId])
   const clear = useCallback(() => {
+    discardStaged()
     if (timer.current) clearTimeout(timer.current)
     pending.current = null
     setPreview(null); setWind(null); setSamples([])
@@ -46,14 +55,17 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     }
     overlayIds.current = []
     setLegend(null); setObservedAt(null); setSourceLabel(''); setAttribution(''); setModelName(''); setCoverage('')
-  }, [mapId])
-  const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; ++regionCheck.current; requestedRegion.current = ''; clear(); setLoading(false) }, [clear])
+  }, [mapId, discardStaged])
+  const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; ++regionCheck.current; requestedRegion.current = undefined; clear(); setLoading(false) }, [clear])
   const fail = useCallback((id: number, message: string) => {
     if (id !== seq.current) return
     ++seq.current
-    clear(); setLoading(false); setError(true); setErrorMessage(message)
+    if (timer.current) clearTimeout(timer.current)
+    discardStaged()
+    if (isPreview) clear()
+    setLoading(false); setError(true); setErrorMessage(message)
     clientLog('map.overlay', message)
-  }, [clear])
+  }, [clear, discardStaged, isPreview])
   const finish = useCallback((id: number, response: LayerResponse) => {
     if (id !== seq.current) return
     if (timer.current) clearTimeout(timer.current)
@@ -88,7 +100,10 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
 
   const load = useCallback(async () => {
     const mine = ++seq.current
-    clear(); setError(false); setErrorMessage('')
+    if (timer.current) clearTimeout(timer.current)
+    discardStaged()
+    if (isPreview || !layer || !active) clear()
+    setError(false); setErrorMessage('')
     if (!layer || !active) { setLoading(false); return }
     setLoading(true)
     timer.current = setTimeout(() => fail(mine, '图层加载超时，请重试'), 45_000)
@@ -97,7 +112,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       const region = await new Promise<Region>((resolve, reject) => ctx.getRegion({ success: resolve, fail: reject }))
       if (mine !== seq.current) return
       if (layer === 'cloud' && (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5)) throw new Error('当前视野过大，请放大地图查看气象分布')
-      requestedRegion.current = mapRegionKey(region)
+      requestedRegion.current = region
       regionRef.current = region
       const response = await layersApi.get(layer, {
         west: region.southwest.longitude, south: region.southwest.latitude,
@@ -111,9 +126,13 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
         pending.current = { id: mine, remaining: new Set(images.map((_, i) => i)), response }
         setPreview({ id: mine, images: projected })
       } else {
+        // 真机覆盖层本身会跟随地图。新一批全部就绪后再移除旧批，不能先清空。
+        const previous = overlayIds.current
+        const next: number[] = []
+        stagedIds.current = next
         await Promise.all(images.map((img) => {
           const id = nextId.current++
-          overlayIds.current.push(id)
+          next.push(id)
           return new Promise<void>((resolve, reject) => {
             const result = ctx.addGroundOverlay({
             id, src: img.url, bounds: { southwest: img.bounds.sw, northeast: img.bounds.ne },
@@ -125,12 +144,18 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
             if (mine !== seq.current) void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined)
           })
         }))
+        if (mine !== seq.current) return
+        overlayIds.current = next
+        stagedIds.current = []
+        for (const id of previous) {
+          try { void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined) } catch { /* 已移除 */ }
+        }
         finish(mine, response)
       }
     } catch (e) {
       fail(mine, String((e as any)?.errMsg ?? (e as Error)?.message ?? '图层加载失败'))
     }
-  }, [mapId, layer, active, isPreview, clear, fail, finish, model])
+  }, [mapId, layer, active, isPreview, clear, discardStaged, fail, finish, model])
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   // 原生贴图更新也会发出 end；比较实际视野，既兼容无 causedBy 的模拟器事件，也避免循环请求。
@@ -139,12 +164,19 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     const check = ++regionCheck.current
     try {
       const region = await new Promise<Region>((resolve, reject) => Taro.createMapContext(mapId).getRegion({ success: resolve, fail: reject }))
-      if (check !== regionCheck.current || mapRegionKey(region) === requestedRegion.current) return
-      invalidate()
-      requestedRegion.current = mapRegionKey(region)
+      if (check !== regionCheck.current || sameMapRegion(requestedRegion.current, region)) return
+      // 屏幕预览需撤下；真机保留地理覆盖层，只取消过期请求及屏幕采样。
+      if (isPreview) invalidate()
+      else {
+        ++seq.current
+        if (timer.current) clearTimeout(timer.current)
+        discardStaged()
+        setWind(null); setSamples([])
+      }
+      requestedRegion.current = region
       refresh()
     } catch { /* 地图尚未就绪，首次加载仍由 refresh 负责 */ }
-  }, [active, layer, mapId, invalidate, refresh])
+  }, [active, layer, mapId, invalidate, refresh, isPreview, discardStaged])
   // 模拟器缩放事件存在缺失；轻量读取视野兜底，视野不变时不发网络请求。
   useEffect(() => {
     if (!isPreview || !active || !layer) return
