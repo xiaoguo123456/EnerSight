@@ -72,6 +72,14 @@ class TestRules:
         if 8 <= now_h <= 14:  # 白天且未来 6h 仍有日照才有意义
             assert "cloud" not in kinds
 
+    @pytest.mark.parametrize("day", [datetime(2026, 6, 21), datetime(2026, 9, 10)])
+    @pytest.mark.parametrize("hour", [8, 10, 14])
+    def test_晴空小时均值全天不误报下降(self, monkeypatch, day, hour):
+        now = day.replace(hour=hour, minute=30, tzinfo=ZoneInfo(TZ))
+        monkeypatch.setattr(weather.Forecast, "now", lambda self: now)
+        fc = parse_forecast(make_forecast(start_date=day - timedelta(days=1), peak_today=900))
+        assert alerts.detect_cloud_drop(fc, 31.3, 120.62) is None
+
     def test_辐射骤降触发云层预警并按降幅分级(self):
         now_h = datetime.now(ZoneInfo(TZ)).hour
         if not (7 <= now_h <= 13):

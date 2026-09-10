@@ -3,14 +3,11 @@
 import math
 from datetime import datetime, timedelta
 
+import pandas as pd
+
+from app.metrics.solar import clearsky_hourly_mean
+
 TZ = "Asia/Shanghai"
-
-
-def _rad(hour: int, peak: float) -> float:
-    """06–18 正弦半波，其余 0"""
-    if hour < 6 or hour > 18:
-        return 0.0
-    return round(peak * math.sin(math.pi * (hour - 6) / 12), 1)
 
 
 def make_forecast(
@@ -28,6 +25,10 @@ def make_forecast(
     days: int = 8,
 ) -> dict:
     """start_date 是「昨日 00:00」（naive，当地时间）。默认 昨日 + 7 天 = 192 点，与线上一致。"""
+    # 辐射按区间末标记的晴空小时均值合成，避免固定正弦整点曲线在早晚制造虚假 kt 下降。
+    labels = pd.date_range(start_date, periods=days * 24, freq="h", tz=TZ)
+    clear = clearsky_hourly_mean(31.3, 120.62, TZ, labels)["ghi"]
+    normalized = clear / clear.groupby(labels.date).transform("max").clip(lower=1)
     times, t2m, app_t, rh, ws, wd, cc, code, swr, dr, dfr, dni, is_day = ([] for _ in range(13))
     for i in range(days * 24):
         ts = start_date + timedelta(hours=i)
@@ -37,7 +38,7 @@ def make_forecast(
         peak = peak_yesterday if day == 0 else peak_today
         cloud = cloud_yesterday if day == 0 else cloud_today
         wind = wind_yesterday if day == 0 else wind_today
-        r = _rad(h, peak)
+        r = round(float(normalized.iloc[i]) * peak, 1)
         t2m.append(
             temp_today - 4 + 8 * math.sin(math.pi * max(0, h - 4) / 16) if day else temp_today - 2
         )
