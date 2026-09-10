@@ -13,7 +13,7 @@
 
 import asyncio
 import logging
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -309,6 +309,16 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         id="fleet_history",
         max_instances=1,
         coalesce=True,
+    )
+    from app.jobs import map_prepare
+
+    async def prepare_map():
+        await map_prepare.refresh(app.state.http)
+
+    sched.add_job(
+        prepare_map, "interval", minutes=10, id="map_prepare",
+        next_run_time=datetime.now(UTC) + timedelta(seconds=10),
+        max_instances=1, coalesce=True,
     )
     sched.start()
     log.info("scheduler started: %s", [j.id for j in sched.get_jobs()])

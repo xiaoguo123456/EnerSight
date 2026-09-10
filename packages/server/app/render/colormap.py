@@ -17,11 +17,11 @@ class Scale:
         """按 stops 线性插值到 RGBA (H, W, 4)，NaN 透明。"""
         rgb = np.array([_hex(c) for c in self.colors], dtype=float)  # (n, 3)
         stops = np.array(self.stops, dtype=float)
-        v = np.clip(values, stops[0], stops[-1])
+        v = np.clip(np.where(np.isfinite(values), values, stops[0]), stops[0], stops[-1])
         out = np.empty(values.shape + (4,), dtype=np.uint8)
         for ch in range(3):
             out[..., ch] = np.interp(v, stops, rgb[:, ch]).astype(np.uint8)
-        out[..., 3] = np.where(np.isnan(values), 0, 190).astype(np.uint8)  # 0.75 透明度
+        out[..., 3] = np.where(~np.isfinite(values), 0, 190).astype(np.uint8)  # 0.75 透明度
         return out
 
 
@@ -40,8 +40,20 @@ SCALES: dict[str, Scale] = {
     "temperature": Scale(
         title="温度（℃）",
         unit="℃",
-        stops=[-20, -10, 0, 10, 20, 30, 40],
-        colors=["#4c6ef5", "#339af0", "#22b8cf", "#51cf66", "#fcc419", "#ff922b", "#f76707"],
+        stops=[-20, -10, 0, 5, 10, 15, 20, 25, 30, 35, 40],
+        colors=[
+            "#6c3aa5",
+            "#4259bd",
+            "#298bc2",
+            "#36b9b0",
+            "#76c892",
+            "#bad36d",
+            "#f5d34f",
+            "#f7ac42",
+            "#ed7639",
+            "#d6453b",
+            "#9e2345",
+        ],
     ),
     "wind": Scale(
         title="风速（m/s）",

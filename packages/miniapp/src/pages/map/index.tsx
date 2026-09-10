@@ -187,7 +187,7 @@ export default function MapPage() {
 
         {overlay.preview && <View className="map-page__preview">
           {overlay.preview.images.map((img, i) => <Image key={`${overlay.preview!.id}-${i}`}
-            className="map-page__preview-image" src={img.url} mode="scaleToFill" style={img.style}
+            className="map-page__preview-image" src={img.url} mode="scaleToFill" style={{ ...img.style, opacity: dataLayer === 'cloud' ? .65 : 1 }}
             onLoad={() => overlay.imageLoaded(overlay.preview!.id, i)}
             onError={() => overlay.imageError(overlay.preview!.id, '图层图片加载失败，请重试')} />)}
         </View>}
@@ -250,9 +250,9 @@ export default function MapPage() {
           </View>
         )}
 
-        <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>
+        {!dataLayer && <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>}
         <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
-        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.stale ? "缓存预报 · " : ""}${overlay.sourceLabel || (overlay.isPreview ? "预览图层" : "图层")} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text>{!overlay.loading && !overlay.error && overlay.attribution && <View><Text>{overlay.attribution}</Text></View>}</View>}
+        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.stale ? "缓存预报 · " : ""}${overlay.sourceLabel || (overlay.isPreview ? "预览图层" : "图层")} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text>{!overlay.loading && !overlay.error && overlay.attribution && <View><Text>{overlay.attribution}</Text>{overlay.coverage && <View><Text>{overlay.coverage}</Text></View>}</View>}</View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>

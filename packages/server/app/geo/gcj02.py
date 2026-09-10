@@ -59,3 +59,39 @@ def gcj02_to_wgs84(lng: float, lat: float, *, iterations: int = 8) -> tuple[floa
         w_lng += lng - g_lng
         w_lat += lat - g_lat
     return w_lng, w_lat
+
+
+# 显示栅格逐像素反变换；与上面的标量变换使用同一套公式。
+import numpy as np  # noqa: E402
+
+
+def _array_lat(x, y):
+    ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * np.sqrt(abs(x))
+    ret += (20.0 * np.sin(6.0 * x * np.pi) + 20.0 * np.sin(2.0 * x * np.pi)) * 2.0 / 3.0
+    ret += (20.0 * np.sin(y * np.pi) + 40.0 * np.sin(y / 3.0 * np.pi)) * 2.0 / 3.0
+    ret += (160.0 * np.sin(y / 12.0 * np.pi) + 320 * np.sin(y * np.pi / 30.0)) * 2.0 / 3.0
+    return ret
+
+
+def _array_lng(x, y):
+    ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * np.sqrt(abs(x))
+    ret += (20.0 * np.sin(6.0 * x * np.pi) + 20.0 * np.sin(2.0 * x * np.pi)) * 2.0 / 3.0
+    ret += (20.0 * np.sin(x * np.pi) + 40.0 * np.sin(x / 3.0 * np.pi)) * 2.0 / 3.0
+    ret += (150.0 * np.sin(x / 12.0 * np.pi) + 300.0 * np.sin(x / 30.0 * np.pi)) * 2.0 / 3.0
+    return ret
+
+
+def gcj02_to_wgs84_array(lng, lat):
+    """批量反变换，仅供显示栅格；境外保持原坐标。"""
+    lng, lat = np.asarray(lng, dtype=float), np.asarray(lat, dtype=float)
+    wl, wt = lng.copy(), lat.copy()
+    inside = (lng >= 72.004) & (lng <= 137.8347) & (lat >= 0.8293) & (lat <= 55.8271)
+    for _ in range(8):
+        rad = wt / 180 * np.pi
+        magic = 1 - _EE * np.sin(rad) ** 2
+        sqrtmagic = np.sqrt(magic)
+        dy = _array_lat(wl - 105, wt - 35) * 180 / ((_A * (1 - _EE)) / (magic * sqrtmagic) * np.pi)
+        dx = _array_lng(wl - 105, wt - 35) * 180 / (_A / sqrtmagic * np.cos(rad) * np.pi)
+        wl = np.where(inside, lng - dx, lng)
+        wt = np.where(inside, lat - dy, lat)
+    return wl, wt

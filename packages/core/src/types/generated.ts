@@ -937,6 +937,11 @@ export interface components {
         };
         /** LayerResponse */
         LayerResponse: {
+            /**
+             * Coverage
+             * @description 空间覆盖范围及显示说明
+             */
+            coverage?: string | null;
             /** Source */
             source?: string | null;
             /** Model */

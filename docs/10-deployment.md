@@ -171,10 +171,29 @@ aliyun alb UpdateRuleAttribute --region cn-beijing --force \
 入口为首页 → 全部场站 → 历史记录。本次本地核验生产该接口仍返回 404，需后端发布后
 才能读取线上记录；小程序已重新构建，不应将此问题诊断为前端缓存。
 
-### IFS HRES 地图网格（2026-09）
+### IFS HRES 地图栅格模块（2026-09-10）
 
-后端新增 `omfiles` 和 `fsspec` 解码依赖。生产需能访问
-`https://openmeteo.s3.amazonaws.com/data_spatial/ecmwf_ifs/`，不需要 API 密钥。
-数据缓存位于数据卷 `hres-grid-v1/`（保留 24 小时），PNG 在 `tiles/hres-v1-*`；缓存键
-包含起报批次与有效时刻。温度、风、辐射固定 HRES，故障时明确报错，不偷偷回退到稀疏点图。
-首次区域请求负责载入完整原生纬带并缓存；当前按需加载，尚未启用全中国定时预热。
+同一 API 容器内接入 Rasterio/GDAL、omfiles、fsspec，不新增地图容器。
+后台需要访问 `https://openmeteo.s3.amazonaws.com/data_spatial/ecmwf_ifs/`，不需要 API 密钥。
+`ENERSIGHT_ENABLE_SCHEDULER=true` 时启动 10 秒后预处理，之后每 10 分钟检查。
+首次部署数据尚未准备好会返回明确的 `MAP_PREPARING`，API 健康检查不代表地图已就绪。
+
+数据卷目录：
+- `map-rasters-v3/{run}/{valid}/`：浮点 COG、显示用 GCJ COG、完整成果清单及锁。
+- `tiles/hres-v3/{run}/{valid}/{layer}/{coord}/{z}/{x}/{y}.png`：固定版本图片。
+- `hres-grid-v1/`：原生解码中间缓存，仍保留 24 小时；COG/新瓦片按有效时刻保留 48 小时。
+
+同容器的预处理/渲染各一个子进程，数值库内部线程设为 1，沿用 1.5 CPU/1536MB 容器上限。
+持久卷必须可写；文件锁用于同一数据卷上的多进程去重。暂不支持跨主机独立数据卷的共享锁。
+
+可手工预热：`docker exec enersight-prod-api-1 /app/.venv/bin/python -m scripts.prepare_map --hours 2`。
+本机若启用了 Conda 的 `PROJ_DATA`，运行前清除该变量以使用 Rasterio 自带匹配的 PROJ 数据库：
+`env -u PROJ_DATA -u PROJ_LIB uv run python -m scripts.prepare_map --hours 2`。
+
+Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/enersight.conf`，
+新增只读挂载 `/opt/enersight/data/tiles:/srv/enersight-tiles:ro`。先更新挂载并重建网关，
+再验证 `nginx -t` 与 PNG 可访问；勿只更新 alias 而遗漏挂载。未启用直出时 FastAPI `/tiles`
+仍能提供相同图片，但会占用 API 静态文件请求。现有后端发布工作流不会自动修改共用网关。
+
+验收应包含：当前三个图层成果已就绪、全国/新疆视野、PNG 透明缺测、热缓存响应、
+小程序真机地面覆盖层与模拟器显示；不能只以 `/ready` 成功判断地图发布完成。

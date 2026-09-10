@@ -13,6 +13,7 @@ type Preview = { id: number; images: { url: string; style: Record<string, string
 export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean) {
   const model = useWeatherModel(s => s.model)
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
+  const [coverage, setCoverage] = useState('')
   const [attribution, setAttribution] = useState('')
   const [modelName, setModelName] = useState('')
   const [sourceLabel, setSourceLabel] = useState('')
@@ -42,7 +43,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       try { void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined) } catch { /* 已移除 */ }
     }
     overlayIds.current = []
-    setLegend(null); setObservedAt(null); setSourceLabel(''); setAttribution(''); setModelName('')
+    setLegend(null); setObservedAt(null); setSourceLabel(''); setAttribution(''); setModelName(''); setCoverage('')
   }, [mapId])
   const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; clear(); setLoading(false) }, [clear])
   const fail = useCallback((id: number, message: string) => {
@@ -56,6 +57,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     if (timer.current) clearTimeout(timer.current)
     pending.current = null
     setStale(!!response.stale)
+    setCoverage(response.coverage || '')
     setAttribution(response.source || '')
     setModelName(response.model || '')
     setSourceLabel(response.model ? `${response.model} · ${response.resolution_km} km 预报` : '')
@@ -92,7 +94,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     try {
       const region = await new Promise<Region>((resolve, reject) => ctx.getRegion({ success: resolve, fail: reject }))
       if (mine !== seq.current) return
-      if (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5) throw new Error('当前视野过大，请放大地图查看气象分布')
+      if (layer === 'cloud' && (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5)) throw new Error('当前视野过大，请放大地图查看气象分布')
       regionRef.current = region
       const response = await layersApi.get(layer, {
         west: region.southwest.longitude, south: region.southwest.latitude,
@@ -112,7 +114,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
           return new Promise<void>((resolve, reject) => {
             const result = ctx.addGroundOverlay({
             id, src: img.url, bounds: { southwest: img.bounds.sw, northeast: img.bounds.ne },
-            opacity: 0.65, zIndex: 1,
+            opacity: layer === 'cloud' ? 0.65 : 1, zIndex: 1,
             success: () => resolve(), fail: reject,
             })
             result?.then?.(() => resolve(), reject)
@@ -129,5 +131,5 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   useEffect(() => { void refresh(); return invalidate }, [refresh, invalidate])
-  return { modelName, attribution, sourceLabel, samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
+  return { coverage, modelName, attribution, sourceLabel, samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
 }

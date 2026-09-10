@@ -46,6 +46,7 @@ class ScalarSample(BaseModel):
 
 
 class LayerResponse(BaseModel):
+    coverage: str | None = Field(default=None, description="空间覆盖范围及显示说明")
     source: str | None = None
     model: str | None = None
     resolution_km: float | None = None

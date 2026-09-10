@@ -1,16 +1,13 @@
 """原生高斯网格及时间口径回归，不依赖在线气象数据。"""
 
-import io
 from datetime import UTC, datetime
 
 import numpy as np
 import pytest
 import respx
-from PIL import Image
 
 from app.errors import DataUnavailable
 from app.render import hres
-from app.services.hres_layer import render
 
 
 def test_O1280点数及南北对称():
@@ -44,12 +41,6 @@ def test_温度风取瞬时辐射取区间末且拒绝缺帧():
     m["valid_times"].pop()
     with pytest.raises(DataUnavailable):
         hres.valid_time(m, "radiation", now)
-
-
-def test_缺测图片透明不填零():
-    image = np.asarray(Image.open(io.BytesIO(render(np.full((10, 10), np.nan), "temperature"))))
-    assert image.shape == (512, 512, 4)
-    assert not image[:, :, 3].any()
 
 
 def test_HTTP分块合并且拒绝服务器忽略Range():

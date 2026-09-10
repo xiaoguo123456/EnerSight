@@ -26,6 +26,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "omfiles>=1.0",
     "fsspec[http]>=2026.7.0",
+    "rasterio>=1.4.4,<2",
 ]
 
 [dependency-groups]

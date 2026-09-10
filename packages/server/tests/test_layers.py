@@ -55,7 +55,7 @@ def open_meteo(monkeypatch):
             "valid_times": [(now + timedelta(hours=i)).isoformat() for i in range(2)],
         }
 
-    async def fetch(b, layer, m, valid):
+    def fetch(b, layer, m, valid):
         fields = {
             k: np.full(
                 (59, 59),
@@ -73,7 +73,20 @@ def open_meteo(monkeypatch):
         return hres.Frame(b, m["reference_time"], valid.isoformat(), fields, 0)
 
     monkeypatch.setattr(hres, "metadata", meta)
-    monkeypatch.setattr(hres, "fetch", fetch)
+    monkeypatch.setattr(hres, "read_frame", fetch)
+    from app.jobs import map_prepare
+    from app.render import map_raster
+
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    m = {"reference_time": (now - timedelta(hours=6)).isoformat()}
+    for layer in hres.FIELDS:
+        valid = now + timedelta(hours=1) if layer == "radiation" else now
+        map_raster.prepare(map_prepare.data_dir(), layer, m, valid)
+
+    async def render(*args):
+        return map_raster.render_view(*args)
+
+    monkeypatch.setattr(map_prepare, "render", render)
     with respx.mock(assert_all_called=False) as mock:
         yield mock.get(url__regex=r".*open-meteo.*").mock(
             return_value=Response(200, json=_grid_response(grid.N * grid.N))
@@ -119,9 +132,7 @@ class TestApi:
         )
         assert response.status_code == 200
         image = response.json()["data"]["frames"][0]["images"][0]
-        assert image["url"].startswith(
-            "https://platform.qhzhiyin.com/enersight/tiles/hres-v1-radiation/"
-        )
+        assert image["url"].startswith("https://platform.qhzhiyin.com/enersight/tiles/hres-v3/")
 
     async def test_返回块与图例并落盘(self, client: AsyncClient, open_meteo):
         r = await client.get(
@@ -134,11 +145,10 @@ class TestApi:
         assert d["legend"]["stops"] == [0, 200, 400, 600, 800, 1000]
         assert len(d["frames"]) == 1
         imgs = d["frames"][0]["images"]
-        assert len(imgs) == 1  # bbox 落在单块内
-        assert imgs[0]["url"].startswith("http://test/tiles/hres-v1-radiation/")
-        # bounds 是块边界（对齐后），不是请求 bbox；且已转 GCJ-02（有偏移）
-        sw = imgs[0]["bounds"]["sw"]
-        assert abs(sw["latitude"] - 28.0) < 0.01 and sw["latitude"] != 28.0
+        assert 1 <= len(imgs) <= 12  # 固定 XYZ 瓦片覆盖视野
+        assert imgs[0]["url"].startswith("http://test/tiles/hres-v3/")
+        # GCJ 已在显示栅格内部完成逐像素变换，瓦片边界仍严格对齐 XYZ。
+        assert min(i["bounds"]["sw"]["latitude"] for i in imgs) <= 28.5
         # 图片已落盘且是合法 PNG（静态服务是 Starlette 的，不在此测）
         rel = imgs[0]["url"].split("/tiles/")[1]
         png = (tiles.tile_dir() / rel).read_bytes()
@@ -159,7 +169,7 @@ class TestApi:
     async def test_bbox非法(self, client: AsyncClient, open_meteo):
         r = await client.get("/v1/map/layers/radiation", params={"bbox": "1,2,3"})
         assert r.status_code == 400
-        r = await client.get("/v1/map/layers/radiation", params={"bbox": "100,20,140,60"})
+        r = await client.get("/v1/map/layers/cloud", params={"bbox": "100,20,140,60"})
         assert r.status_code == 400 and "过大" in r.json()["error"]["message"]
 
     async def test_限流转冷却状态(self, client: AsyncClient):
@@ -173,7 +183,7 @@ async def test_大视野全覆盖而不是截断六块(client, open_meteo):
     response = await client.get("/v1/map/layers/radiation", params={"bbox": "80,34,94,51"})
     assert response.status_code == 200
     images = response.json()["data"]["frames"][0]["images"]
-    assert len(images) <= 4
+    assert len(images) <= 12
     assert min(i["bounds"]["sw"]["longitude"] for i in images) <= 80
     assert max(i["bounds"]["ne"]["longitude"] for i in images) >= 94
     assert max(i["bounds"]["ne"]["latitude"] for i in images) >= 51

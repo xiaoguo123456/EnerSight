@@ -27,10 +27,12 @@ export function WindParticles({ vectors, region, layoutVersion }: { layoutVersio
       const merc = (lat: number) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))
       const north = merc(region.northeast.latitude), south = merc(region.southwest.latitude)
       const points = vectors.map((v) => ({ x: (v.longitude - region.southwest.longitude) / (region.northeast.longitude - region.southwest.longitude) * w, y: (north - merc(v.latitude)) / (north - south) * h, u: v.u, v: v.v }))
+      const extent = { left: Math.min(...points.map(p => p.x)), right: Math.max(...points.map(p => p.x)), top: Math.min(...points.map(p => p.y)), bottom: Math.max(...points.map(p => p.y)) }
       // 插值场预先计算，逐帧只做 O(粒子数) 更新。
       const cols = 24, rows = 32
       const field = Array.from({ length: cols * rows }, (_, k) => {
         const x = (k % cols) / (cols - 1) * w, y = Math.floor(k / cols) / (rows - 1) * h
+        if (x < extent.left || x > extent.right || y < extent.top || y > extent.bottom) return { u: 0, v: 0 }
         return interpolateWind(points, x, y)
       })
       const particles = Array.from({ length: Math.min(180, Math.round(w * h / 1600)) }, () => ({ x: Math.random() * w, y: Math.random() * h, age: Math.random() * 80 }))

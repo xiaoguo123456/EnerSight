@@ -13,6 +13,11 @@ services:
     image: ${ENERSIGHT_IMAGE:?必须提供固定摘要镜像}
     restart: unless-stopped
     init: true
+    environment:
+      # 栅格进程各一个，限制数值库内部线程，避免争抢业务 API 的 CPU。
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      GDAL_NUM_THREADS: "1"
     env_file:
       - .env
     ports:

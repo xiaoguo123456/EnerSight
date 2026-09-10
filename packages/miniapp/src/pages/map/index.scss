@@ -170,7 +170,7 @@
 // 模拟器不支持原生图片覆盖层，使用同层图片预览；不截获地图拖动。
 .map-page__preview {
   position: absolute; inset: 0; overflow: hidden; pointer-events: none;
-  opacity: .65;
+  opacity: 1;
 }
 .map-page__preview-image { position: absolute; max-width: none; pointer-events: none; }
 .map-page__wind-play { position: absolute; top: 120px; left: 12px; padding: 8px; border-radius: 6px; background: rgba(255,255,255,.94); color: #365477; font-size: 11px; }

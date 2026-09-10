@@ -810,3 +810,16 @@ export function createClient(adapter: HttpAdapter, opts: ClientOptions): ApiClie
 
 图层补充可选 `source`、`model`、`resolution_km`、`run_at` 元数据。HRES 图层的
 `observed_at` 表示预报有效时刻（沿用兼容字段），并非实测时间；客户端显示「预报」。
+
+
+### 地图栅格模块补充（2026-09-10）
+
+温度、风场、辐射沿用 `/v1/map/layers/{layer}`，但图片为固定 XYZ 瓦片而非任意视野大图。
+`coverage` 为可选覆盖范围/等值线说明；图片 URL 包含起报批次、有效时效、图层、坐标系、z/x/y，
+`bounds` 是对应坐标系的瓦片边界。GCJ 像素已经重采样，客户端不得二次平移边界。
+
+HRES 支持全国 bbox，一屏最多 12 张图；`zoom` 保留兼容，实际层级按 bbox 的覆盖成本选择。
+空间范围 60–150°E、0–65°N，部分超出时覆盖外透明；完全超出返回 400 `MAP_OUTSIDE_COVERAGE`。
+云图仍采用原链路，超过 24° 返回 400，不随本次 HRES 改造改变卫星范围。
+当前 COG 未就绪且无两小时内旧成果时返回 503 `MAP_PREPARING`；旧有效时刻须 `stale=true`，
+`observed_at` 必须显示成果真实有效时刻，不改写为请求时间。没有在线下载原始场的隐式兜底。
