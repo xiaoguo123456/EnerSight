@@ -10,12 +10,12 @@ from app.config import settings
 from app.models import Station
 from app.schemas.prediction import GenerationPrediction, PowerPoint
 from app.services import energy
-from app.services.prediction_basis import VERSION
+from app.services.prediction_basis import version_for_day
 from app.services.weather import Forecast
 from app.weather_model import current_model
 
 
-def assumptions(station: Station) -> list[str]:
+def assumptions(station: Station, version: str) -> list[str]:
     out = [
         "未计入限电、检修及故障影响",
         "光伏采用标准损耗与默认组件参数；风电采用通用功率曲线与场站损耗",
@@ -26,7 +26,10 @@ def assumptions(station: Station) -> list[str]:
             if station.type == "solar"
             else "轮毂高度缺失时使用默认高度，各层风速按对数廓线插值，通用功率曲线未校准至实际机型"
         ),
-        f"计算版本 {VERSION}",
+        f"计算版本 {version}",
+        "逐时曲线标注区间起点；风电按整点样本代表该小时作积分近似"
+        if version == "model-v4"
+        else "旧版逐时标签口径",
     ]
     blocked = getattr(station, "_prediction_blocked", None)
     if blocked:
@@ -41,6 +44,10 @@ def from_hourly(
     容量口径待核验的目录站点整条曲线为 null，原因写进 assumptions。"""
     if getattr(station, "_prediction_blocked", None):
         hourly_kw = pd.Series(np.nan, index=hourly_kw.index)
+    version = version_for_day(pd.Timestamp(hourly_kw.index[0]).date())
+    if station.type == "solar" and version == "model-v4":
+        hourly_kw = hourly_kw.copy()
+        hourly_kw.index = hourly_kw.index - pd.Timedelta(hours=1)
     values = hourly_kw.to_numpy(dtype=float)
     valid = bool(np.isfinite(values).all())
     return GenerationPrediction(
@@ -53,7 +60,7 @@ def from_hourly(
             PowerPoint(time=t.isoformat(), value=round(float(v), 3) if np.isfinite(v) else None)
             for t, v in hourly_kw.items()
         ],
-        assumptions=assumptions(station),
+        assumptions=assumptions(station, version),
     )
 
 

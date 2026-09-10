@@ -10,7 +10,6 @@ import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
 import { useWeatherModel, WEATHER_MODELS, weatherModelLabel } from '@/store/weatherModel'
 import { StationTrend } from '@/components/StationTrend'
-import { FleetHistory } from '@/components/FleetHistory'
 import './index.scss'
 
 function energy(value?: number | null) {
@@ -43,7 +42,6 @@ function FleetSummary({ data, onClick }: { data: FleetPrediction | null; onClick
 export default function Home() {
   const { model, setModel } = useWeatherModel()
   const [scope, setScope] = useState('station')
-  const [fleetView, setFleetView] = useState('today')
   const [visible, setVisible] = useState(true)
   const [version, setVersion] = useState(0)
   const [showAllRegions, setShowAllRegions] = useState(false)
@@ -78,14 +76,14 @@ export default function Home() {
   return <View className="home">
     {scope === 'station' && station ? <StationTitleBar name={station.name} status={station.status} address={station.address ?? '公开场站'} onSwitch={() => Taro.switchTab({ url: '/pages/station/index' })} /> : <PageTitleBar title={scope === 'fleet' ? '全目录发电预测' : '发电预测'} />}
     <View className="home__body">
-      <View className="forecast-toolbar"><Text className="forecast-muted">{scope === 'fleet' && fleetView === 'history' ? '留存的模型估算' : `今日 ${(scope === 'fleet' ? f?.date : p?.date)?.slice(5) || '预测'}`}</Text>
+      <View className="forecast-toolbar"><Text className="forecast-muted">{`今日 ${(scope === 'fleet' ? f?.date : p?.date)?.slice(5) || '预测'}`}</Text>
         <Picker mode="selector" range={WEATHER_MODELS.map(m => m.label)} value={WEATHER_MODELS.findIndex(m => m.id === model)} onChange={e => choose(Number(e.detail.value))}>
           <View className="forecast-model"><Text>模型：{weatherModelLabel(model)}</Text><Icon name="chevronDown" size={14} strokeWidth={1.5} /></View>
         </Picker>
       </View>
       <SegmentedTabs value={scope} options={[{ value: 'station', label: '本站预测' }, { value: 'fleet', label: '全部场站' }]} onChange={setScope} />
-      {scope === 'fleet' && <SegmentedTabs value={fleetView} options={[{value:'today',label:'今日预测'},{value:'history',label:'历史记录'}]} onChange={setFleetView} />}
-      {scope === 'fleet' && fleetView === 'history' ? <FleetHistory /> : scope === 'station' ? <>
+      {scope === 'fleet' && <View className="fleet-navigation"><Text className="forecast-muted">今日预测概览</Text><View className="fleet-history-link" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: '/pages/fleet-history/index' })}><Icon name="trendingUp" size={16} strokeWidth={1.5} /><Text>历史趋势</Text><Icon name="chevronRight" size={14} strokeWidth={1.5} /></View></View>}
+      {scope === 'station' ? <>
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : !d ? <View className="home__card"><Text className="forecast-muted">正在更新 {weatherModelLabel(model)} 预测…</Text><Skeleton height={180} lines={3} /></View> : <>
           <View className="home__card forecast-main">
             <View className="forecast-row"><Text className="forecast-title">今日发电潜力估算</Text><View onClick={info} className="forecast-help">预测口径 ⓘ</View></View>
@@ -125,7 +123,7 @@ export default function Home() {
           <Text className="forecast-note">区域汇总采用 1°气象网格与默认设备参数，适合观察整体规模；本站预测使用本站位置，二者可能存在近似差异。</Text>
         </>}
       </>}
-      {!(scope === 'fleet' && fleetView === 'history') && <Text className="forecast-muted">{(scope === 'fleet' ? f?.generated_at : p?.generated_at) ? `计算于 ${formatBeijingTime(scope === 'fleet' ? f?.generated_at : p?.generated_at)}（北京时间）` : ''}</Text>}
+      <Text className="forecast-muted">{(scope === 'fleet' ? f?.generated_at : p?.generated_at) ? `计算于 ${formatBeijingTime(scope === 'fleet' ? f?.generated_at : p?.generated_at)}（北京时间）` : ''}</Text>
       <View className="forecast-footer"><Text onClick={() => { void home.reload(); void fleet.reload() }}>刷新预测</Text><Text>预测不等于实际并网电量</Text></View>
     </View>
   </View>

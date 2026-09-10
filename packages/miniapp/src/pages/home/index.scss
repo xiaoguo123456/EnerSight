@@ -53,3 +53,6 @@
 .fleet-short__value { flex-shrink:0; font-size:15px; color:#1264d6; font-weight:600; }
 .forecast-footer { display:flex; justify-content:space-between; gap:12px; padding:6px 0; font-size:11px; color:#617084; }
 .forecast-footer > text:first-child { color:#1264d6; }
+
+.fleet-navigation { display:flex; align-items:center; justify-content:space-between; margin:-10px 0 -14px; min-height:44px; }
+.fleet-history-link { display:flex; align-items:center; gap:6px; min-height:44px; padding:0 4px 0 12px; color:#1264d6; font-size:13px; }

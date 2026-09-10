@@ -5,7 +5,7 @@ Open-Meteo 的辐射是前一小时均值标在区间末（13:00 的值覆盖 12
 用同一个整点去取会让日出后一小时的功率与辐射低估几倍。
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -84,12 +84,16 @@ class TestCurrentPower:
         snap = energy.compute(_station("wind", capacity_kw=2000.0), fc)
         assert snap.current_kw == pytest.approx(float(snap.hourly_kw.loc[fc.current_hour()]))
 
-    def test_日末不因区间标签越界变成缺测(self, monkeypatch):
+    @pytest.mark.parametrize("v4", [False, True])
+    def test_日末不因区间标签越界变成缺测(self, monkeypatch, v4):
         """23:30 的区间末标签是次日 00:00，落在今日帧外 —— 该显示 0 而不是「数据获取中」"""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "model_v4_start_date", date.min if v4 else date.max)
         _at(monkeypatch, "23:30")
         fc = _forecast()
         snap = energy.compute(_station(), fc)
-        assert fc.current_interval() not in snap.hourly_kw.index
+        assert (fc.current_interval() in snap.hourly_kw.index) == v4
         assert snap.current_kw == 0.0
 
 

@@ -73,6 +73,7 @@ def hub_wind_speed(
             # np.interp 会钳制到最低层，把 50 m 轮毂直接当成 80 m 风速，系统性高估。
             slope = (v[1] - v[0]) / (z[1] - z[0])
             out[i] = max(0.0, v[0] + slope * (ln_h - z[0]))
+            fallback[i] = True
         elif ln_h <= z[-1]:
             out[i] = float(np.interp(ln_h, z, v))
         else:

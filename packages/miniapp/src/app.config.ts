@@ -7,6 +7,7 @@ const PAGES = [
   'pages/station/detail',
   'pages/report/index',
   'pages/info/index',
+  'pages/fleet-history/index',
 ]
 
 // 开发期切换启动页：TARO_APP_LAUNCH=map pnpm build:weapp

@@ -19,6 +19,7 @@ from app.metrics import pv, solar, wind
 from app.metrics.index import IndexResult, PvInputs, pv_index, wind_index
 from app.models import Station
 from app.schemas.common import IndexLevel
+from app.services.prediction_basis import version_for_day
 from app.services.weather import Forecast
 
 _SUMMARY = {
@@ -38,7 +39,7 @@ SECONDARY_GAP_HOURS = 6
 
 @dataclass(frozen=True)
 class Prepared:
-    """今日 24 点（00:00–23:00，区间末标注）的输入，缺测已按规则处理。"""
+    """逐日输入（光伏区间末、风电瞬时整点），缺测已按规则处理。"""
 
     frame: pd.DataFrame
     complete: bool  # 必要输入齐全，可算
@@ -60,14 +61,12 @@ class EnergySnapshot:
     )
 
 
-def _hours_for(fc: Forecast, day: date) -> pd.DatetimeIndex:
-    """某一天的 24 个逐时标签（区间末标注）。"""
-    return pd.date_range(pd.Timestamp(day, tz=fc.tz), periods=24, freq="h")
-
-
-def _day_hours(fc: Forecast, day_offset: int) -> pd.DatetimeIndex:
-    day = fc.current_hour().normalize() + pd.Timedelta(days=day_offset)
-    return pd.date_range(day, periods=24, freq="h")
+def _hours_for(fc: Forecast, day: date, station_type: str, version: str) -> pd.DatetimeIndex:
+    """光伏 v4 取自然日的区间末标签；风电保持起点瞬时样本。"""
+    start = pd.Timestamp(day, tz=fc.tz)
+    if station_type == "solar" and version == "model-v4":
+        start += pd.Timedelta(hours=1)
+    return pd.date_range(start, periods=24, freq="h")
 
 
 def current_label(fc: Forecast, station_type: str) -> pd.Timestamp:
@@ -80,14 +79,10 @@ def current_label(fc: Forecast, station_type: str) -> pd.Timestamp:
 
 
 def _at_label(hourly_kw: pd.Series, label: pd.Timestamp) -> float | None:
-    """按标签取值。23:00–24:00 的区间末标签落在次日 00:00（今日帧外），
-    退到当日最后一个区间 —— 那一小时光伏出力必为 0，不该显示成缺测。"""
-    if label in hourly_kw.index:
-        v = float(hourly_kw.loc[label])
-    elif len(hourly_kw) and label > hourly_kw.index[-1]:
-        v = float(hourly_kw.iloc[-1])
-    else:
+    # 不以相邻时刻替代目标区间，跨日计算由调用方处理。
+    if label not in hourly_kw.index:
         return None
+    v = float(hourly_kw.loc[label])
     return None if not np.isfinite(v) else v
 
 
@@ -122,10 +117,19 @@ def _fill_from_forecast(
 
 
 def prepare(
-    station: Station, fc: Forecast, *, day_offset: int = 0, day: date | None = None
+    station: Station,
+    fc: Forecast,
+    *,
+    day_offset: int = 0,
+    day: date | None = None,
+    version: str | None = None,
+    hours: pd.DatetimeIndex | None = None,
 ) -> Prepared:
     """day_offset=1 为明日（留档用）；day 直接指定日期，供历史校准复用同一套缺测处理。"""
-    hours = _hours_for(fc, day) if day is not None else _day_hours(fc, day_offset)
+    target = day or (fc.current_hour() + pd.Timedelta(days=day_offset)).date()
+    version = version or version_for_day(target)
+    if hours is None:
+        hours = _hours_for(fc, target, station.type, version)
     frame = fc.hourly.loc[hours[0] : hours[-1]].reindex(hours).copy()
     estimated = False
 
@@ -241,7 +245,13 @@ def compute(station: Station, fc: Forecast) -> EnergySnapshot:
         hourly_kw = _hourly(station, prep, fc.tz)
         result = wind_index(float(hourly_kw.sum()), station.capacity_kw)
 
-    current = _at_label(hourly_kw, current_label(fc, station.type))
+    label = current_label(fc, station.type)
+    current = _at_label(hourly_kw, label)
+    if label not in hourly_kw.index:
+        # 单独读取真实目标区间，仍经过统一的缺测预处理。
+        current_prep = prepare(station, fc, hours=pd.DatetimeIndex([label]))
+        if current_prep.complete:
+            current = _at_label(_hourly(station, current_prep, fc.tz), label)
     return EnergySnapshot(
         index=result,
         daily_kwh=result.actual_kwh,

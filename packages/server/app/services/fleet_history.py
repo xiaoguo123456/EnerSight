@@ -60,6 +60,16 @@ def capture(snapshot, version, now=None):
         return
     path = root() / snapshot["model"] / f"{target}.json"
     old = read(path)
+    if old and old.get("sealed"):
+        return
+    # 各计算版本另存一份，既有主记录不会被新口径替换。
+    version_path = root() / "versions" / version / snapshot["model"] / f"{target}.json"
+    previous = read(version_path)
+    if previous is None or datetime.fromisoformat(previous["generated_at"]) < issued:
+        write(version_path, {**snapshot, "version": version})
+    old = read(path)
+    if old and old.get("version") != version:
+        return
     if old and (old.get("sealed") or datetime.fromisoformat(old["generated_at"]) >= issued):
         return
     row = {

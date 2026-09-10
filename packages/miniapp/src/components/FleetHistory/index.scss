@@ -11,3 +11,6 @@
 .history-gap { width:50%; border-bottom:1px dashed #adb8c5; }
 .history-axis { display:block; text-align:center; height:24px; line-height:24px; font-size:10px; color:#617084; }
 .history-refresh { text-align:center; padding:12px; color:#1264d6; font-size:13px; }
+
+.history-legend__item { display:flex; align-items:center; gap:5px; }
+.history-legend__swatch { width:8px; height:8px; border-radius:2px; }

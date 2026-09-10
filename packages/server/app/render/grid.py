@@ -94,7 +94,7 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
 
         path = (
             tiles.tile_dir().parent
-            / "grid-cache"
+            / "grid-cache-v4"
             / f"{current_model.get()}_{block.key}_{datetime.now(UTC):%Y%m%d}.npz"
         )
         cached = None
@@ -126,7 +126,7 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
             "latitude": ",".join(str(p[0]) for p in pts),
             "longitude": ",".join(str(p[1]) for p in pts),
             "hourly": ",".join(sorted(set(FIELD.values()) | {"wind_direction_10m"})),
-            "forecast_days": 1,
+            "forecast_days": 2,
             "models": current_model.get(),
             "timezone": "UTC",
             "wind_speed_unit": "ms",

@@ -33,8 +33,10 @@ def test_同日只累计一次_模型分开_过期不补算(monkeypatch, tmp_pat
     late["generated_at"] = "2026-09-09T10:00:00+08:00"
     history.capture(late, "v2", at("2026-09-09T13:00"))
     out = history.summary("best_match", "week", date(2026, 9, 9), at("2026-09-09T13:00"))
-    assert out["energy_kwh"] == 200 and out["recorded_days"] == 1
-    assert out["versions"] == ["v1", "v2"]
+    assert out["energy_kwh"] == 100 and out["recorded_days"] == 1
+    assert out["versions"] == ["v1"]
+    separate = history.read(history.root() / "versions" / "v2" / "best_match" / "2026-09-09.json")
+    assert separate["energy_kwh"] == 200
     assert out["days"][0]["state"] == "missing"
     assert out["days"][-1]["state"] == "future"
     assert out["solar_kwh"] + out["wind_kwh"] == out["energy_kwh"]

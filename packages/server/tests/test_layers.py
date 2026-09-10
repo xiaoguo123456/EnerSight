@@ -261,6 +261,11 @@ class TestCurrentHourIndex:
         svc, times = self._freeze(monkeypatch, 6, 0)
         assert svc._current_hour_index(times, "radiation") == 6
 
-    def test_日末退到最后一格(self, monkeypatch):
+    def test_日末使用次日首格_缺失不能回退(self, monkeypatch):
         svc, times = self._freeze(monkeypatch, 23, 30)
-        assert svc._current_hour_index(times, "radiation") == 23
+        from app.errors import DataUnavailable
+
+        with pytest.raises(DataUnavailable):
+            svc._current_hour_index(times, "radiation")
+        times.append("2026-09-10T00:00")
+        assert svc._current_hour_index(times, "radiation") == 24

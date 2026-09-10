@@ -3,7 +3,7 @@
 import asyncio
 import math
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import numpy as np
@@ -50,15 +50,18 @@ _INTERVAL_MEAN_LAYERS = {LayerType.RADIATION.value}
 def _current_hour_index(times: list[str], layer: str = "") -> int:
     """当前时刻在网格时间轴（UTC 整点）上的位置。
 
-    网格只有当天 24 点，日末的区间末标签落在次日 —— 退到当日最后一格。
+    网格包含次日数据；日末读取次日首格，缺测不以相邻时刻替代。
     """
     now = datetime.now(UTC)
-    shift = 1 if layer in _INTERVAL_MEAN_LAYERS and (now.minute or now.second) else 0
-    hour = now.hour + shift
+    label = now.replace(minute=0, second=0, microsecond=0)
+    if layer in _INTERVAL_MEAN_LAYERS and now > label:
+        label += timedelta(hours=1)
     try:
-        return times.index(f"{now:%Y-%m-%d}T{hour:02d}:00")
-    except ValueError:
-        return min(hour, len(times) - 1)
+        return times.index(label.strftime("%Y-%m-%dT%H:%M"))
+    except ValueError as exc:
+        from app.errors import DataUnavailable
+
+        raise DataUnavailable() from exc
 
 
 async def _ensure_tile(

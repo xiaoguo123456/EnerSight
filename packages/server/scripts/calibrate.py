@@ -37,6 +37,7 @@ from app.metrics import wind  # noqa: E402
 from app.metrics.index import pv_index, wind_index  # noqa: E402
 from app.models import Station  # noqa: E402
 from app.services import energy, weather  # noqa: E402
+from app.services.prediction_basis import VERSION  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "calibration"
@@ -174,7 +175,7 @@ def run_pv_days(site: Site, df: pd.DataFrame) -> pd.DataFrame:
     for day, chunk in df.groupby(df.index.date):
         if len(chunk) < 24:
             continue
-        prep = energy.prepare(station, fc, day=day)
+        prep = energy.prepare(station, fc, day=day, version=VERSION)
         if not prep.complete:  # 线上这一天是「数据获取中」，不该算进分布
             continue
         r = pv_index(energy.pv_inputs(station, prep.frame, TZ))
@@ -206,7 +207,7 @@ def run_wind_days(site: Site, df: pd.DataFrame, alpha: float) -> pd.DataFrame:
     for day, chunk in df.groupby(df.index.date):
         if len(chunk) < 24:
             continue
-        prep = energy.prepare(station, fc, day=day)
+        prep = energy.prepare(station, fc, day=day, version=VERSION)
         if not prep.complete or prep.v_hub is None:
             continue
         daily = float(wind.plant_power(prep.v_hub, WIND_CAPACITY_KW).sum())
@@ -362,7 +363,8 @@ def main() -> int:
     monthly = pv_all.groupby(pv_all.index.month)["score"].mean()
 
     lines = [
-        f"# 环境指数校准报告 {date.today()}\n",
+        f"# 环境指数校准报告 {VERSION} · {date.today()}\n",
+        f"计算版本：{VERSION}，显式运行该版本，不受上线日期开关影响。\n",
         f"数据：Open-Meteo archive（ERA5）{start} ~ {end}，分档阈值 excellent/good/fair = {th}。",
         f"光伏交流 {PV_CAPACITY_KW:.0f} kW（容配比 {settings.pv_dc_ac_ratio}，直流 {kwp:.0f} kWp），"
         f"倾角=纬度、正南、系统损耗 {settings.pv_losses:.0%}、散射模型 {settings.pv_sky_diffuse_model}，"
@@ -406,10 +408,10 @@ def main() -> int:
         *spot_rows,
     ]
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    out = REPORT_DIR / f"index-calibration-{date.today()}.md"
+    out = REPORT_DIR / f"index-calibration-{VERSION}-{date.today()}.md"
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    pv_all.to_csv(DATA_DIR / "pv_daily.csv")
-    wind_all.to_csv(DATA_DIR / "wind_daily.csv")
+    pv_all.to_csv(DATA_DIR / f"pv_daily_{VERSION}.csv")
+    wind_all.to_csv(DATA_DIR / f"wind_daily_{VERSION}.csv")
     print(f"\n报告：{out}")
     return 0
 

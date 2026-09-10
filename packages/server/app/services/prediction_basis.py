@@ -6,13 +6,20 @@
 """
 
 import math
+from datetime import date
 
 from app.config import settings
 
 DC_AC_RATIO = settings.pv_dc_ac_ratio
 # capacity-v2：区分分期交直流容量；model-v3：太阳位置取区间中点、风电各层插值 + 场站损耗、
 # 逆变器损耗并入系统损耗
-VERSION = "model-v3"
+VERSION = "model-v4"
+
+
+def version_for_day(day: date | str) -> str:
+    """按预测目标日切换版本，不在同一天中途更改日累计定义。"""
+    target = date.fromisoformat(day) if isinstance(day, str) else day
+    return VERSION if target >= settings.model_v4_start_date else "model-v3"
 
 
 def catalog_basis(plant):

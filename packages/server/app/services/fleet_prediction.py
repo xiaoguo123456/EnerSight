@@ -19,7 +19,7 @@ from app.models import CatalogPlant, Station
 from app.render import tiles
 from app.schemas.prediction import FleetPrediction, PowerPoint, RegionPrediction
 from app.services import prediction, weather
-from app.services.prediction_basis import VERSION, catalog_basis
+from app.services.prediction_basis import catalog_basis, version_for_day
 from app.weather_model import MODELS
 
 log = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ FIELDS = [
 
 
 def directory() -> Path:
-    path = tiles.tile_dir().parent / "fleet-predictions" / VERSION
+    path = tiles.tile_dir().parent / "fleet-predictions" / version_for_day(day_key())
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -76,6 +76,10 @@ def blank(model: str, day: str) -> FleetPrediction:
             "未知容量类型不计入预测",
             "采用默认设备参数，未计入限电、检修及故障影响",
             "统一北京时间；仅汇总平台运营目录，非全国实测电量",
+            f"计算版本 {version_for_day(day)}",
+            "逐时曲线按区间起点对齐光伏与风电"
+            if version_for_day(day) == "model-v4"
+            else "旧版逐时标签口径",
         ],
     )
 
@@ -222,7 +226,7 @@ async def build(http, model: str, day: str, plants) -> None:
                         "models": model,
                         "hourly": ",".join(FIELDS),
                         "timezone": TZ,
-                        "forecast_days": 1,
+                        "forecast_days": 2,
                         "wind_speed_unit": "ms",
                     },
                     timeout=40,
@@ -286,7 +290,7 @@ async def build(http, model: str, day: str, plants) -> None:
     publish()
     from app.services import fleet_history
 
-    fleet_history.capture(out.model_dump(), VERSION)
+    fleet_history.capture(out.model_dump(), version_for_day(day))
     # 留两天快照，清理旧天气文件，避免磁盘长期增长。
     for old in directory().glob("*.json"):
         if old.stat().st_mtime < datetime.now(UTC).timestamp() - 172800:

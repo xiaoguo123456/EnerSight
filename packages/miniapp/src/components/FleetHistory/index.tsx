@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api } from '@/api'
 import { useRequest } from '@/hooks/useRequest'
 import { useWeatherModel } from '@/store/weatherModel'
+import { ApiError } from '@enersight/core/api'
 import { thousands } from '@enersight/core/format'
 import { ErrorState, SegmentedTabs, Skeleton } from '@/components'
 import './index.scss'
@@ -42,14 +43,14 @@ export function FleetHistory() {
     <SegmentedTabs value={period} options={[{value:'week',label:'周'},{value:'month',label:'月'},{value:'year',label:'年'}]} onChange={v => { setPeriod(v as Period); setSelected(null) }} />
     <View className="history-nav"><View onClick={() => move(-1)}>‹ 上一期</View><Text>{period === 'year' ? anchor.slice(0,4)+'年' : period === 'month' ? anchor.slice(0,7) : d ? `${d.start.slice(5)} — ${d.end.slice(5)}` : '本周'}</Text><View className={d && d.end >= d.today ? 'history-disabled' : ''} onClick={() => { if (d && d.end < d.today) move(1) }}>下一期 ›</View></View>
     {anchor !== today() && <View className="history-refresh" onClick={() => { setAnchor(today()); setSelected(null) }}>回到本期</View>}
-    {req.status === 'error' ? <ErrorState error={req.error} onRetry={req.reload} /> : !d ? <Skeleton height={200} /> : <>
+    {req.status === 'error' ? <ErrorState error={req.error.status === 404 ? new ApiError('HISTORY_UNAVAILABLE', '历史记录服务暂未开放，请稍后再试。', 404) : req.error} onRetry={req.reload} /> : !d ? <Skeleton height={200} /> : <>
       <View className="home__card">
         <View className="forecast-row"><Text className="forecast-title">累计估算电量</Text><Text className="forecast-muted">已记录 {d.recorded_days} 天</Text></View>
         <View className="history-total">{value(d.energy_kwh)}</View>
         <Text className="forecast-muted">{d.provisional_days ? `包含 ${d.provisional_days} 天暂定结果 · 封存前可能变化` : '仅累计已留存日期 · 非实测发电量'}</Text>
         <View className="forecast-split"><View><Text className="forecast-muted">光伏</Text>{value(d.solar_kwh)}</View><View><Text className="forecast-muted">风电</Text>{value(d.wind_kwh)}</View></View>
         {!d.recorded_days ? <View className="history-empty">{d.first_recorded ? '这段时间没有留存记录，不补算过去。' : '正在积累记录。首次有效汇总生成后，将从当天开始展示。'}</View> : <>
-          <View className="history-legend"><Text>🟨 光伏</Text><Text>🟦 风电</Text><Text>点击柱形查看</Text></View>
+          <View className="history-legend"><View className="history-legend__item"><View className="history-legend__swatch history-solar" /><Text>光伏</Text></View><View className="history-legend__item"><View className="history-legend__swatch history-wind" /><Text>风电</Text></View><Text>点击柱形查看</Text></View>
           <View className="history-chart">{d.buckets.map((b,i) => <View key={b.key} className={`history-column ${b.key === selected ? 'history-column--active' : ''}`} onClick={() => { setSelected(b.key); if (period === 'year' && b.recorded_days) { setAnchor(b.key); setPeriod('month') } }}>
             <View className="history-track">{b.energy_kwh == null ? <View className="history-gap" /> : <View className="history-stack" style={{ height: `${Math.max(2, (b.energy_kwh / max) * 140)}px` }}><View className="history-solar" style={{ flex: b.solar_kwh || 0 }} /><View className="history-wind" style={{ flex: b.wind_kwh || 0 }} /></View>}</View>
             <Text className="history-axis">{period === 'year' ? i+1 : period === 'week' || i%5===0 ? Number(b.key.slice(8)) : ''}</Text>

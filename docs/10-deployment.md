@@ -163,3 +163,10 @@ aliyun alb UpdateRuleAttribute --region cn-beijing --force \
 可从任一旧分支或同时已执行两个分支的数据库升级，仍使用 `alembic upgrade head`。
 发布前必须检查 `alembic heads` 仅有一个节点，并验证空库和两个分支各自升级到最新版本；
 不能只依赖使用 `create_all` 建库的单元测试。
+
+### model-v4 发布说明
+
+`ENERSIGHT_MODEL_V4_START_DATE` 默认 2026-09-10（目标日，北京时间），发布前可设为计划
+切换日期。v4 缓存与旧版本隔离，历史不回算、不覆盖；参见 16。小程序历史记录已实现，
+入口为首页 → 全部场站 → 历史记录。本次本地核验生产该接口仍返回 404，需后端发布后
+才能读取线上记录；小程序已重新构建，不应将此问题诊断为前端缓存。

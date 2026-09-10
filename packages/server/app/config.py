@@ -1,5 +1,7 @@
 """服务配置。密钥一律走环境变量，不进代码。"""
 
+from datetime import date
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +54,8 @@ class Settings(BaseSettings):
     ttl_hourly_forecast: int = 3600  # 图层网格块
 
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码
+    model_v4_start_date: date = date(2026, 9, 10)
+
     pv_gamma_pdc: float = -0.004
     pv_losses: float = 0.14  # 含逆变器损耗，与 PVGIS 口径一致
     # 站点容量是交流侧（docs/04 §七），直流侧 pdc0 = 容量 × 容配比；交流出力按容量限幅
