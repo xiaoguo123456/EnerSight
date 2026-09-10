@@ -170,3 +170,11 @@ aliyun alb UpdateRuleAttribute --region cn-beijing --force \
 切换日期。v4 缓存与旧版本隔离，历史不回算、不覆盖；参见 16。小程序历史记录已实现，
 入口为首页 → 全部场站 → 历史记录。本次本地核验生产该接口仍返回 404，需后端发布后
 才能读取线上记录；小程序已重新构建，不应将此问题诊断为前端缓存。
+
+### IFS HRES 地图网格（2026-09）
+
+后端新增 `omfiles` 和 `fsspec` 解码依赖。生产需能访问
+`https://openmeteo.s3.amazonaws.com/data_spatial/ecmwf_ifs/`，不需要 API 密钥。
+数据缓存位于数据卷 `hres-grid-v1/`（保留 24 小时），PNG 在 `tiles/hres-v1-*`；缓存键
+包含起报批次与有效时刻。温度、风、辐射固定 HRES，故障时明确报错，不偷偷回退到稀疏点图。
+首次区域请求负责载入完整原生纬带并缓存；当前按需加载，尚未启用全中国定时预热。

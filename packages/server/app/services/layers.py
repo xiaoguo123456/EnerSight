@@ -6,7 +6,6 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import httpx
-import numpy as np
 
 from app.geo import wgs84_to_gcj02
 from app.render import grid as g
@@ -22,8 +21,6 @@ from app.schemas.layer import (
     LayerImage,
     LayerResponse,
     Legend,
-    ScalarSample,
-    WindVector,
 )
 from app.services import satellite
 from app.weather_model import current_model
@@ -118,6 +115,10 @@ async def build_layer(
     coord: Coord,
     base_url: str,
 ) -> LayerResponse:
+    if layer in (LayerType.TEMPERATURE, LayerType.WIND, LayerType.RADIATION):
+        from app.services.hres_layer import build
+
+        return await build(http, layer, bbox, coord, base_url)
     w, s, e, n = bbox
     span = max(4, math.ceil(max(e - w, n - s) / 4) * 4)
     blocks = g.blocks_for_bbox(w, s, e, n, span)  # 一屏最多几块，防止恶意 bbox 拉爆
@@ -136,59 +137,6 @@ async def build_layer(
     # 串行拉块：并发多块会触发 Open-Meteo 限流；块级缓存后只有冷块才真的回源
     results = sat_tiles or [await _ensure_tile(http, layer.value, b, base_url) for b in blocks]
 
-    vectors = []
-    if layer == LayerType.WIND:
-        for block in blocks:
-            data = await g.fetch_block(http, block)
-            hour = _current_hour_index(data.times)  # 风速是瞬时量
-            for i in range(g.N):
-                for j in range(g.N):
-                    speed = data.fields["wind"][hour, i, j]
-                    direction = data.fields["wind_direction"][hour, i, j]
-                    if not (np.isfinite(speed) and np.isfinite(direction)):
-                        continue
-                    lat = block.lat0 + i * (block.lat1 - block.lat0) / (g.N - 1)
-                    lon = block.lon0 + j * (block.lon1 - block.lon0) / (g.N - 1)
-                    if coord == Coord.GCJ02:
-                        lon, lat = wgs84_to_gcj02(lon, lat)
-                    angle = math.radians(float(direction))
-                    vectors.append(
-                        WindVector(
-                            latitude=lat,
-                            longitude=lon,
-                            u=round(-float(speed) * math.sin(angle), 3),
-                            v=round(-float(speed) * math.cos(angle), 3),
-                        )
-                    )
-    samples = []
-    if layer in (LayerType.TEMPERATURE, LayerType.RADIATION):
-        for block in blocks:
-            data = await g.fetch_block(http, block)
-            hour = _current_hour_index(data.times, layer.value)
-            # 以视野内均匀的九个位置采样，双线性插值避免放大后无网格点可读。
-            for fy in (1 / 6, 1 / 2, 5 / 6):
-                for fx in (1 / 6, 1 / 2, 5 / 6):
-                    lat, lon = s + (n - s) * fy, w + (e - w) * fx
-                    if not (block.lat0 <= lat < block.lat1 and block.lon0 <= lon < block.lon1):
-                        continue
-                    y = (lat - block.lat0) / (block.lat1 - block.lat0) * (g.N - 1)
-                    x = (lon - block.lon0) / (block.lon1 - block.lon0) * (g.N - 1)
-                    i, j = min(int(y), g.N - 2), min(int(x), g.N - 2)
-                    dy, dx = y - i, x - j
-                    field = data.fields[layer.value][hour]
-                    value = (
-                        field[i, j] * (1 - dx) * (1 - dy)
-                        + field[i, j + 1] * dx * (1 - dy)
-                        + field[i + 1, j] * (1 - dx) * dy
-                        + field[i + 1, j + 1] * dx * dy
-                    )
-                    if not np.isfinite(value):
-                        continue
-                    if coord == Coord.GCJ02:
-                        lon, lat = wgs84_to_gcj02(lon, lat)
-                    samples.append(
-                        ScalarSample(latitude=lat, longitude=lon, value=round(float(value), 1))
-                    )
     images = [
         LayerImage(url=url, bounds=_bounds(b, coord))
         for b, (url, _, _) in zip(blocks, results, strict=True)
@@ -209,6 +157,4 @@ async def build_layer(
         frames=[LayerFrame(images=images)],
         frame_interval_ms=None,
         stale=any(item[2] for item in results),
-        samples=samples,
-        wind_vectors=vectors if layer == LayerType.WIND else None,
     )

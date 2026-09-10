@@ -46,6 +46,10 @@ class ScalarSample(BaseModel):
 
 
 class LayerResponse(BaseModel):
+    source: str | None = None
+    model: str | None = None
+    resolution_km: float | None = None
+    run_at: str | None = Field(default=None, description="预报起报批次，UTC")
     layer: LayerType
     observed_at: str = Field(description="数据观测时间，非请求时间")
     unit: str | None

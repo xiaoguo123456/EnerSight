@@ -1,6 +1,7 @@
 import { Canvas, View, Text } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
+import { interpolateWind } from '@enersight/core/map'
 import type { WindVector } from '@enersight/core/types'
 
 /** 使用真实东西/南北风速驱动粒子；画面速度经过放大，供观察方向与相对强弱。 */
@@ -30,10 +31,7 @@ export function WindParticles({ vectors, region, layoutVersion }: { layoutVersio
       const cols = 24, rows = 32
       const field = Array.from({ length: cols * rows }, (_, k) => {
         const x = (k % cols) / (cols - 1) * w, y = Math.floor(k / cols) / (rows - 1) * h
-        const nearest = points.map((p) => ({ ...p, d: (p.x - x) ** 2 + (p.y - y) ** 2 })).sort((a, b) => a.d - b.d).slice(0, 4)
-        let u = 0, v = 0, weight = 0
-        nearest.forEach((p) => { const a = 1 / Math.max(p.d, 1); weight += a; u += p.u * a; v += p.v * a })
-        return { u: u / weight, v: v / weight }
+        return interpolateWind(points, x, y)
       })
       const particles = Array.from({ length: Math.min(180, Math.round(w * h / 1600)) }, () => ({ x: Math.random() * w, y: Math.random() * h, age: Math.random() * 80 }))
       const draw = () => {

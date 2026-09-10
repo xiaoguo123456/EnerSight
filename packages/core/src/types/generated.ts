@@ -937,6 +937,17 @@ export interface components {
         };
         /** LayerResponse */
         LayerResponse: {
+            /** Source */
+            source?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Resolution Km */
+            resolution_km?: number | null;
+            /**
+             * Run At
+             * @description 预报起报批次，UTC
+             */
+            run_at?: string | null;
             layer: components["schemas"]["LayerType"];
             /**
              * Observed At

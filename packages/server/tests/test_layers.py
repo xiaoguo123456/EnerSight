@@ -41,7 +41,39 @@ def _fresh(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def open_meteo():
+def open_meteo(monkeypatch):
+    from datetime import timedelta
+
+    import numpy as np
+
+    from app.render import hres
+
+    async def meta(_http):
+        now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+        return {
+            "reference_time": (now - timedelta(hours=6)).isoformat(),
+            "valid_times": [(now + timedelta(hours=i)).isoformat() for i in range(2)],
+        }
+
+    async def fetch(b, layer, m, valid):
+        fields = {
+            k: np.full(
+                (59, 59),
+                3
+                if k.startswith("wind_u")
+                else 0
+                if k.startswith("wind_v")
+                else 22
+                if layer == "temperature"
+                else 500,
+                dtype=float,
+            )
+            for k in hres.FIELDS[layer]
+        }
+        return hres.Frame(b, m["reference_time"], valid.isoformat(), fields, 0)
+
+    monkeypatch.setattr(hres, "metadata", meta)
+    monkeypatch.setattr(hres, "fetch", fetch)
     with respx.mock(assert_all_called=False) as mock:
         yield mock.get(url__regex=r".*open-meteo.*").mock(
             return_value=Response(200, json=_grid_response(grid.N * grid.N))
@@ -87,7 +119,9 @@ class TestApi:
         )
         assert response.status_code == 200
         image = response.json()["data"]["frames"][0]["images"][0]
-        assert image["url"].startswith("https://platform.qhzhiyin.com/enersight/tiles/radiation/")
+        assert image["url"].startswith(
+            "https://platform.qhzhiyin.com/enersight/tiles/hres-v1-radiation/"
+        )
 
     async def test_返回块与图例并落盘(self, client: AsyncClient, open_meteo):
         r = await client.get(
@@ -101,7 +135,7 @@ class TestApi:
         assert len(d["frames"]) == 1
         imgs = d["frames"][0]["images"]
         assert len(imgs) == 1  # bbox 落在单块内
-        assert imgs[0]["url"].startswith("http://test/tiles/radiation/")
+        assert imgs[0]["url"].startswith("http://test/tiles/hres-v1-radiation/")
         # bounds 是块边界（对齐后），不是请求 bbox；且已转 GCJ-02（有偏移）
         sw = imgs[0]["bounds"]["sw"]
         assert abs(sw["latitude"] - 28.0) < 0.01 and sw["latitude"] != 28.0
@@ -113,7 +147,7 @@ class TestApi:
     async def test_同块只回源一次(self, client: AsyncClient, open_meteo):
         await client.get("/v1/map/layers/radiation", params={"bbox": "120.5,28.5,121.5,29.5"})
         await client.get("/v1/map/layers/temperature", params={"bbox": "120.5,28.5,121.5,29.5"})
-        assert open_meteo.call_count == 1  # 四个场同一次请求拉回
+        assert open_meteo.call_count == 0  # HRES 图层不再调用点预报 API
 
     async def test_云图图例无刻度有标签(self, client: AsyncClient, open_meteo):
         d = (
@@ -131,9 +165,7 @@ class TestApi:
     async def test_限流转冷却状态(self, client: AsyncClient):
         with respx.mock:
             respx.get(url__regex=r".*open-meteo.*").mock(return_value=Response(429))
-            r = await client.get(
-                "/v1/map/layers/radiation", params={"bbox": "120.5,28.5,121.5,29.5"}
-            )
+            r = await client.get("/v1/map/layers/cloud", params={"bbox": "120.5,28.5,121.5,29.5"})
         assert r.status_code == 429 and "冷却" in r.json()["error"]["message"]
 
 
@@ -150,7 +182,7 @@ async def test_大视野全覆盖而不是截断六块(client, open_meteo):
 async def test_风矢量遵循气象来向约定(client, open_meteo):
     response = await client.get("/v1/map/layers/wind", params={"bbox": "120.5,28.5,121.5,29.5"})
     vectors = response.json()["data"]["wind_vectors"]
-    assert len(vectors) == grid.N**2
+    assert len(vectors) == 25**2
     assert all(v["u"] == 3 and abs(v["v"]) < 0.001 for v in vectors)
 
 
@@ -158,15 +190,15 @@ async def test_限流冷却避免重复回源(client):
     with respx.mock as mock:
         route = mock.get(url__regex=r".*open-meteo.*").mock(return_value=Response(429))
         for box in ["120.5,28.5,121.5,29.5", "116.5,28.5,117.5,29.5"]:
-            response = await client.get("/v1/map/layers/wind", params={"bbox": box})
+            response = await client.get("/v1/map/layers/cloud", params={"bbox": box})
             assert response.status_code == 429
         assert route.call_count == 1
 
 
 async def test_重启缓存复用持久化网格(client, open_meteo):
-    await client.get("/v1/map/layers/wind", params={"bbox": "120.5,28.5,121.5,29.5"})
+    await client.get("/v1/map/layers/cloud", params={"bbox": "120.5,28.5,121.5,29.5"})
     grid.clear_cache()
-    await client.get("/v1/map/layers/temperature", params={"bbox": "120.5,28.5,121.5,29.5"})
+    await client.get("/v1/map/layers/cloud", params={"bbox": "120.5,28.5,121.5,29.5"})
     assert open_meteo.call_count == 1
 
 
@@ -177,11 +209,11 @@ async def test_放大视野仍有插值数值且无额外回源(client, open_met
     samples = response.json()["data"]["samples"]
     assert len(samples) == 9
     assert all(120.51 < p["longitude"] < 120.61 and 28.51 < p["latitude"] < 28.61 for p in samples)
-    assert all(20.5 <= p["value"] <= 20.6 for p in samples)
-    assert open_meteo.call_count == 1
+    assert all(p["value"] == 22 for p in samples)
+    assert open_meteo.call_count == 0
 
 
-async def test_地图内存磁盘和图片按模型隔离(client, open_meteo):
+async def test_HRES地图固定模型不受首页选择影响(client, open_meteo):
     paths = []
     for model in ["ecmwf_ifs", "gfs_global", "ecmwf_ifs"]:
         grid.clear_cache()
@@ -192,9 +224,8 @@ async def test_地图内存磁盘和图片按模型隔离(client, open_meteo):
         )
         assert r.status_code == 200
         paths.append(r.json()["data"]["frames"][0]["images"][0]["url"])
-    assert paths[0] == paths[2] and paths[0] != paths[1]
-    assert open_meteo.call_count == 2
-    assert {c.request.url.params["models"] for c in open_meteo.calls} == {"ecmwf_ifs", "gfs_global"}
+    assert paths[0] == paths[2] == paths[1]
+    assert open_meteo.call_count == 0
 
 
 async def test_云图部分块拿不到卫星时整层退回预报(client, open_meteo, monkeypatch):

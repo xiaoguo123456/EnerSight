@@ -807,3 +807,6 @@ export function createClient(adapter: HttpAdapter, opts: ClientOptions): ApiClie
 | 2 | 预警是否需要订阅推送（微信订阅消息） | 需增加订阅管理接口 |
 | 3 | 「我的」页面需求未定 | 用户配置类接口未设计 |
 | 4 | 7 天趋势的采样粒度（逐日还是逐 3 小时） | 影响 `TrendSeries` 的点数 |
+
+图层补充可选 `source`、`model`、`resolution_km`、`run_at` 元数据。HRES 图层的
+`observed_at` 表示预报有效时刻（沿用兼容字段），并非实测时间；客户端显示「预报」。

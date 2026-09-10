@@ -252,7 +252,7 @@ export default function MapPage() {
 
         <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>
         <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
-        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.stale ? "缓存预报 · " : ""}${overlay.isPreview ? "预览图层" : "图层"} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text></View>}
+        {dataLayer && <View className="map-page__data-state" onClick={() => void overlay.refresh()}><Text>{overlay.loading ? '图层加载中' : overlay.error ? `${overlay.errorMessage} · 点击重试` : overlay.observedAt ? ` ${overlay.stale ? "缓存预报 · " : ""}${overlay.sourceLabel || (overlay.isPreview ? "预览图层" : "图层")} ${formatBeijingTime(overlay.observedAt)}（北京时间）` : '等待图层数据'}</Text>{!overlay.loading && !overlay.error && overlay.attribution && <View><Text>{overlay.attribution}</Text></View>}</View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>

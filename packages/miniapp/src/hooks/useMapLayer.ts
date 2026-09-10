@@ -13,6 +13,8 @@ type Preview = { id: number; images: { url: string; style: Record<string, string
 export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean) {
   const model = useWeatherModel(s => s.model)
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
+  const [attribution, setAttribution] = useState('')
+  const [sourceLabel, setSourceLabel] = useState('')
   const [observedAt, setObservedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -39,7 +41,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       try { void Promise.resolve(ctx.removeGroundOverlay({ id })).catch(() => undefined) } catch { /* 已移除 */ }
     }
     overlayIds.current = []
-    setLegend(null); setObservedAt(null)
+    setLegend(null); setObservedAt(null); setSourceLabel(''); setAttribution('')
   }, [mapId])
   const invalidate = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); ++seq.current; clear(); setLoading(false) }, [clear])
   const fail = useCallback((id: number, message: string) => {
@@ -53,6 +55,8 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     if (timer.current) clearTimeout(timer.current)
     pending.current = null
     setStale(!!response.stale)
+    setAttribution(response.source || '')
+    setSourceLabel(response.model ? `${response.model} · ${response.resolution_km} km 预报` : '')
     const region = regionRef.current
     if (region && response.samples?.length) {
       const merc = (lat: number) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))
@@ -123,5 +127,5 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   useEffect(() => { void refresh(); return invalidate }, [refresh, invalidate])
-  return { samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
+  return { attribution, sourceLabel, samples, wind, stale, legend, observedAt, refresh, loading, error, errorMessage, preview, isPreview, imageLoaded, imageError: fail, invalidate }
 }

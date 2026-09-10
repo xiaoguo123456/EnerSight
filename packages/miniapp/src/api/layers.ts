@@ -7,9 +7,9 @@ const cache = new Map<string, { until: number; value: Promise<LayerResponse> }>(
 let cooldown = 0
 export const layersApi = {
   get: (layer: LayerType, bbox: BBox, zoom: number) => {
-    const model = useWeatherModel.getState().model
-    const span = Math.max(4, Math.ceil(Math.max(bbox.east - bbox.west, bbox.north - bbox.south) / 4) * 4)
-    const key = [model, layer, span, Math.floor(bbox.west / span), Math.floor(bbox.south / span), Math.ceil(bbox.east / span), Math.ceil(bbox.north / span)].join(':')
+    const model = layer === 'cloud' ? useWeatherModel.getState().model : 'ecmwf_ifs'
+    // 返回的数值标注与风矢量绑定视野；图片本身由后端量化缓存。
+    const key = [model, layer, zoom, bbox.west, bbox.south, bbox.east, bbox.north].join(':')
     const hit = cache.get(key)
     if (hit && hit.until > Date.now()) return hit.value
     if (Date.now() < cooldown) return Promise.reject(new Error('气象服务冷却中，请约一分钟后重试'))
