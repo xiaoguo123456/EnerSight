@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     # 报告预生成：一任务一会话，并发上限还会被 db_pool_size 夹一次
     reports_batch_size: int = 100
     reports_concurrency: int = 2
+    # 全目录汇总：一次请求带几个坐标（Open-Meteo 支持逗号分隔的多坐标）。
+    # 只省 HTTP 往返，不省额度 —— 实测限流按坐标数计，429 精确落在第 600 个坐标
+    fleet_coords_per_request: int = 100
+    # 因此要按坐标限速。上限 600/分钟，留两成余量给站点预报与元数据（同一个 IP 共享）
+    fleet_coords_per_minute: int = 480
     # 自建站点每用户上限。docs/17 §一
     max_stations_per_user: int = 10
     # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二

@@ -163,6 +163,9 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
   算与写分得开就「算并发写串行」（`services/accumulate`），分不开就「一任务一会话」
   （`generate_reports`，并发上限受 `db_pool_size` 约束）。取站点一律用
   `db.pages` / `db.id_pages` 分批，不要 `select(Station)` 全表 `.all()`
+- ❌ 以为多坐标请求能省 Open-Meteo 额度 —— 限流按**坐标数**计（实测 429 精确落在
+  第 600 个坐标），批次大小只省 HTTP 往返。要控的是坐标速率
+  （`fleet_coords_per_minute`），且限额按 IP 与其他调用共享
 - ❌ 把 `minutely_15` 混进主请求 —— 只有单站 7 天预测要它，混进去等于让每次后台扫描
   都为它付权重。走 `get_forecast(..., fine=True)`
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）

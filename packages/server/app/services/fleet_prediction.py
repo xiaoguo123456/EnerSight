@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import time
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -38,6 +39,25 @@ FIELDS = [
     "diffuse_radiation",
     "surface_pressure",
 ]
+
+
+class Pacer:
+    """按坐标数限速的漏桶。
+
+    Open-Meteo 的 600 次/分钟是**按坐标计**的：实测一分钟内推到第 600 个坐标就返回
+    429，与分成几次请求无关。多坐标请求只省 HTTP 往返，不省额度。限额还按 IP 算，
+    站点预报与元数据共用同一份，所以这里留两成余量。
+    """
+
+    def __init__(self, per_minute: int) -> None:
+        self._cost = 60.0 / max(1, per_minute)
+        self._next = 0.0
+
+    async def take(self, n: int) -> None:
+        now = time.monotonic()
+        if self._next > now:
+            await asyncio.sleep(self._next - now)
+        self._next = max(now, self._next) + n * self._cost
 
 
 def directory() -> Path:
@@ -162,9 +182,7 @@ def calculate_cell(plants, raw, model, day):
             curves[key] = per_day
         per_day = curves[key]
         if per_day[0] is not None:
-            results.append(
-                (p, [c * p.capacity_kw if c is not None else None for c in per_day])
-            )
+            results.append((p, [c * p.capacity_kw if c is not None else None for c in per_day]))
     return results
 
 
@@ -252,13 +270,16 @@ async def build(http, model: str, day: str, plants) -> None:
         write(path, out.model_dump())
 
     publish()
-    for start in range(0, len(keys), 25):
+    per_request = settings.fleet_coords_per_request
+    pacer = Pacer(settings.fleet_coords_per_minute)
+    for start in range(0, len(keys), per_request):
         if day != day_key():
             out.message = "统计日期已变化，请刷新"
             break
-        batch = keys[start : start + 25]
+        batch = keys[start : start + per_request]
         missing = [k for k in batch if f"{k[0]},{k[1]}" not in raw_cache]
         if missing:
+            await pacer.take(len(missing))  # 只为真正出网的坐标付时间
             try:
                 r = await http.get(
                     f"{settings.open_meteo_base}/forecast",
@@ -321,7 +342,6 @@ async def build(http, model: str, day: str, plants) -> None:
         publish()
         if stop:
             break
-        await asyncio.sleep(0.4)
     out.failed_count = out.eligible_count - out.covered_count
     # 「算完了」与「覆盖了整个目录」是两件事。重复、字段非法、容量口径未核验的场站
     # 被主动排除，永远不会进入 covered，拿 total_count 判断会让状态永远停在 partial。
