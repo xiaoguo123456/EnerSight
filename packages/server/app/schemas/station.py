@@ -1,8 +1,43 @@
 """站点接口的请求与响应。docs/06 §五"""
 
-from pydantic import BaseModel, Field, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import Coord, StationStatus, StationType
+
+
+class CurtailmentWindow(BaseModel):
+    """分时段出力上限。end_hour 不含；start >= end 表示跨零点。weekdays 为 ISO 1–7，空为每天。"""
+
+    start_hour: int = Field(ge=0, le=23)
+    end_hour: int = Field(ge=0, le=24)
+    limit_percent: float = Field(ge=0, le=100, description="时段内出力上限，装机容量的百分比")
+    weekdays: list[int] = Field(default_factory=list)
+
+    @field_validator("weekdays")
+    @classmethod
+    def _weekdays(cls, v: list[int]) -> list[int]:
+        out = sorted(set(v))
+        if any(d < 1 or d > 7 for d in out):
+            raise ValueError("weekdays 取 1–7（周一到周日）")
+        return out
+
+
+class CurtailmentRule(BaseModel):
+    """场站级出力约束（限电 / 检修），两种写法二选一。docs/17 §四"""
+
+    mode: Literal["ratio", "schedule"]
+    ratio_percent: float | None = Field(default=None, gt=0, le=100, description="固定限电比例")
+    windows: list[CurtailmentWindow] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def _shape(self) -> "CurtailmentRule":
+        if self.mode == "ratio" and self.ratio_percent is None:
+            raise ValueError("ratio 模式需要 ratio_percent")
+        if self.mode == "schedule" and not self.windows:
+            raise ValueError("schedule 模式至少一条时段")
+        return self
 
 
 class StationMetrics(BaseModel):
@@ -16,11 +51,18 @@ class StationMetrics(BaseModel):
     current_power: float | None = Field(description="kW")
     total_generation: float | None = Field(description="kWh")
     co2_reduction: float | None = Field(description="kg")
+    grid_generation: float | None = Field(
+        description="kWh 今日预计上网，计入出力约束；无规则为 null。docs/17 §四"
+    )
 
     @classmethod
     def empty(cls) -> "StationMetrics":
         return cls(
-            daily_generation=None, current_power=None, total_generation=None, co2_reduction=None
+            daily_generation=None,
+            current_power=None,
+            total_generation=None,
+            co2_reduction=None,
+            grid_generation=None,
         )
 
 
@@ -44,6 +86,8 @@ class StationSummary(BaseModel):
     address: str | None
     image: str | None
     metrics: StationMetrics
+    is_own: bool = Field(description="True 为本账号自建站点，可编辑删除；目录电站为 False")
+    curtailment: CurtailmentRule | None = Field(description="出力约束，目录电站与未设置时为 null")
     source: str | None = None
     original_name: str | None = None
     local_name: str | None = None
@@ -76,7 +120,7 @@ class PublicStationListResponse(StationListResponse):
 
 class CreateStationRequest(BaseModel):
     """两种建法：给 catalog_id 从公开电站目录复制（其余字段可省，给了则覆盖）；
-    或者不给 catalog_id、把五个必填字段都给全（API 保留，小程序 V1 不提供自建入口）。"""
+    或者不给 catalog_id、把五个必填字段都给全（自建，docs/17 §一）。"""
 
     catalog_id: str | None = Field(default=None, max_length=24)
     name: str | None = Field(default=None, min_length=1, max_length=64)
@@ -90,6 +134,7 @@ class CreateStationRequest(BaseModel):
     tilt: float | None = Field(default=None, ge=0, le=90)
     azimuth: float | None = Field(default=None, ge=0, le=360)
     hub_height: float | None = Field(default=None, gt=0, le=200)
+    curtailment: CurtailmentRule | None = None
 
     @field_validator("name")
     @classmethod
@@ -115,3 +160,5 @@ class UpdateStationRequest(BaseModel):
     tilt: float | None = Field(default=None, ge=0, le=90)
     azimuth: float | None = Field(default=None, ge=0, le=360)
     hub_height: float | None = Field(default=None, gt=0, le=200)
+    # 传 null 清除规则；不传保持不变
+    curtailment: CurtailmentRule | None = None

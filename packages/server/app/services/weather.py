@@ -4,8 +4,8 @@
 不各自去调 Open-Meteo。
 """
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -13,18 +13,43 @@ import pandas as pd
 
 from app.cache import AsyncTTLCache, grid_key
 from app.config import settings
-from app.providers.open_meteo import OpenMeteoProvider
+from app.providers.open_meteo import ModelMeta, OpenMeteoProvider
+from app.schemas.prediction import ForecastBasis
 from app.weather_model import current_model
 
 _cache = AsyncTTLCache(maxsize=2048, ttl_seconds=settings.ttl_current_weather)
+_meta_cache = AsyncTTLCache(maxsize=16, ttl_seconds=settings.ttl_model_meta)
 
 
 @dataclass(frozen=True)
 class Forecast:
-    """逐小时预报，昨日 00:00 起共 192 点（昨日 + 7 天），索引为站点当地时区的 tz-aware 时间。"""
+    """逐小时预报，昨日 00:00 起共 192 点（昨日 + 7 天），索引为站点当地时区的 tz-aware 时间。
+
+    model / meta / fetched_at 说明这份数据来自哪一批模型输出（docs/17 §二）。
+    meta 为 None 表示无法确认起报，basis() 里 issued_at 为 null。
+    """
 
     tz: str
     hourly: pd.DataFrame
+    model: str = "best_match"
+    meta: ModelMeta | None = field(default=None, compare=False)
+    fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC), compare=False)
+
+    def basis(self) -> ForecastBasis:
+        from app.services.model_resolution import resolve
+
+        tz = ZoneInfo(self.tz)
+        return ForecastBasis(
+            model=self.model,
+            resolved_model=self.meta.slug if self.meta else resolve(self.model),
+            issued_at=self.meta.issued_at.astimezone(tz).isoformat() if self.meta else None,
+            available_at=(
+                self.meta.available_at.astimezone(tz).isoformat()
+                if self.meta and self.meta.available_at
+                else None
+            ),
+            fetched_at=self.fetched_at.astimezone(tz).isoformat(),
+        )
 
     def now(self) -> datetime:
         return datetime.now(ZoneInfo(self.tz))
@@ -69,24 +94,49 @@ class Forecast:
             return None
 
 
-def parse_forecast(raw: dict) -> Forecast:
+def parse_forecast(
+    raw: dict, *, model: str | None = None, meta: ModelMeta | None = None
+) -> Forecast:
     tz = raw["timezone"]
     h = raw["hourly"]
     idx = pd.DatetimeIndex(pd.to_datetime(h["time"])).tz_localize(tz)
     df = pd.DataFrame({k: v for k, v in h.items() if k != "time"}, index=idx)
-    return Forecast(tz=tz, hourly=df)
+    return Forecast(tz=tz, hourly=df, model=model or current_model.get(), meta=meta)
+
+
+async def get_model_meta(http: httpx.AsyncClient, model: str) -> ModelMeta | None:
+    """模型元数据，全局缓存几分钟，不按站点。无法解析到具体模型时为 None。"""
+    from app.services.model_resolution import resolve
+
+    slug = resolve(model)
+    if slug is None:
+        return None
+
+    async def _load() -> ModelMeta | object:
+        meta = await OpenMeteoProvider(http).model_meta(slug)
+        return meta if meta is not None else _MISSING
+
+    value = await _meta_cache.get_or_load(slug, _load)
+    return value if isinstance(value, ModelMeta) else None
+
+
+_MISSING = object()  # 缓存里的「拿过但没拿到」，避免每次请求都重打元数据接口
 
 
 async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: float) -> Forecast:
     """按 0.1° 网格缓存 10 分钟。相邻站点命中同一份。"""
-    key = f"{current_model.get()}:{grid_key(latitude, longitude)}"
+    model = current_model.get()
+    key = f"{model}:{grid_key(latitude, longitude)}"
 
     async def _load() -> Forecast:
+        # 先取元数据再取预报：两次调用之间若有新批次落地，元数据只会偏旧，不会冒充更新
+        meta = await get_model_meta(http, model)
         raw = await OpenMeteoProvider(http).forecast(latitude, longitude)
-        return parse_forecast(raw)
+        return parse_forecast(raw, model=model, meta=meta)
 
     return await _cache.get_or_load(key, _load)
 
 
 def clear_cache() -> None:
     _cache.clear()
+    _meta_cache.clear()

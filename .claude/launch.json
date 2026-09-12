@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["ENERSIGHT_DEBUG=true", "uv", "run", "--directory", "packages/server", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "h5",
+      "url": "http://127.0.0.1:4173"
+    }
+  ]
+}

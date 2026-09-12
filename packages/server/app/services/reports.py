@@ -73,7 +73,16 @@ async def generate_and_store(
     note = (
         f"{v.snapshot.blocked}，发电量按目录申报容量估算，仅供参考" if v.snapshot.blocked else None
     )
-    inp = build_input(station, v.forecast, v.snapshot.index, v.snapshot.daily_kwh, alert, note)
+    inp = build_input(
+        station,
+        v.forecast,
+        v.snapshot.index,
+        v.snapshot.daily_kwh,
+        alert,
+        note,
+        grid_kwh=None if v.snapshot.blocked else v.snapshot.grid_kwh,
+        curtailment_note=v.snapshot.curtailment_note,
+    )
 
     gen = await ai.generate(inp)
     content = gen.report.model_dump()

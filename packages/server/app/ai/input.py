@@ -49,6 +49,9 @@ class ReportInput:
     equivalent_hours: float
     numbers: set[str] = field(default_factory=set)
     capacity_note: str | None = None  # 目录容量口径待核验时的说明
+    # 计入出力约束后的预计上网电量与说明；没有规则为 None。模型只解释，不做差值。docs/17 §四
+    grid_kwh: float | None = None
+    curtailment_note: str | None = None
 
     def render(self) -> str:
         lines = [
@@ -75,6 +78,10 @@ class ReportInput:
             "",
             f"估算：日发电 {self.daily_kwh:,.0f} kWh，等效利用 {self.equivalent_hours:.1f} 小时",
         ]
+        if self.grid_kwh is not None:
+            lines.append(
+                f"预计上网 {self.grid_kwh:,.0f} kWh（{self.curtailment_note or '计入出力约束'}）"
+            )
         if self.capacity_note:
             lines.append(f"注：{self.capacity_note}")
         return "\n".join(lines)
@@ -104,6 +111,8 @@ def build_input(
     daily_kwh: float,
     alert: AlertSummary | None,
     capacity_note: str | None = None,
+    grid_kwh: float | None = None,
+    curtailment_note: str | None = None,
 ) -> ReportInput:
     day = fc.current_hour().normalize()
     periods = []
@@ -139,6 +148,8 @@ def build_input(
         daily_kwh=daily_kwh,
         equivalent_hours=daily_kwh / station.capacity_kw if station.capacity_kw else 0.0,
         capacity_note=capacity_note,
+        grid_kwh=grid_kwh,
+        curtailment_note=curtailment_note,
     )
     inp.numbers = extract_numbers(inp.render())
     return inp

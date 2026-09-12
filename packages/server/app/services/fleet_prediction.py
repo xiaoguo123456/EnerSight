@@ -5,11 +5,12 @@ import json
 import logging
 import math
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import numpy as np
+import pandas as pd
 from sqlalchemy import select
 
 from app.config import settings
@@ -17,7 +18,7 @@ from app.db import SessionLocal
 from app.metrics import wind
 from app.models import CatalogPlant, Station
 from app.render import tiles
-from app.schemas.prediction import FleetPrediction, PowerPoint, RegionPrediction
+from app.schemas.prediction import FleetDay, FleetPrediction, PowerPoint, RegionPrediction
 from app.services import prediction, weather
 from app.services.prediction_basis import catalog_basis, version_for_day
 from app.weather_model import MODELS
@@ -61,6 +62,10 @@ def load(path: Path) -> dict | None:
         return None
 
 
+def days_count() -> int:
+    return settings.forecast_outlook_days
+
+
 def blank(model: str, day: str) -> FleetPrediction:
     return FleetPrediction(
         model=model,
@@ -71,6 +76,7 @@ def blank(model: str, day: str) -> FleetPrediction:
         status="queued",
         assumptions=[
             "区域近似：1°气象网格，按场站容量与能源类型估算",
+            f"未来 {days_count()} 天同一批气象数据；第 4–7 天为中期预报，参考为主",
             f"已区分分期交直流容量，容配比假设 {settings.pv_dc_ac_ratio:g}、"
             f"系统损耗 {settings.pv_losses:.0%}（含逆变器）并按交流容量限幅；"
             "未知容量类型不计入预测",
@@ -118,10 +124,12 @@ def cell(p):
 
 
 def calculate_cell(plants, raw, model, day):
-    fc = weather.parse_forecast(raw)
+    """一个 1° 网格内全部场站的未来 N 天单位容量曲线。返回 [(plant, [day0, day1, …])]，
+    某天不可算时该位为 None；今日不可算的场站不计入覆盖。"""
+    fc = weather.parse_forecast(raw, model=model)
     if fc.current_hour().date().isoformat() != day:
         raise ValueError("统计日期已变化")
-    curves = {}
+    curves: dict[tuple, list[np.ndarray | None]] = {}
     results = []
     lat, lon = cell(plants[0])
     for p in plants:
@@ -142,15 +150,20 @@ def calculate_cell(plants, raw, model, day):
                 hub_height=hub,
             )
             st._pv_capacity = (dc_ratio, ac_ratio)
-            out = prediction.compute(st, fc, model)
-            curves[key] = (
-                np.array([v.value for v in out.power_kw], dtype=float)
-                if out.energy_kwh is not None
-                else None
+            per_day: list[np.ndarray | None] = []
+            for k in range(days_count()):
+                out = prediction.compute(st, fc, model, day_offset=k)
+                per_day.append(
+                    np.array([v.value for v in out.power_kw], dtype=float)
+                    if out.energy_kwh is not None
+                    else None
+                )
+            curves[key] = per_day
+        per_day = curves[key]
+        if per_day[0] is not None:
+            results.append(
+                (p, [c * p.capacity_kw if c is not None else None for c in per_day])
             )
-        curve = curves[key]
-        if curve is not None:
-            results.append((p, curve * p.capacity_kw))
     return results
 
 
@@ -181,9 +194,17 @@ async def build(http, model: str, day: str, plants) -> None:
         groups[cell(p)].append(p)
     # 容量大的区域先计算，优先提高覆盖容量。
     keys = sorted(groups, key=lambda k: sum(p.capacity_kw for p in groups[k]), reverse=True)
-    total = np.zeros(24)
-    regions = {}
+    n_days = days_count()
+    dates = [(date.fromisoformat(day) + timedelta(days=k)).isoformat() for k in range(n_days)]
+    total = np.zeros((n_days, 24))
+    solar_kwh = np.zeros(n_days)
+    wind_kwh = np.zeros(n_days)
+    covered_days = np.zeros(n_days, dtype=int)
+    regions: list[dict[str, list]] = [{} for _ in range(n_days)]
     covered = set()
+    # 起报与拉取时刻：批量请求没有逐格元数据，按模型取一次
+    meta = await weather.get_model_meta(http, model)
+    out.basis = weather.Forecast(tz=TZ, hourly=pd.DataFrame(), model=model, meta=meta).basis()
     cache_path = directory() / f"{model}-{day}-weather.json"
     saved = load(cache_path) or {}
     if saved.get("saved_at", 0) < datetime.now(UTC).timestamp() - 43200:
@@ -192,20 +213,40 @@ async def build(http, model: str, day: str, plants) -> None:
     stop = False
     out.status = "building"
 
+    def region_list(k: int) -> list[RegionPrediction]:
+        return [
+            RegionPrediction(province=name, energy_kwh=v[0], covered_count=v[1])
+            for name, v in sorted(regions[k].items(), key=lambda item: item[1][0], reverse=True)
+        ]
+
+    def points(k: int) -> list[PowerPoint]:
+        if not covered_days[k]:
+            return []
+        return [
+            PowerPoint(time=f"{dates[k]}T{h:02d}:00:00+08:00", value=float(v))
+            for h, v in enumerate(total[k])
+        ]
+
     def publish():
         out.generated_at = datetime.now(UTC).isoformat()
-        out.energy_kwh = float(total.sum()) if out.covered_count else None
-        out.power_kw = (
-            [
-                PowerPoint(time=f"{day}T{h:02d}:00:00+08:00", value=float(v))
-                for h, v in enumerate(total)
-            ]
-            if out.covered_count
-            else []
-        )
-        out.regions = [
-            RegionPrediction(province=k, energy_kwh=v[0], covered_count=v[1])
-            for k, v in sorted(regions.items(), key=lambda item: item[1][0], reverse=True)
+        # 顶层字段始终是今日，与历史留档兼容；未来各天在 days 里。docs/17 §二
+        out.energy_kwh = float(total[0].sum()) if out.covered_count else None
+        out.solar_kwh = float(solar_kwh[0])
+        out.wind_kwh = float(wind_kwh[0])
+        out.power_kw = points(0)
+        out.regions = region_list(0)
+        out.days = [
+            FleetDay(
+                date=dates[k],
+                weekday=date.fromisoformat(dates[k]).isoweekday(),
+                lead_days=k,
+                energy_kwh=float(total[k].sum()) if covered_days[k] else None,
+                solar_kwh=float(solar_kwh[k]),
+                wind_kwh=float(wind_kwh[k]),
+                power_kw=points(k),
+                regions=region_list(k),
+            )
+            for k in range(n_days)
         ]
         write(path, out.model_dump())
 
@@ -226,7 +267,7 @@ async def build(http, model: str, day: str, plants) -> None:
                         "models": model,
                         "hourly": ",".join(FIELDS),
                         "timezone": TZ,
-                        "forecast_days": 2,
+                        "forecast_days": n_days,
                         "wind_speed_unit": "ms",
                     },
                     timeout=40,
@@ -257,21 +298,25 @@ async def build(http, model: str, day: str, plants) -> None:
             except Exception:
                 log.warning("fleet cell failed: %s %s", model, key, exc_info=True)
                 continue
-            for p, curve in results:
+            for p, per_day in results:
                 if p.id in covered:
                     continue
                 covered.add(p.id)
-                total += curve
                 out.covered_count += 1
                 out.covered_capacity_kw += p.capacity_kw
-                energy = float(curve.sum())
-                if p.type == "solar":
-                    out.solar_kwh += energy
-                else:
-                    out.wind_kwh += energy
-                region = regions.setdefault(p.province or "地区待补充", [0.0, 0])
-                region[0] += energy
-                region[1] += 1
+                for k, curve in enumerate(per_day):
+                    if curve is None:
+                        continue
+                    total[k] += curve
+                    covered_days[k] += 1
+                    energy = float(curve.sum())
+                    if p.type == "solar":
+                        solar_kwh[k] += energy
+                    else:
+                        wind_kwh[k] += energy
+                    region = regions[k].setdefault(p.province or "地区待补充", [0.0, 0])
+                    region[0] += energy
+                    region[1] += 1
         publish()
         if stop:
             break
@@ -291,6 +336,7 @@ async def build(http, model: str, day: str, plants) -> None:
     from app.services import fleet_history
 
     fleet_history.capture(out.model_dump(), version_for_day(day))
+    fleet_history.capture_leads(out.model_dump())
     # 留两天快照，清理旧天气文件，避免磁盘长期增长。
     for old in directory().glob("*.json"):
         if old.stat().st_mtime < datetime.now(UTC).timestamp() - 172800:

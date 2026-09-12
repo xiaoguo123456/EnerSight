@@ -9,6 +9,7 @@
 - backfill_address       每小时      给缺地址的站点补逆地理编码
 - fleet_prediction       每日 0/12 点 预热全目录汇总
 - fleet_history          每 10 分钟   归档全目录日快照
+- model_resolution       每日一次    复核自动选择模型是否仍等于 ECMWF IFS（docs/17 §二）
 """
 
 import asyncio
@@ -307,6 +308,19 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         "interval",
         minutes=10,
         id="fleet_history",
+        max_instances=1,
+        coalesce=True,
+    )
+    from app.services import model_resolution
+
+    async def check_model():
+        await model_resolution.check(app.state.http)
+
+    sched.add_job(
+        check_model,
+        CronTrigger(hour=1, minute=0),
+        id="model_resolution",
+        next_run_time=datetime.now(UTC) + timedelta(seconds=30),
         max_instances=1,
         coalesce=True,
     )

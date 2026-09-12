@@ -22,6 +22,8 @@ class DailyGeneration(Base):
     kwh: Mapped[float] = mapped_column(Float)
     # 最近一次任务运行时的即时功率（kW），列表页展示用；日终后无意义
     current_kw: Mapped[float | None] = mapped_column(Float, default=None)
+    # 计入场站出力约束后的限电损失（kWh）；kwh 仍是可发电量。无规则为 None。docs/17 §四
+    curtailed_kwh: Mapped[float | None] = mapped_column(Float, default=None)
     # 来源：forecast 推算 / measured 实测。实测优先
     source: Mapped[str] = mapped_column(String(16), default="forecast")
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

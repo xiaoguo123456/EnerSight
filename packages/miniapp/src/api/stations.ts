@@ -3,14 +3,22 @@
  * 类型全部来自 codegen，不手写。
  */
 import type {
-  CreateStationRequest, PublicStationListResponse, StationSummary, StationType,
-  UpdateStationRequest,
+  CreateStationRequest, PublicStationListResponse, StationListResponse, StationOutlook,
+  StationSummary, StationType, UpdateStationRequest,
 } from '@enersight/core/types'
 import { api } from './index'
 
 export const stationsApi = {
   list: (params?: { type?: StationType; keyword?: string; limit?: number; offset?: number; province?: string; sort?: 'capacity' | 'name' }) =>
     api.get<PublicStationListResponse>('/v1/stations/public', params),
+
+  /** 本账号自建站点。docs/17 §一 */
+  mine: (type?: StationType) =>
+    api.get<StationListResponse>('/v1/stations', type ? { type } : undefined),
+
+  /** 未来 7 天逐日预测，首页懒加载。docs/17 §二 */
+  outlook: (stationId: string, days = 7) =>
+    api.get<StationOutlook>('/v1/predictions/station', { station_id: stationId, days }),
 
   create: (body: CreateStationRequest) =>
     api.post<StationSummary>('/v1/stations', body),

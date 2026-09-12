@@ -44,6 +44,7 @@ class TestCreate:
             "current_power": None,
             "total_generation": None,
             "co2_reduction": None,
+            "grid_generation": None,
         }
 
     async def test_默认坐标系存储与返回一致(self, client: AsyncClient):

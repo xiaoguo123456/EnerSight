@@ -8,7 +8,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from app.schemas.common import AlertLevel, EnergyIndex, MetricWithDelta
-from app.schemas.prediction import GenerationPrediction
+from app.schemas.prediction import ForecastBasis, GenerationPrediction
 from app.schemas.station import StationSummary
 
 
@@ -76,6 +76,7 @@ class StationDetailResponse(BaseModel):
     index: EnergyIndex | None
     trends: TrendSeries | None
     updated_at: str = Field(description="「数据更新时间」，取气象观测时刻")
+    basis: ForecastBasis | None = Field(description="气象批次：模型、起报、拉取时刻")
 
 
 class MapOverviewResponse(BaseModel):

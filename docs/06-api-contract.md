@@ -255,13 +255,29 @@ interface StationSummary {
   address: string | null
   image: string | null
   metrics: StationMetrics
+  is_own: boolean                    // 本账号自建，可编辑删除；目录电站为 false
+  curtailment: CurtailmentRule | null // 出力约束，目录电站与未设置为 null（17 §四）
 }
 
 interface StationMetrics {
-  daily_generation: number | null    // kWh 今日发电
+  daily_generation: number | null    // kWh 今日可发电量
   current_power: number | null       // kW  实时功率
   total_generation: number | null    // kWh 累计发电
   co2_reduction: number | null       // kg  减排量
+  grid_generation: number | null     // kWh 今日预计上网，计入出力约束；无规则为 null
+}
+
+interface CurtailmentRule {
+  mode: "ratio" | "schedule"
+  ratio_percent: number | null       // ratio：全天出力 × (1 − ratio_percent / 100)
+  windows: CurtailmentWindow[]       // schedule：至少一条，最多 12 条
+}
+
+interface CurtailmentWindow {
+  start_hour: number                 // 0–23
+  end_hour: number                   // 0–24，不含；start >= end 表示跨零点
+  limit_percent: number              // 时段内出力上限，装机容量的百分比，0 为停机
+  weekdays: number[]                 // ISO 1–7，空为每天
 }
 ```
 
@@ -293,11 +309,13 @@ interface CreateStationRequest {
   tilt?: number              // 光伏倾角（°），默认 |latitude|
   azimuth?: number           // 光伏方位角（°），默认 180
   hub_height?: number        // 风机轮毂高度（m），默认按容量估算
+  curtailment?: CurtailmentRule | null  // 出力约束，PATCH 传 null 清除、不传保持
 }
 ```
 
 服务端行为：
 
+- 自建（不给 `catalog_id`）受每用户上限约束，超出返回 `400 STATION_LIMIT`
 - 给了 `catalog_id`：名称取中文名、类型 / 坐标 / 容量 / 省市区取目录值；同一用户重复添加
   同一座返回已有站点（幂等，仍是 201）；目录里没有返回 `404 CATALOG_NOT_FOUND`
 - 没给 `catalog_id` 且缺必填字段：`400 INVALID_PARAM`
@@ -387,6 +405,7 @@ GET /v1/home?station_id={id}&coord=gcj02
 
 ```ts
 interface HomeResponse {
+  prediction: GenerationPrediction | null   // 今日；basis 带起报时刻，grid_* 为计入出力约束的口径
   has_station: boolean
   station: StationSummary | null
   index: EnergyIndex | null
@@ -397,6 +416,67 @@ interface HomeResponse {
 ```
 
 一个请求覆盖首页全部模块。快捷入口是静态配置，不走接口。
+
+
+---
+
+## 六-b、发电预测（2026-09-12）
+
+```
+GET /v1/predictions/station?station_id={id}&days=7&weather_model=best_match
+GET /v1/predictions/fleet?weather_model=best_match
+```
+
+```ts
+interface ForecastBasis {
+  model: string                     // 请求模型，best_match 即自动选择
+  resolved_model: string | null     // 实际落到的模型（元数据 slug），未能确认为 null
+  issued_at: string | null          // 模型起报，null = 无法确认，前端只显示 fetched_at
+  available_at: string | null
+  fetched_at: string
+}
+
+interface GenerationPrediction {
+  model: string; date: string; timezone: string; generated_at: string
+  energy_kwh: number | null         // 可发电量
+  power_kw: PowerPoint[]
+  grid_energy_kwh: number | null    // 计入出力约束后的上网电量；无规则一律 null
+  curtailed_kwh: number | null
+  grid_power_kw: PowerPoint[] | null
+  basis: ForecastBasis | null
+  assumptions: string[]
+}
+
+interface StationOutlook {           // 单站未来 7 天，首页懒加载
+  station_id: string; model: string; timezone: string; generated_at: string
+  basis: ForecastBasis | null
+  days: DailyOutlook[]
+  assumptions: string[]
+}
+
+interface DailyOutlook {
+  date: string; weekday: number; lead_days: number     // lead_days ≥ 3 为中期预报
+  energy_kwh: number | null; grid_energy_kwh: number | null; curtailed_kwh: number | null
+  index_score: number | null; index_level: IndexLevel | null   // 指数只反映气象，不受约束影响
+  weather_text: string | null        // 日间众数天气
+  peak_kw: number | null
+  power_kw: PowerPoint[]; grid_power_kw: PowerPoint[] | null
+}
+
+interface FleetPrediction extends GenerationPrediction {
+  // …原有覆盖统计字段不变，顶层仍是今日
+  days: FleetDay[]                   // 未来 7 天，days[0] 与顶层今日字段一致
+}
+
+interface FleetDay {
+  date: string; weekday: number; lead_days: number
+  energy_kwh: number | null; solar_kwh: number; wind_kwh: number
+  power_kw: PowerPoint[]; regions: RegionPrediction[]
+}
+```
+
+`days` 上限取 `forecast_outlook_days`（7）。两个接口都支持 `weather_model` 选择。
+口径见 [17 §二](./17-user-stations-and-outlook.md)。
 
 
 ---
@@ -803,9 +883,9 @@ export function createClient(adapter: HttpAdapter, opts: ClientOptions): ApiClie
 
 | # | 事项 | 影响 |
 | --- | --- | --- |
-| 1 | 站点是否支持多用户共享 | 影响 `STATION_FORBIDDEN` 的判定与站点归属模型 |
+| 1 | ~~站点是否支持多用户共享~~ 公开目录共享、自建站点按账号隔离（17 §一） | — |
 | 2 | 预警是否需要订阅推送（微信订阅消息） | 需增加订阅管理接口 |
-| 3 | 「我的」页面需求未定 | 用户配置类接口未设计 |
+| 3 | ~~「我的」页面需求未定~~ 已实现，不需要用户配置类接口（登录静默，不采集头像昵称） | — |
 | 4 | 7 天趋势的采样粒度（逐日还是逐 3 小时） | 影响 `TrendSeries` 的点数 |
 
 图层补充可选 `source`、`model`、`resolution_km`、`run_at` 元数据。HRES 图层的

@@ -12,3 +12,12 @@
 .mine__note { font-size: 12px; line-height: 1.7; color: var(--color-text-sub); text-align: center; }
 
 .mine__group-title { display: block; margin-bottom: 8px; font-size: 12px; color: #64748b; }
+
+// 「我的」身份块与分组说明。docs/17 §一
+.mine__identity { display: flex; align-items: center; gap: 14px; padding: 8px 0 12px; }
+.mine__avatar { width: 52px; height: 52px; border-radius: 50%; background: #eaf3ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mine__identity-text { flex: 1; min-width: 0; }
+.mine__brand { font-size: 18px; }
+.mine__description { margin-top: 4px; font-size: 12px; }
+.mine__group-note { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; color: var(--color-text-sub); }
+.mine__row .mine__row-value { max-width: 55%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

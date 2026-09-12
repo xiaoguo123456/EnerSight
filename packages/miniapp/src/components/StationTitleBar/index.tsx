@@ -9,6 +9,7 @@ interface Props {
   name: string
   status: StationStatus
   address: string
+  own?: boolean
   onSwitch?: () => void
 }
 
@@ -18,7 +19,7 @@ interface Props {
  * 不放品牌名 —— 用户已经在 app 里了，不需要反复被告知产品叫什么。
  * 这块黄金位置给用户真正关心的：我在看哪个站。
  */
-export function StationTitleBar({ name, status, address, onSwitch }: Props) {
+export function StationTitleBar({ name, status, address, own = false, onSwitch }: Props) {
   const safe = getSafeArea()
   return (
     <View
@@ -33,7 +34,7 @@ export function StationTitleBar({ name, status, address, onSwitch }: Props) {
         <Icon name="chevronDown" size={16} color="#6b7280" strokeWidth={1.75} />
       </View>
       <View className="station-title__sub">
-        <StatusBadge status={status} />
+        <StatusBadge status={status} own={own} />
         <Text className="station-title__addr">{address}</Text>
       </View>
     </View>

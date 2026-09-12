@@ -23,14 +23,29 @@ log = logging.getLogger(__name__)
 
 
 async def upsert_daily(
-    db: AsyncSession, station_id: str, day: date, kwh: float, current_kw: float | None
+    db: AsyncSession,
+    station_id: str,
+    day: date,
+    kwh: float,
+    current_kw: float | None,
+    curtailed_kwh: float | None = None,
 ) -> None:
     stmt = upsert_insert(db, DailyGeneration).values(
-        station_id=station_id, day=day, kwh=kwh, current_kw=current_kw, source="forecast"
+        station_id=station_id,
+        day=day,
+        kwh=kwh,
+        current_kw=current_kw,
+        curtailed_kwh=curtailed_kwh,
+        source="forecast",
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["station_id", "day"],
-        set_={"kwh": kwh, "current_kw": current_kw, "source": "forecast"},
+        set_={
+            "kwh": kwh,
+            "current_kw": current_kw,
+            "curtailed_kwh": curtailed_kwh,
+            "source": "forecast",
+        },
         # 实测值不被推算覆盖
         where=DailyGeneration.source != "measured",
     )
@@ -49,7 +64,9 @@ async def accumulate_station(
         return None
     today = fc.now().date()
     current = round(snap.current_kw, 1) if snap.current_kw is not None else None
-    await upsert_daily(db, station.id, today, round(snap.daily_kwh, 1), current)
+    # kwh 记可发电量，限电损失另记一列；没有规则为 None，不写 0。docs/17 §四
+    curtailed = round(snap.daily_kwh - snap.grid_kwh, 1) if snap.grid_kwh is not None else None
+    await upsert_daily(db, station.id, today, round(snap.daily_kwh, 1), current, curtailed)
     return snap.daily_kwh
 
 
@@ -112,5 +129,10 @@ async def metrics_from_db(db: AsyncSession, station_ids: list[str]) -> dict[str,
             "daily": row.kwh if row else None,
             "current": row.current_kw if row else None,
             "total": float(totals[sid]),
+            "grid": (
+                round(row.kwh - row.curtailed_kwh, 1)
+                if row and row.curtailed_kwh is not None
+                else None
+            ),
         }
     return out

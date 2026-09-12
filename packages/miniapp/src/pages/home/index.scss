@@ -56,3 +56,18 @@
 
 .fleet-navigation { display:flex; align-items:center; justify-content:space-between; margin:-10px 0 -14px; min-height:44px; }
 .fleet-history-link { display:flex; align-items:center; gap:6px; min-height:44px; padding:0 4px 0 12px; color:#1264d6; font-size:13px; }
+
+// 起报批次与未来 7 天列表。docs/17 §二
+.forecast-basis { display: block; margin-top: -8px; font-size: 11px; line-height: 1.6; color: #617084; }
+.outlook { display: flex; flex-direction: column; margin-top: 10px; }
+.outlook__row { padding: 10px 6px; border-radius: 10px; }
+.outlook__row--active { background: #eef4fb; }
+.outlook__head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #33465e; }
+.outlook__day { width: 76px; flex-shrink: 0; font-weight: 550; color: #233146; font-variant-numeric: tabular-nums; }
+.outlook__tag { font-size: 10px; line-height: 18px; padding: 0 5px; border-radius: 4px; background: #f1f5f9; color: #64748b; flex-shrink: 0; }
+.outlook__weather { flex: 1; min-width: 0; font-size: 12px; color: #617084; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outlook__level { flex-shrink: 0; font-size: 12px; font-weight: 600; }
+.outlook__energy { margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; font-weight: 550; color: #192b40; }
+.outlook__bar { height: 4px; margin-top: 7px; border-radius: 4px; background: #e7edf5; overflow: hidden; }
+.outlook__bar > view { height: 100%; background: #1677ff; border-radius: 4px; }
+.home .forecast-row .section-header { margin-bottom: 0; flex: 1; }

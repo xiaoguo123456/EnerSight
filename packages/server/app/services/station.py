@@ -13,6 +13,7 @@ from app.models import CatalogPlant, Station
 from app.schemas.common import Coord
 from app.schemas.station import (
     CreateStationRequest,
+    CurtailmentRule,
     PublicStationListResponse,
     StationCounts,
     StationListResponse,
@@ -20,6 +21,8 @@ from app.schemas.station import (
     StationSummary,
     UpdateStationRequest,
 )
+
+CATALOG_OWNER = "__catalog__"
 
 
 def _to_wgs84(lng: float, lat: float, coord: Coord) -> tuple[float, float]:
@@ -48,6 +51,8 @@ def to_summary(s: Station, coord: Coord) -> StationSummary:
         image=s.image,
         # 指标由气象推算，属于 /v1/home 那一步的服务；此处先给 None
         metrics=StationMetrics.empty(),
+        is_own=s.owner_id != CATALOG_OWNER,
+        curtailment=CurtailmentRule.model_validate(s.curtailment) if s.curtailment else None,
         **getattr(s, "_catalog_metadata", {}),
     )
 
@@ -88,6 +93,7 @@ async def list_stations(
                 current_power=d["current"],
                 total_generation=round(d["total"], 1),
                 co2_reduction=round(d["total"] * settings.co2_factor_kg_per_kwh, 1),
+                grid_generation=d["grid"],
             )
         stations.append(summary)
     return StationListResponse(stations=stations, counts=counts)
@@ -99,7 +105,7 @@ def from_catalog(p: CatalogPlant) -> Station:
 
     station = Station(
         id=p.id,
-        owner_id="__catalog__",
+        owner_id=CATALOG_OWNER,
         catalog_id=p.id,
         name=p.display_name,
         type=p.type,
@@ -236,6 +242,21 @@ async def get_station(db: AsyncSession, owner_id: str, station_id: str) -> Stati
     return s
 
 
+async def _check_limit(db: AsyncSession, owner_id: str) -> None:
+    """每用户自建上限。docs/17 §一"""
+    from app.config import settings
+
+    count = (
+        await db.execute(
+            select(func.count()).select_from(Station).where(Station.owner_id == owner_id)
+        )
+    ).scalar_one()
+    if count >= settings.max_stations_per_user:
+        raise ApiError(
+            "STATION_LIMIT", f"最多添加 {settings.max_stations_per_user} 座场站", 400
+        )
+
+
 async def create_station(
     db: AsyncSession, owner_id: str, req: CreateStationRequest, http=None
 ) -> Station:
@@ -257,6 +278,7 @@ async def create_station(
         if existing is not None:
             return existing
 
+    await _check_limit(db, owner_id)
     if req.latitude is not None and req.longitude is not None:
         lng, lat = _to_wgs84(req.longitude, req.latitude, req.coord)
     elif plant is not None:
@@ -284,6 +306,7 @@ async def create_station(
         tilt=req.tilt,
         azimuth=req.azimuth,
         hub_height=req.hub_height,
+        curtailment=req.curtailment.model_dump() if req.curtailment else None,
         address=address or None,
         catalog_id=req.catalog_id,
     )
@@ -310,6 +333,9 @@ async def update_station(
     if s.owner_id == "__catalog__":
         raise ApiError("CATALOG_READ_ONLY", "公开电站由平台维护，不支持个人修改或删除", 403)
     data = req.model_dump(exclude_unset=True, exclude={"coord"})
+    # 出力约束：传 null 清除，不传保持；已经被 model_dump 展开成 dict
+    if "curtailment" in data:
+        s.curtailment = data.pop("curtailment")
 
     # 经纬度要一起处理，因为坐标转换是二维的
     if "latitude" in data or "longitude" in data:

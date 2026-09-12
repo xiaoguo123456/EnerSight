@@ -48,9 +48,16 @@ class Settings(BaseSettings):
     # 上游数据源
     open_meteo_base: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_base: str = "https://archive-api.open-meteo.com/v1"
+    # 各模型元数据（起报时刻、可用时刻）：{meta_base}/{slug}/static/meta.json。docs/17 §二
+    open_meteo_meta_base: str = "https://api.open-meteo.com/data"
+    ttl_model_meta: int = 300
 
     # 缓存 TTL（秒），见 docs/05 §五
     ttl_current_weather: int = 600  # 站点整份 Forecast（实时天气、指数、趋势共用）
+    # 自建站点每用户上限。docs/17 §一
+    max_stations_per_user: int = 10
+    # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二
+    forecast_outlook_days: int = 7
     ttl_hourly_forecast: int = 3600  # 图层网格块
 
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码

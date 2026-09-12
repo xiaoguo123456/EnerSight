@@ -107,7 +107,8 @@ async def test_汇总去重覆盖与贡献相加(tmp_path, monkeypatch):
         plant("invalid", lat=100, capacity=500),
     ]
     with respx.mock:
-        route = respx.get(url__regex=r".*open-meteo.*").mock(
+        respx.get(url__regex=r".*/static/meta\.json").mock(return_value=httpx.Response(404))
+        route = respx.get(url__regex=r".*open-meteo.*/v1/forecast.*").mock(
             return_value=httpx.Response(200, json=raw)
         )
         async with httpx.AsyncClient() as c:

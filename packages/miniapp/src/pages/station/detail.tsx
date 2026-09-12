@@ -70,11 +70,11 @@ export default function StationDetail() {
             <View className="detail__station-spec">
               <Icon name={station.type === 'solar' ? 'sun' : 'wind'} size={16} color="#64748b" />
               <Text>{station.type === 'solar' ? '光伏电站' : '风力电站'}</Text>
-              <StatusBadge status={station.status} />
+              <StatusBadge status={station.status} own={station.is_own} />
             </View>
             <Text className="detail__station-name">{station.name}</Text>
             <View className="detail__capacity">
-              <Text className="detail__capacity-label">目录申报容量</Text>
+              <Text className="detail__capacity-label">{station.is_own ? '装机容量' : '目录申报容量'}</Text>
               <Text className="detail__capacity-value">{cap.value}<Text className="detail__capacity-unit"> {cap.unit}</Text></Text>
             </View>
             <View className="detail__favorite" onClick={() => toggleFavorite(station)}>{favorites.some((s) => s.id === id) ? '已收藏 · 点击取消' : '收藏到常看电站'}</View>
@@ -86,6 +86,9 @@ export default function StationDetail() {
               <View className="detail__action" onClick={() => { setCurrent(id); Taro.switchTab({ url: '/pages/map/index' }) }}>
                 <Icon name="map" size={16} color="#475569" /><Text>地图查看</Text>
               </View>
+              {station.is_own && <View className="detail__action" onClick={() => Taro.navigateTo({ url: `/pages/station/form?id=${encodeURIComponent(id)}` })}>
+                <Icon name="pencil" size={16} color="#475569" /><Text>编辑</Text>
+              </View>}
             </View>
           </View>
 
@@ -97,6 +100,7 @@ export default function StationDetail() {
         </View>
 
         <DataFreshness label={`气象预报 · ${weatherModelLabel(useWeatherModel.getState().model)}`} time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
+        {req.data.basis && <Text className="detail__basis">{req.data.basis.issued_at ? `模型起报 ${formatBeijingTime(req.data.basis.issued_at)} · 数据拉取 ${formatBeijingTime(req.data.basis.fetched_at)}` : `混合模型，无法确认起报 · 数据拉取 ${formatBeijingTime(req.data.basis.fetched_at)}`}（北京时间）</Text>}
         <View className="detail__card"><StationTrend key={id} stationId={id} type={station.type} initial={req.data.trends} /></View>
 
         {weather && (
@@ -122,6 +126,13 @@ export default function StationDetail() {
           </View>
         )}
 
+        {station.is_own && <View className="detail__card">
+          <SectionHeader icon="sliders" title="出力约束" />
+          {!station.curtailment && <Text className="detail__note detail__note--top">未设置限电或检修规则，预计上网电量与可发电量相同。</Text>}
+          {station.curtailment?.mode === 'ratio' && <Text className="detail__note detail__note--top">固定限电比例 {station.curtailment.ratio_percent}%，全天可发出力按 {100 - (station.curtailment.ratio_percent ?? 0)}% 计为上网出力。</Text>}
+          {station.curtailment?.mode === 'schedule' && (station.curtailment.windows ?? []).map((w, i) => <View key={i} className="detail__info-row"><Text className="detail__info-label">时段 {i + 1}</Text><Text className="detail__info-value">{!w.weekdays?.length ? '每天' : w.weekdays.join(',') === '1,2,3,4,5' ? '工作日' : w.weekdays.join(',') === '6,7' ? '周末' : `周${w.weekdays.map((d) => '一二三四五六日'[d - 1]).join('')}`} {String(w.start_hour).padStart(2, '0')}:00 – {String(w.end_hour).padStart(2, '0')}:00 出力上限 {w.limit_percent}%</Text></View>)}
+          <Text className="detail__note">约束只作用于预计上网电量，发电适宜度仍按气象条件估算。规则由你自行填写，不来自电网调度。</Text>
+        </View>}
         {(station.phases?.length || station.prediction_blocked_reason) && <View className="detail__card">
           <SectionHeader icon="fileText" title="分期与容量口径" />
           <Text className="detail__note">{station.capacity_note || '容量口径待核验'}</Text>
@@ -133,17 +144,17 @@ export default function StationDetail() {
           <SectionHeader icon="mapPin" title="电站资料" />
           <View className="detail__info-row"><Text className="detail__info-label">所在地区</Text><Text className="detail__info-value">{station.address || '暂无地区信息'}</Text></View>
           <View className="detail__info-row"><Text className="detail__info-label">地理坐标</Text><Text className="detail__info-value">{formatCoordinate(station.latitude, station.longitude)}</Text></View>
-          <View className="detail__info-row"><Text className="detail__info-label">原始名称</Text><Text className="detail__info-value">{station.original_name || station.name}</Text></View>
+          {!station.is_own && <View className="detail__info-row"><Text className="detail__info-label">原始名称</Text><Text className="detail__info-value">{station.original_name || station.name}</Text></View>}
           {station.local_name && <View className="detail__info-row"><Text className="detail__info-label">中文名称</Text><Text className="detail__info-value">{station.local_name}</Text></View>}
-          <View className="detail__info-row"><Text className="detail__info-label">资料来源</Text><Text className="detail__info-value">{station.source === 'gem' ? 'Global Energy Monitor' : station.source === 'wri' ? 'WRI 全球电站数据库' : '来源待核实'}</Text></View>
-          <View className="detail__info-row"><Text className="detail__info-label">目录入库</Text><Text className="detail__info-value">{formatBeijingTime(station.catalog_updated_at)}（北京时间，非源数据发布日期）</Text></View>
+          <View className="detail__info-row"><Text className="detail__info-label">资料来源</Text><Text className="detail__info-value">{station.is_own ? '用户自建，仅本账号可见' : station.source === 'gem' ? 'Global Energy Monitor' : station.source === 'wri' ? 'WRI 全球电站数据库' : '来源待核实'}</Text></View>
+          {!station.is_own && <View className="detail__info-row"><Text className="detail__info-label">目录入库</Text><Text className="detail__info-value">{formatBeijingTime(station.catalog_updated_at)}（北京时间，非源数据发布日期）</Text></View>}
           {station.owner_name && <View className="detail__info-row"><Text className="detail__info-label">业主</Text><Text className="detail__info-value">{station.owner_name}</Text></View>}
           <View className="detail__actions">
             <View className="detail__action" onClick={() => Taro.setClipboardData({ data: `电站：${station.name}\nID：${id}\n地区：${station.address || '暂无'}\n坐标：${formatCoordinate(station.latitude, station.longitude)}\n来源：${station.source || '待核实'}\n页面：站点详情\n反馈时间：${new Date().toISOString()}` })}>复制资料</View>
             <Button className="detail__action detail__feedback" openType="feedback">资料纠错</Button>
           </View>
           <Text className="detail__note">反馈前可复制资料，附上需要更正的字段和来源。</Text>
-          <Text className="detail__note">电站资料来自公开目录，气象与发电适宜度为模型估算。</Text>
+          <Text className="detail__note">{station.is_own ? '电站资料由你自行填写，气象与发电适宜度为模型估算。' : '电站资料来自公开目录，气象与发电适宜度为模型估算。'}</Text>
         </View>
       </View>
     </View>

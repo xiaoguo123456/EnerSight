@@ -19,6 +19,7 @@ from app.metrics import pv, solar, wind
 from app.metrics.index import IndexResult, PvInputs, pv_index, wind_index
 from app.models import Station
 from app.schemas.common import IndexLevel
+from app.services import curtailment
 from app.services.prediction_basis import version_for_day
 from app.services.weather import Forecast
 
@@ -52,13 +53,18 @@ class Prepared:
 @dataclass(frozen=True)
 class EnergySnapshot:
     index: IndexResult | None  # 不可算时 None
-    daily_kwh: float | None
+    daily_kwh: float | None  # 可发电量（气象潜在值）
     current_kw: float | None
     hourly_kw: pd.Series  # 今日逐时出力，不可算时全 NaN
     estimated: bool
     blocked: str | None = (
         None  # 容量口径待核验：daily / current / hourly 按申报容量算出，仅供报告参考
     )
+    # 计入场站出力约束后的上网口径；站点没有规则时全部 None。指数不受影响。docs/17 §四
+    grid_hourly_kw: pd.Series | None = None
+    grid_kwh: float | None = None
+    grid_current_kw: float | None = None
+    curtailment_note: str | None = None
 
 
 def _hours_for(fc: Forecast, day: date, station_type: str, version: str) -> pd.DatetimeIndex:
@@ -224,16 +230,44 @@ def hourly_power(station: Station, prep: Prepared, tz: str) -> pd.Series:
     return _hourly(station, prep, tz)
 
 
-def compute(station: Station, fc: Forecast) -> EnergySnapshot:
-    """同步、CPU 密集。"""
-    prep = prepare(station, fc)
+def target_day(fc: Forecast, day_offset: int) -> date:
+    return (fc.current_hour() + pd.Timedelta(days=day_offset)).date()
+
+
+def interval_end_labels(station: Station, day: date) -> bool:
+    """该日逐时序列是否为区间末标签（光伏 v4）。出力约束按墙钟起点匹配时要减一小时。"""
+    return station.type == "solar" and version_for_day(day) == "model-v4"
+
+
+def grid_power(station: Station, hourly_kw: pd.Series, day: date) -> pd.Series | None:
+    """可发出力 → 计入出力约束后的上网出力；站点没有规则返回 None。docs/17 §四"""
+    rule = curtailment.parse(getattr(station, "curtailment", None))
+    if rule is None:
+        return None
+    return curtailment.apply(
+        hourly_kw, rule, station.capacity_kw, interval_end=interval_end_labels(station, day)
+    )
+
+
+def curtailment_note(station: Station) -> str | None:
+    return curtailment.describe(curtailment.parse(getattr(station, "curtailment", None)))
+
+
+def compute(station: Station, fc: Forecast, *, day_offset: int = 0) -> EnergySnapshot:
+    """同步、CPU 密集。day_offset 为 0 时给当前功率，其余日期只有日曲线与指数。"""
+    prep = prepare(station, fc, day_offset=day_offset)
+    day = target_day(fc, day_offset)
+    note = curtailment_note(station)
     if not prep.complete:
+        nan = pd.Series(np.nan, index=prep.frame.index)
         return EnergySnapshot(
             index=None,
             daily_kwh=None,
             current_kw=None,
-            hourly_kw=pd.Series(np.nan, index=prep.frame.index),
+            hourly_kw=nan,
             estimated=prep.estimated,
+            grid_hourly_kw=nan if note else None,
+            curtailment_note=note,
         )
 
     if station.type == "solar":
@@ -244,14 +278,20 @@ def compute(station: Station, fc: Forecast) -> EnergySnapshot:
         # 风电：全天 24 小时，不分昼夜
         hourly_kw = _hourly(station, prep, fc.tz)
         result = wind_index(float(hourly_kw.sum()), station.capacity_kw)
+    grid_hourly = grid_power(station, hourly_kw, day)
 
-    label = current_label(fc, station.type)
-    current = _at_label(hourly_kw, label)
-    if label not in hourly_kw.index:
-        # 单独读取真实目标区间，仍经过统一的缺测预处理。
-        current_prep = prepare(station, fc, hours=pd.DatetimeIndex([label]))
-        if current_prep.complete:
-            current = _at_label(_hourly(station, current_prep, fc.tz), label)
+    current = grid_current = None
+    if day_offset == 0:
+        label = current_label(fc, station.type)
+        series_now, grid_now = hourly_kw, grid_hourly
+        if label not in hourly_kw.index:
+            # 单独读取真实目标区间，仍经过统一的缺测预处理。
+            current_prep = prepare(station, fc, hours=pd.DatetimeIndex([label]))
+            if current_prep.complete:
+                series_now = _hourly(station, current_prep, fc.tz)
+                grid_now = grid_power(station, series_now, day)
+        current = _at_label(series_now, label)
+        grid_current = _at_label(grid_now, label) if grid_now is not None else None
     return EnergySnapshot(
         index=result,
         daily_kwh=result.actual_kwh,
@@ -259,6 +299,10 @@ def compute(station: Station, fc: Forecast) -> EnergySnapshot:
         hourly_kw=hourly_kw,
         estimated=prep.estimated,
         blocked=prep.blocked,
+        grid_hourly_kw=grid_hourly,
+        grid_kwh=float(grid_hourly.sum()) if grid_hourly is not None else None,
+        grid_current_kw=grid_current,
+        curtailment_note=note,
     )
 
 

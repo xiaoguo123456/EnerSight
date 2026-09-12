@@ -23,6 +23,7 @@
 | [docs/08-ai-design.md](docs/08-ai-design.md) | AI 输出、模型选型、缓存、降级 | 碰 AI 前 |
 | [docs/09-miniapp-compliance.md](docs/09-miniapp-compliance.md) | 备案、类目、权限、内容安全 | 上线前，且要早读 |
 | [docs/10-deployment.md](docs/10-deployment.md) | 镜像、Compose、环境变量、升级回滚 | 部署前 |
+| [docs/17-user-stations-and-outlook.md](docs/17-user-stations-and-outlook.md) | 自建场站、7 天预测与起报时间、限电三层口径 | 碰站点表单、预测天数、限电前 |
 
 设计稿在 `packages/ui/`，6 张 PNG，对应 6 个页面。**实现页面前先看图。**
 
@@ -144,7 +145,10 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 客户端硬编码图层色阶 —— 图例由 `/v1/map/layers` 下发
 - ❌ 客户端用自己请求的 bbox 贴图 —— 用服务端返回的对齐后 `bounds`
 - ❌ 实现储能站相关功能 —— V1 不做，设计稿里有但已明确排除
-- ❌ 给小程序加「自建站点」入口（定位 / 手输经纬度）—— 站点只从公开电站目录添加，见 01 §六
+- ❌ 把自建站点算进全目录汇总 —— 汇总只统计公开目录，自建站点仅本账号可见，见 17 §一
+- ❌ 限电时把环境指数也折减 —— 指数只反映气象条件；出力约束只作用于电量与功率，见 17 §四
+- ❌ 起报时间拿不到时用拉取时间冒充 —— `basis.issued_at` 为 null 就只显示拉取时间，不猜
+- ❌ 预测做到 7 天以上 —— ICON 全球模式只有 7.5 天，7 天是四个模型的公共上限
 - ❌ 用户请求时同步调 AI —— 全部预生成 + 缓存，见 08 §三
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）
 - ❌ 卫星拿不到时清掉卫星预警 —— 未知 ≠ 消失，`apply_detections(satellite_known=False)`
@@ -240,6 +244,7 @@ make codegen                         # openapi.json → core/types/
 | tabBar 图标只接受图片文件 | 不支持 data URI；用 `scripts/gen-tabbar-icons.mjs` 由 SVG 渲染 PNG |
 | 两端共用 `outputRoot` 会互相覆盖 | 已按 `dist/${TARO_ENV}` 分目录 |
 | Taro 组件 props 不兼容 `exactOptionalPropertyTypes` | miniapp 的 tsconfig 关掉该项，core 保留 |
+| 本机起 BFF 用 `.claude/launch.json` 的 `api` 配置（`ENERSIGHT_DEBUG=true uv run uvicorn app.main:app`） | 开发态免登录靠 DEBUG；`.env` 里没有它，且 venv 没装 `fastapi[standard]` CLI，`make dev-server` 的 `fastapi dev` 起不来 |
 | 本机系统代理下并发出网偶发 TLS 拒连/超时 | 上游拉取一律带重试退避、限并发（Himawari 瓦片并发 4）；卫星拿不到按 `unavailable` 处理 |
 | H5 构建默认读 `.env.production`，连不上本机后端 | `make shot` / `make preview` 已注入 `API_BASE`（默认 127.0.0.1:8000） |
 
@@ -257,7 +262,10 @@ make codegen                         # openapi.json → core/types/
 | geo/search / geo/reverse | ✅ | 无腾讯 key 时降级 |
 | map/layers | ✅ | 4° 块、1° 网格服务端渲染；云图层用 Himawari 实况 |
 | satellite/cloud | ✅ | JMA 瓦片，白天可见光/真彩、夜间红外；光流外推见 07 §四 |
-| stations/catalog | ✅ | 公开电站目录 18,764 座（GEM + WRI），按月自动同步；站点只能从目录添加 |
+| stations/catalog | ✅ | 公开电站目录 18,764 座（GEM + WRI），按月自动同步 |
+| stations（自建） | ✅ | 站点页「我的站点」，定位 / 地图选点 / 手输经纬度，每用户 10 座，可填出力约束（限电第一层），见 17 |
+| predictions/station | ✅ | 单站未来 7 天逐日预测，首页懒加载；`basis` 带模型起报时刻 |
+| predictions/fleet | ✅ | 全目录未来 7 天 `days[]`，顶层仍是今日；按目标日 + 签发日留档 |
 
 已落地的关键实现：
 - `server/app/metrics`：pvlib 出力模型与环境指数
@@ -274,7 +282,8 @@ make codegen                         # openapi.json → core/types/
 
 **真机验证（阻塞地图与云图的最终确认）：** 开发者工具模拟器不渲染
 `ground-overlay`，贴图精度、GCJ-02 对齐、`downloadFile` 域名都只能真机看。
-方法见 [05 §6.7](docs/05-architecture.md) 末尾。
+方法见 [05 §6.7](docs/05-architecture.md) 末尾。自建场站的 `wx.getLocation` /
+`wx.chooseLocation` 授权流程、真实 `code2session` 与两个微信号的数据隔离也只能真机验。
 
 **需要凭证才能通的：** 微信 AppID/AppSecret（真 `code2session`）、腾讯位置服务 key、
 `ANTHROPIC_API_KEY`。都有降级，不阻塞开发。

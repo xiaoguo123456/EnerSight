@@ -142,11 +142,13 @@ async def build_station_view(
     daily = None if snap.blocked else snap.daily_kwh
     current = None if snap.blocked else snap.current_kw
     summary = to_summary(station, coord)
+    grid = None if snap.blocked else snap.grid_kwh
     summary.metrics = StationMetrics(
         daily_generation=round(daily, 1) if daily is not None else None,
         current_power=round(current, 1) if current is not None else None,
         total_generation=round(total_kwh, 1) if total_kwh is not None else None,
         co2_reduction=round(co2_kg, 1) if co2_kg is not None else None,
+        grid_generation=round(grid, 1) if grid is not None else None,
     )
     return StationView(
         station=station,
@@ -200,7 +202,13 @@ async def build_home(
     from app.services import prediction
 
     # 今日逐时出力已在 build_station_view 里算过，直接复用；明日单独算一遍供留档
-    forecast_prediction = prediction.from_hourly(v.forecast, v.snapshot.hourly_kw, station)
+    forecast_prediction = prediction.from_hourly(
+        v.forecast,
+        v.snapshot.hourly_kw,
+        station,
+        grid_kw=v.snapshot.grid_hourly_kw,
+        curtailment_note=v.snapshot.curtailment_note,
+    )
     from app.services import prediction_archive
 
     await asyncio.to_thread(prediction_archive.save, station, v.forecast, forecast_prediction)

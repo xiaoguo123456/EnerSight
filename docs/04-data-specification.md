@@ -152,6 +152,32 @@ forecast 接口追加 past_days=1
 
 - 未来小时天气（`hourly`，24 小时趋势图）
 - 未来 7 天天气（`daily`）
+- 未来 7 天逐日发电预测：单站 `GET /v1/predictions/station`、全目录 `days[]`。
+  每次请求已拉「昨日 + 7 天」共 192 点，7 天预测是把 `day_offset` 0…6 各算一遍，
+  仍走同一条 pvlib 链路。7 天是四个模型的公共上限（ICON 全球 7.5 天），不做到 16 天。
+
+
+### 起报时间
+
+Open-Meteo 逐小时响应不带模型起报时刻，要另调各模型元数据：
+
+```
+https://api.open-meteo.com/data/{slug}/static/meta.json
+  last_run_initialisation_time   起报（Unix 秒，UTC）
+  last_run_availability_time     该批数据可用时刻
+  update_interval_seconds        更新间隔
+```
+
+| 请求模型 | 元数据 slug | 说明 |
+| --- | --- | --- |
+| `best_match` | `ecmwf_ifs` | 境内实测等于 ECMWF IFS 9 km，服务端每日三点复核，不一致时退回不显示起报 |
+| `ecmwf_ifs` | `ecmwf_ifs` | |
+| `gfs_global` | `ncep_gfs013` | 由 0.13° 与 0.25° 两套拼成，起报不同，以 0.13° 为准 |
+| `icon_global` | `dwd_icon` | |
+
+响应里以 `ForecastBasis` 给出：`model`、`resolved_model`、`issued_at`、`available_at`、`fetched_at`。
+`issued_at` 为 null 表示无法确认起报，前端只显示拉取时间，不猜。元数据显示 9 km 数据只覆盖到
+起报后约 6 天，第 7 天由上游用更早或更粗的批次补齐，起报标注「以首日为准」。见 [17 §二](./17-user-stations-and-outlook.md)。
 
 
 24 小时趋势图数据：
@@ -606,15 +632,19 @@ v = -wind_speed × cos(wind_direction × π / 180)
 | `tilt` | number | 否 | 光伏组件倾角（°），默认取纬度绝对值 |
 | `azimuth` | number | 否 | 光伏组件方位角（°），默认 180 正南 |
 | `hub_height` | number | 否 | 风机轮毂高度（m），默认 100 m |
+| `curtailment` | object | 否 | 场站级出力约束（限电 / 检修），结构见 [06 §5.2](./06-api-contract.md)，口径见 [17 §四](./17-user-stations-and-outlook.md) |
 
-后三个字段是物理出力模型的输入（见 [07 §2.3](./07-metrics.md)），
-选填，不填用默认值。
+`tilt` / `azimuth` / `hub_height` 是物理出力模型的输入（见 [07 §2.3](./07-metrics.md)），
+选填，不填用默认值。`curtailment` 只有自建场站有，目录电站为 null。
 
 
-录入方式：
+录入方式（自建场站，[01 §六](./01-prd.md)）：
 
-- 获取当前位置（GPS 自动填充经纬度）
-- 输入经纬度（手动）
+- 当前定位（`wx.getLocation`，GCJ-02）
+- 地图选点（`wx.chooseLocation`，GCJ-02）
+- 手动输入经纬度，并选择读数的坐标系（默认 WGS84）
+
+提交带 `coord`，服务端转 WGS84 存储。
 
 
 类型：

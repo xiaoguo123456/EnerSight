@@ -96,6 +96,28 @@ def capture(snapshot, version, now=None):
 
 
 @locked
+def capture_leads(snapshot):
+    """按「目标日 + 签发日」留一份未来各天的合计，将来接实测后按预报时效评估。docs/17 §二
+
+    同一签发日多次覆盖，日终那次为准；不同签发日各存一份，不互相覆盖。
+    """
+    if snapshot.get("model") not in MODELS or snapshot.get("status") not in ("ready", "partial"):
+        return
+    issued = datetime.fromisoformat(snapshot["generated_at"]).astimezone(TZ)
+    for d in snapshot.get("days") or []:
+        if d.get("energy_kwh") is None:
+            continue
+        path = root() / "leads" / snapshot["model"] / d["date"] / f"{issued.date()}.json"
+        row = {k: d.get(k) for k in ("date", "lead_days", "energy_kwh", "solar_kwh", "wind_kwh")}
+        row.update(
+            model=snapshot["model"],
+            generated_at=snapshot["generated_at"],
+            covered_count=snapshot.get("covered_count"),
+        )
+        write(path, row)
+
+
+@locked
 def checkpoint(now=None):
     now = now or datetime.now(TZ)
     # 接管尚未清理的既有缓存；不请求任何历史气象数据。

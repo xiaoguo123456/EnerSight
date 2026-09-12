@@ -18,7 +18,7 @@ from app.schemas.home import (
     TrendRange,
     TrendSeries,
 )
-from app.schemas.prediction import FleetPrediction
+from app.schemas.prediction import FleetPrediction, StationOutlook
 from app.services import home as svc
 from app.services import weather
 from app.services.station import get_station
@@ -71,9 +71,33 @@ async def get_station_detail(
             index=v.index,
             trends=svc.build_trend(v.forecast, TrendMetric.RADIATION),
             updated_at=v.current.observed_at if v.current else v.forecast.now().isoformat(),
+            basis=v.forecast.basis(),
         ),
         coord,
     )
+
+
+@router.get("/predictions/station", response_model=Envelope[StationOutlook])
+async def station_outlook(
+    request: Request,
+    user: CurrentUserDep,
+    db: DbDep,
+    station_id: Annotated[str, Query()],
+    days: Annotated[int, Query(ge=1, le=7)] = 7,
+    coord: CoordQuery = Coord.WGS84,
+) -> Envelope[StationOutlook]:
+    """未来 7 天逐日预测，首页懒加载。docs/17 §二"""
+    import asyncio
+
+    from app.config import settings
+    from app.services import prediction
+
+    station = await get_station(db, user.id, station_id)
+    fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
+    out = await asyncio.to_thread(
+        prediction.compute_days, station, fc, min(days, settings.forecast_outlook_days)
+    )
+    return envelope(out, coord)
 
 
 @router.get("/map/overview", response_model=Envelope[MapOverviewResponse])

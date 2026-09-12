@@ -162,6 +162,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/predictions/station": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Station Outlook
+         * @description 未来 7 天逐日预测，首页懒加载。docs/17 §二
+         */
+        get: operations["station_outlook_v1_predictions_station_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/map/overview": {
         parameters: {
             query?: never;
@@ -534,7 +554,7 @@ export interface components {
         /**
          * CreateStationRequest
          * @description 两种建法：给 catalog_id 从公开电站目录复制（其余字段可省，给了则覆盖）；
-         *     或者不给 catalog_id、把五个必填字段都给全（API 保留，小程序 V1 不提供自建入口）。
+         *     或者不给 catalog_id、把五个必填字段都给全（自建，docs/17 §一）。
          */
         CreateStationRequest: {
             /** Catalog Id */
@@ -562,6 +582,7 @@ export interface components {
             azimuth?: number | null;
             /** Hub Height */
             hub_height?: number | null;
+            curtailment?: components["schemas"]["CurtailmentRule"] | null;
         };
         /** CurrentAlertResponse */
         CurrentAlertResponse: {
@@ -615,6 +636,79 @@ export interface components {
             weather_text: string | null;
             /** Observed At */
             observed_at: string;
+        };
+        /**
+         * CurtailmentRule
+         * @description 场站级出力约束（限电 / 检修），两种写法二选一。docs/17 §四
+         */
+        CurtailmentRule: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "ratio" | "schedule";
+            /**
+             * Ratio Percent
+             * @description 固定限电比例
+             */
+            ratio_percent?: number | null;
+            /** Windows */
+            windows?: components["schemas"]["CurtailmentWindow"][];
+        };
+        /**
+         * CurtailmentWindow
+         * @description 分时段出力上限。end_hour 不含；start >= end 表示跨零点。weekdays 为 ISO 1–7，空为每天。
+         */
+        CurtailmentWindow: {
+            /** Start Hour */
+            start_hour: number;
+            /** End Hour */
+            end_hour: number;
+            /**
+             * Limit Percent
+             * @description 时段内出力上限，装机容量的百分比
+             */
+            limit_percent: number;
+            /** Weekdays */
+            weekdays?: number[];
+        };
+        /**
+         * DailyOutlook
+         * @description 7 天预测里的一天。指数只反映气象，不受出力约束影响。
+         */
+        DailyOutlook: {
+            /** Date */
+            date: string;
+            /**
+             * Weekday
+             * @description ISO 1–7
+             */
+            weekday: number;
+            /** Energy Kwh */
+            energy_kwh: number | null;
+            /** Grid Energy Kwh */
+            grid_energy_kwh: number | null;
+            /** Curtailed Kwh */
+            curtailed_kwh: number | null;
+            /** Index Score */
+            index_score: number | null;
+            index_level: components["schemas"]["IndexLevel"] | null;
+            /**
+             * Weather Text
+             * @description 日间众数天气
+             */
+            weather_text: string | null;
+            /** Peak Kw */
+            peak_kw: number | null;
+            /** Power Kw */
+            power_kw: components["schemas"]["PowerPoint"][];
+            /** Grid Power Kw */
+            grid_power_kw: components["schemas"]["PowerPoint"][] | null;
+            /**
+             * Lead Days
+             * @description 距今天数，0 为今日；≥3 为中期预报
+             */
+            lead_days: number;
         };
         /**
          * EnergyIndex
@@ -718,6 +812,11 @@ export interface components {
             data: components["schemas"]["StationListResponse"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[StationOutlook] */
+        Envelope_StationOutlook_: {
+            data: components["schemas"]["StationOutlook"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[StationSummary] */
         Envelope_StationSummary_: {
             data: components["schemas"]["StationSummary"];
@@ -727,6 +826,25 @@ export interface components {
         Envelope_TrendSeries_: {
             data: components["schemas"]["TrendSeries"];
             meta: components["schemas"]["Meta"];
+        };
+        /** FleetDay */
+        FleetDay: {
+            /** Date */
+            date: string;
+            /** Weekday */
+            weekday: number;
+            /** Lead Days */
+            lead_days: number;
+            /** Energy Kwh */
+            energy_kwh: number | null;
+            /** Solar Kwh */
+            solar_kwh: number;
+            /** Wind Kwh */
+            wind_kwh: number;
+            /** Power Kw */
+            power_kw: components["schemas"]["PowerPoint"][];
+            /** Regions */
+            regions?: components["schemas"]["RegionPrediction"][];
         };
         /** FleetPrediction */
         FleetPrediction: {
@@ -741,10 +859,20 @@ export interface components {
             timezone: string;
             /** Generated At */
             generated_at: string;
-            /** Energy Kwh */
+            /**
+             * Energy Kwh
+             * @description 可发电量，气象潜在值
+             */
             energy_kwh: number | null;
             /** Power Kw */
             power_kw: components["schemas"]["PowerPoint"][];
+            /** Grid Energy Kwh */
+            grid_energy_kwh?: number | null;
+            /** Curtailed Kwh */
+            curtailed_kwh?: number | null;
+            /** Grid Power Kw */
+            grid_power_kw?: components["schemas"]["PowerPoint"][] | null;
+            basis?: components["schemas"]["ForecastBasis"] | null;
             /** Assumptions */
             assumptions?: string[];
             /** Status */
@@ -801,8 +929,41 @@ export interface components {
             wind_kwh: number;
             /** Regions */
             regions?: components["schemas"]["RegionPrediction"][];
+            /** Days */
+            days?: components["schemas"]["FleetDay"][];
             /** Message */
             message?: string | null;
+        };
+        /**
+         * ForecastBasis
+         * @description 这份预测用的是哪一批气象数据。issued_at 为 null 表示无法确认起报，前端只显示拉取时间。
+         */
+        ForecastBasis: {
+            /**
+             * Model
+             * @description 请求用的模型参数，best_match 即自动选择
+             */
+            model: string;
+            /**
+             * Resolved Model
+             * @description 实际落到的模型（元数据 slug），未能确认为 null
+             */
+            resolved_model: string | null;
+            /**
+             * Issued At
+             * @description 模型起报时刻，ISO 8601，北京时间偏移
+             */
+            issued_at: string | null;
+            /**
+             * Available At
+             * @description 该批数据可用时刻
+             */
+            available_at: string | null;
+            /**
+             * Fetched At
+             * @description 服务端从上游拉取的时刻
+             */
+            fetched_at: string;
         };
         /** GenerationPrediction */
         GenerationPrediction: {
@@ -817,10 +978,20 @@ export interface components {
             timezone: string;
             /** Generated At */
             generated_at: string;
-            /** Energy Kwh */
+            /**
+             * Energy Kwh
+             * @description 可发电量，气象潜在值
+             */
             energy_kwh: number | null;
             /** Power Kw */
             power_kw: components["schemas"]["PowerPoint"][];
+            /** Grid Energy Kwh */
+            grid_energy_kwh?: number | null;
+            /** Curtailed Kwh */
+            curtailed_kwh?: number | null;
+            /** Grid Power Kw */
+            grid_power_kw?: components["schemas"]["PowerPoint"][] | null;
+            basis?: components["schemas"]["ForecastBasis"] | null;
             /** Assumptions */
             assumptions?: string[];
         };
@@ -1198,6 +1369,8 @@ export interface components {
              * @description 「数据更新时间」，取气象观测时刻
              */
             updated_at: string;
+            /** @description 气象批次：模型、起报、拉取时刻 */
+            basis: components["schemas"]["ForecastBasis"] | null;
         };
         /** StationListResponse */
         StationListResponse: {
@@ -1233,6 +1406,27 @@ export interface components {
              * @description kg
              */
             co2_reduction: number | null;
+            /**
+             * Grid Generation
+             * @description kWh 今日预计上网，计入出力约束；无规则为 null。docs/17 §四
+             */
+            grid_generation: number | null;
+        };
+        /** StationOutlook */
+        StationOutlook: {
+            /** Station Id */
+            station_id: string;
+            /** Model */
+            model: string;
+            /** Timezone */
+            timezone: string;
+            /** Generated At */
+            generated_at: string;
+            basis: components["schemas"]["ForecastBasis"] | null;
+            /** Days */
+            days: components["schemas"]["DailyOutlook"][];
+            /** Assumptions */
+            assumptions?: string[];
         };
         /**
          * StationStatus
@@ -1261,6 +1455,13 @@ export interface components {
             /** Image */
             image: string | null;
             metrics: components["schemas"]["StationMetrics"];
+            /**
+             * Is Own
+             * @description True 为本账号自建站点，可编辑删除；目录电站为 False
+             */
+            is_own: boolean;
+            /** @description 出力约束，目录电站与未设置时为 null */
+            curtailment: components["schemas"]["CurtailmentRule"] | null;
             /** Source */
             source?: string | null;
             /** Original Name */
@@ -1345,6 +1546,7 @@ export interface components {
             azimuth?: number | null;
             /** Hub Height */
             hub_height?: number | null;
+            curtailment?: components["schemas"]["CurtailmentRule"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1758,6 +1960,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_StationDetailResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    station_outlook_v1_predictions_station_get: {
+        parameters: {
+            query: {
+                station_id: string;
+                days?: number;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_StationOutlook_"];
                 };
             };
             /** @description Validation Error */

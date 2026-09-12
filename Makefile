@@ -17,7 +17,7 @@ install:
 	cd packages/server && uv sync
 
 dev-server:
-	cd packages/server && uv run fastapi dev app/main.py
+	cd packages/server && ENERSIGHT_DEBUG=true uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 dev-miniapp:
 	pnpm --filter @enersight/miniapp dev:weapp

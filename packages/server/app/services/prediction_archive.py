@@ -13,6 +13,8 @@ def save(station, forecast, result):
         "calculation_version": version_for_day(result.date),
         "station_id": station.id,
         "issued_at": result.generated_at,
+        # 模型起报与拉取时刻：将来接实测后按预报时效回测要用。docs/17 §二
+        "basis": result.basis.model_dump() if result.basis else None,
         "target_date": result.date,
         "model": result.model,
         "kind": "滚动预测留档，非实测",

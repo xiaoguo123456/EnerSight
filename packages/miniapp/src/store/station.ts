@@ -6,6 +6,8 @@ import Taro from '@tarojs/taro'
 import type { StationSummary } from '@enersight/core/types'
 
 const CURRENT_KEY = 'enersight_current_public_station'
+/** 公开目录 ID 带来源前缀；自建站点是 12 位 hex。docs/17 §一 */
+const ID_PATTERN = /^(gem|wri):|^[0-9a-f]{12}$/
 
 interface StationState {
   currentId: string | null
@@ -45,13 +47,13 @@ export const useStationStore = create<StationState>((set) => ({
   restore: () => {
     try {
       const favorites = Taro.getStorageSync('enersight_favorite_stations')
-      if (Array.isArray(favorites)) set({ favorites: favorites.filter((s) => s && typeof s.id === 'string' && typeof s.name === 'string' && /^(gem|wri):/.test(s.id)).slice(0, 20) })
+      if (Array.isArray(favorites)) set({ favorites: favorites.filter((s) => s && typeof s.id === 'string' && typeof s.name === 'string' && ID_PATTERN.test(s.id)).slice(0, 20) })
       const recent = Taro.getStorageSync('enersight_recent_stations')
       if (Array.isArray(recent)) set({ recent: recent.filter((s) =>
-        s && typeof s.id === 'string' && typeof s.name === 'string' && /^(gem|wri):/.test(s.id)
+        s && typeof s.id === 'string' && typeof s.name === 'string' && ID_PATTERN.test(s.id)
       ).slice(0, 6) })
       const id = Taro.getStorageSync(CURRENT_KEY)
-      if (typeof id === 'string' && /^(gem|wri):/.test(id)) set({ currentId: id })
+      if (typeof id === 'string' && ID_PATTERN.test(id)) set({ currentId: id })
     } catch {
       // Storage 不可用时保持默认值
     }

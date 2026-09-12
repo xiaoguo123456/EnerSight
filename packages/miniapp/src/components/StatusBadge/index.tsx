@@ -8,11 +8,12 @@ const LABEL: Record<StationStatus, string> = {
   fault: '状态待核实',
 }
 
-export function StatusBadge({ status }: { status: StationStatus }) {
+/** 目录电站按公开资料表述；自建场站没有公开资料，标「自建场站」。docs/17 §一 */
+export function StatusBadge({ status, own = false }: { status: StationStatus; own?: boolean }) {
   return (
     <View className={`status-badge status-badge--${status}`}>
       <View className="status-badge__dot" />
-      <Text>{LABEL[status]}</Text>
+      <Text>{own && status === 'normal' ? '自建场站' : LABEL[status]}</Text>
     </View>
   )
 }

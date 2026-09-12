@@ -18,6 +18,7 @@ def supports_selection(path: str) -> bool:
             "/v1/map/overview",
             "/v1/predictions/fleet",
             "/v1/predictions/fleet/history",
+            "/v1/predictions/station",
         }
         or path.startswith("/v1/map/layers/")
         or (path.startswith("/v1/stations/") and path.endswith("/detail"))

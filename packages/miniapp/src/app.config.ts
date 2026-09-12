@@ -8,6 +8,7 @@ const PAGES = [
   'pages/report/index',
   'pages/info/index',
   'pages/fleet-history/index',
+  'pages/station/form',
 ]
 
 // 开发期切换启动页：TARO_APP_LAUNCH=map pnpm build:weapp
@@ -44,7 +45,7 @@ export default defineAppConfig({
       { pagePath: 'pages/station/index', text: '站点',
         iconPath: 'assets/tabbar/chart.png',
         selectedIconPath: 'assets/tabbar/chart-active.png' },
-      { pagePath: 'pages/mine/index', text: '设置',
+      { pagePath: 'pages/mine/index', text: '我的',
         iconPath: 'assets/tabbar/user.png',
         selectedIconPath: 'assets/tabbar/user-active.png' },
     ],
@@ -54,7 +55,7 @@ export default defineAppConfig({
   requiredPrivateInfos: ['getLocation', 'chooseLocation'],
   permission: {
     'scope.userLocation': {
-      desc: '用于定位当前区域气象数据与附近公开电站',
+      desc: '用于添加自建场站时填入当前位置坐标，以及定位当前区域气象',
     },
   },
 })
