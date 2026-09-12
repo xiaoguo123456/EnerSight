@@ -212,6 +212,6 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 - Nginx 语法检查通过并已平滑加载，原配置备份为 `/opt/weishen/deploy/nginx.conf.before-enersight-20260913001428`。原有测试首页、花花狗测试与生产健康接口、EnerSight 生产就绪接口均仍为 200。
 - 测试公网 `/enersight/ready` 返回 200；无效微信 code 返回 400 / `INVALID_CODE`。真实用户登录及手机端合法域名仍需小程序联调。
 - `pnpm build:test` / `pnpm build:prod` 已实际构建并核验产物地址。测试默认关闭全量定时采集和卫星归档，地图预热不在本次上线验收范围内。
-- 测试服务器 Nginx 已生效；花花狗仓库 `deploy/nginx.conf` 对应修改仍待用户确认后推送，避免后续花花狗发版覆盖新增路由。
+- 测试服务器 Nginx 已生效，花花狗仓库 main 已同步同一配置（提交 `7f65c4e`），配置 SHA256 与线上一致。该次同步跳过花花狗自动部署；之后 main 发版会保留 `/enersight/` 路由，独立的 `enersight-test` 容器和数据目录不受花花狗 Compose 更新影响。
 
 本次只将部署配置与必要测试修复合入 main，没有合入当前开发分支其余 7 个提交。
