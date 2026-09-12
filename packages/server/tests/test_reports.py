@@ -324,8 +324,6 @@ class TestReportInput:
 
 class TestSummaryDelta:
     async def _insert(self, client, sid, days_ago: int, kwh: float):
-        from datetime import date
-
         from app.db import get_session
         from app.models import DailyGeneration
 
@@ -334,7 +332,10 @@ class TestSummaryDelta:
         try:
             db.add(
                 DailyGeneration(
-                    station_id=sid, day=date.today() - timedelta(days=days_ago), kwh=kwh
+                    station_id=sid,
+                    # 报告按站点时区取日期，不能依赖 CI 主机的 UTC 日期。
+                    day=datetime.now(ZoneInfo(TZ)).date() - timedelta(days=days_ago),
+                    kwh=kwh,
                 )
             )
             await db.commit()
