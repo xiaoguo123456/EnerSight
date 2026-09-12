@@ -310,8 +310,15 @@ interface CreateStationRequest {
   azimuth?: number           // 光伏方位角（°），默认 180
   hub_height?: number        // 风机轮毂高度（m），默认按容量估算
   curtailment?: CurtailmentRule | null  // 出力约束，PATCH 传 null 清除、不传保持
+  turbine_class?: "generic" | "low_wind" | "medium_wind" | "high_wind" | "custom" | null
+  power_curve?: { v: number; p: number }[] | null   // custom 档必填：风速递增、出力 0–100%
+  mounting?: "fixed" | "single_axis" | null
+  bifacial?: boolean | null
 }
 ```
+
+`StationSummary` 原样回显这四个字段，目录电站一律 null。`turbine_class: "custom"` 而没有
+`power_curve`、曲线少于 3 点或风速不递增返回 `400 INVALID_PARAM`。
 
 服务端行为：
 
@@ -444,6 +451,7 @@ interface GenerationPrediction {
   curtailed_kwh: number | null
   grid_power_kw: PowerPoint[] | null
   basis: ForecastBasis | null
+  resolution_minutes: number        // 15：96 点；60：24 点
   assumptions: string[]
 }
 
@@ -461,6 +469,7 @@ interface DailyOutlook {
   weather_text: string | null        // 日间众数天气
   peak_kw: number | null
   power_kw: PowerPoint[]; grid_power_kw: PowerPoint[] | null
+  resolution_minutes: number         // lead_days 0–3 为 15（96 点），4–6 为 60（24 点），07 §2.7
 }
 
 interface FleetPrediction extends GenerationPrediction {

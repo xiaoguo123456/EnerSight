@@ -36,6 +36,7 @@ FIELDS = [
     "shortwave_radiation",
     "direct_normal_irradiance",
     "diffuse_radiation",
+    "surface_pressure",
 ]
 
 

@@ -67,17 +67,26 @@ def parse(raw: dict | None) -> Rule | None:
 
 
 def apply(
-    hourly_kw: pd.Series, rule: Rule | None, capacity_kw: float, *, interval_end: bool
+    hourly_kw: pd.Series,
+    rule: Rule | None,
+    capacity_kw: float,
+    *,
+    interval_end: bool,
+    step_minutes: int = 60,
 ) -> pd.Series:
-    """可发出力 → 计入约束后的上网出力。NaN 原样保留，不把缺测当 0。"""
+    """可发出力 → 计入约束后的上网出力。NaN 原样保留，不把缺测当 0。
+
+    interval_end 为 True 时标签是区间末，按区间起点（减一个 step）匹配墙钟小时。
+    """
     if rule is None:
         return hourly_kw
     values = hourly_kw.to_numpy(dtype=float).copy()
     if rule.mode == "ratio":
         assert rule.ratio_percent is not None
         return pd.Series(values * (1.0 - rule.ratio_percent / 100.0), index=hourly_kw.index)
+    back = pd.Timedelta(minutes=step_minutes)
     for i, label in enumerate(hourly_kw.index):
-        ts = pd.Timestamp(label) - pd.Timedelta(hours=1) if interval_end else pd.Timestamp(label)
+        ts = pd.Timestamp(label) - back if interval_end else pd.Timestamp(label)
         caps = [w.limit_percent for w in rule.windows if w.covers(ts)]
         if caps and np.isfinite(values[i]):
             values[i] = min(values[i], capacity_kw * min(caps) / 100.0)

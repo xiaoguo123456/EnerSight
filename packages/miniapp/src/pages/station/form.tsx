@@ -1,7 +1,7 @@
-import { View, Text, Input, Picker, Map } from '@tarojs/components'
+import { View, Text, Input, Picker, Map, Switch, Textarea } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
-import type { CurtailmentRule, StationSummary, StationType } from '@enersight/core/types'
+import type { CurtailmentRule, Mounting, PowerCurvePoint, StationSummary, StationType, TurbineClass } from '@enersight/core/types'
 import { ApiError } from '@enersight/core/api'
 import { formatPower } from '@enersight/core/format'
 import { homeApi } from '@/api/home'
@@ -25,17 +25,42 @@ interface Form {
   name: string; type: StationType; capacity: string
   latitude: string; longitude: string; coord: Coord; origin: Origin
   tilt: string; azimuth: string; hub_height: string
+  turbine: TurbineClass; curveText: string; mounting: Mounting; bifacial: boolean
   mode: 'none' | 'ratio' | 'schedule'; ratio: string; windows: WindowForm[]
 }
 
-const EMPTY: Form = { name: '', type: 'solar', capacity: '', latitude: '', longitude: '', coord: 'wgs84', origin: 'manual', tilt: '', azimuth: '', hub_height: '', mode: 'none', ratio: '', windows: [] }
+const EMPTY: Form = { name: '', type: 'solar', capacity: '', latitude: '', longitude: '', coord: 'wgs84', origin: 'manual', tilt: '', azimuth: '', hub_height: '', turbine: 'generic', curveText: '', mounting: 'fixed', bifacial: false, mode: 'none', ratio: '', windows: [] }
+const TURBINES: { value: TurbineClass; label: string }[] = [
+  { value: 'generic', label: '通用功率曲线（额定 12 m/s）' },
+  { value: 'low_wind', label: '低风速机型（额定 9.5 m/s）' },
+  { value: 'medium_wind', label: '中风速机型（额定 11 m/s）' },
+  { value: 'high_wind', label: '高风速机型（额定 12.5 m/s）' },
+  { value: 'custom', label: '自定义功率曲线' },
+]
+const CURVE_PLACEHOLDER = '每行一对：轮毂风速 m/s,出力 %\n3,0\n6,15\n9,60\n12,100\n25,100'
+
+function parseCurve(text: string): PowerCurvePoint[] | string {
+  const points: PowerCurvePoint[] = []
+  for (const raw of text.split(/\n+/)) {
+    const line = raw.trim()
+    if (!line) continue
+    const [a, b] = line.split(/[,，\s]+/)
+    const v = Number(a); const pct = Number(b)
+    if (!Number.isFinite(v) || !Number.isFinite(pct)) return `无法识别：${line}`
+    if (v < 0 || v > 60 || pct < 0 || pct > 100) return `超出范围：${line}`
+    points.push({ v, p: pct })
+  }
+  if (points.length < 3) return '功率曲线至少 3 个点'
+  for (let i = 1; i < points.length; i++) if (points[i]!.v <= points[i - 1]!.v) return '功率曲线的风速必须递增'
+  return points
+}
 const HOURS = Array.from({ length: 25 }, (_, i) => `${String(i).padStart(2, '0')}:00`)
 const DAY_PRESETS: { value: DaysPreset; label: string; weekdays: number[] }[] = [
   { value: 'all', label: '每天', weekdays: [] }, { value: 'weekday', label: '工作日', weekdays: [1, 2, 3, 4, 5] }, { value: 'weekend', label: '周末', weekdays: [6, 7] },
 ]
 const IS_WEAPP = process.env.TARO_ENV === 'weapp'
 const LOCATION_INFO = { title: '位置与坐标系', content: '当前定位与地图选点自动按 GCJ-02 提交。手动输入请按读数来源选择坐标系：GPS 设备、谷歌地图为 WGS84；高德、腾讯、百度地图为 GCJ-02。选错不会报错，只会让电站与云图错位几百米，保存前请在地图预览里核对点位。' }
-const MODEL_INFO = { title: '出力模型参数', content: '不填用默认值：光伏倾角取纬度、方位角 180° 正南；风机轮毂高度 100 m。参数影响发电估算与发电适宜度，可在电站详情看到估算口径。' }
+const MODEL_INFO = { title: '出力模型参数', content: '不填用默认值：光伏倾角取纬度、方位角 180° 正南；风机轮毂高度 100 m。\n风电：机型决定切入、额定、切出风速与曲线形状；自定义曲线按「风速,出力%」逐点给出，末点之后视作切出。空气密度按站点气压与气温逐时修正，高海拔出力会低于平原。\n光伏：单轴跟踪按南北向水平轴、最大转角 60°、含背轨估算，倾角与方位角不再生效；双面组件按双面率 0.7、地面反射率 0.2 估算，增益约 5–12%，未用实测校准。' }
 const LIMIT_INFO = { title: '出力约束', content: '限电或检修只影响「预计上网电量」，可发电量与发电适宜度仍按气象条件估算。固定比例：全天出力按比例折减。分时段上限：时段内出力封顶为装机容量的百分比，0 表示停机；结束时刻早于开始表示跨零点；多条时段重叠取最低。规则由你自行填写，不来自电网调度。' }
 const FORM_INFO = { title: '自建电站', content: '仅本账号可见，最多 10 座。参与发电预测、预警、分析报告与卫星影像归档，不进入全目录汇总。装机容量按交流侧填写，光伏直流侧按容配比换算。' }
 
@@ -54,6 +79,10 @@ function fromStation(s: StationSummary, form: Form): Form {
   return {
     ...form, name: s.name, type: s.type, capacity: String(s.capacity),
     latitude: s.latitude.toFixed(5), longitude: s.longitude.toFixed(5), coord: 'gcj02', origin: 'manual',
+    turbine: s.turbine_class ?? 'generic',
+    curveText: (s.power_curve ?? []).map((pt) => `${pt.v},${pt.p}`).join('\n'),
+    mounting: s.mounting ?? 'fixed',
+    bifacial: !!s.bifacial,
     mode: rule ? rule.mode : 'none',
     ratio: rule?.mode === 'ratio' && rule.ratio_percent != null ? String(rule.ratio_percent) : '',
     windows: rule?.mode === 'schedule' ? (rule.windows ?? []).map((w) => ({ start: w.start_hour, end: w.end_hour, limit: String(w.limit_percent), days: presetOf(w.weekdays ?? []) })) : [],
@@ -72,6 +101,7 @@ function validate(f: Form): string | null {
     const az = num(f.azimuth); if (f.azimuth && (az === null || az < 0 || az > 360)) return '方位角需在 0 ~ 360°'
   } else {
     const hub = num(f.hub_height); if (f.hub_height && (hub === null || hub <= 0 || hub > 200)) return '轮毂高度需在 0 ~ 200 m'
+    if (f.turbine === 'custom') { const parsed = parseCurve(f.curveText); if (typeof parsed === 'string') return parsed }
   }
   if (f.mode === 'ratio') { const r = num(f.ratio); if (r === null || r <= 0 || r > 100) return '限电比例需在 0 ~ 100%' }
   if (f.mode === 'schedule') {
@@ -140,6 +170,10 @@ export default function StationForm() {
       latitude: num(form.latitude)!, longitude: num(form.longitude)!, coord: form.coord,
       tilt: form.type === 'solar' ? num(form.tilt) : null, azimuth: form.type === 'solar' ? num(form.azimuth) : null,
       hub_height: form.type === 'wind' ? num(form.hub_height) : null,
+      turbine_class: form.type === 'wind' ? form.turbine : null,
+      power_curve: form.type === 'wind' && form.turbine === 'custom' ? (parseCurve(form.curveText) as PowerCurvePoint[]) : null,
+      mounting: form.type === 'solar' ? form.mounting : null,
+      bifacial: form.type === 'solar' ? form.bifacial : null,
       curtailment: toRule(form),
     }
     try {
@@ -217,13 +251,25 @@ export default function StationForm() {
 
         <View className="sform__card">
           <View className="sform__row-head"><Text className="sform__card-title">出力模型参数</Text><InfoTip {...MODEL_INFO} /></View>
-          {form.type === 'solar' ? <View className="sform__coords">
-            <View className="sform__field sform__field--half"><Text className="sform__label">组件倾角（°）</Text>
-              <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.tilt} placeholder="默认 = 纬度" placeholderClass="sform__ph" onInput={set('tilt')} /></View></View>
-            <View className="sform__field sform__field--half"><Text className="sform__label">方位角（°）</Text>
-              <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.azimuth} placeholder="默认 180" placeholderClass="sform__ph" onInput={set('azimuth')} /></View></View>
-          </View> : <View className="sform__field"><Text className="sform__label">轮毂高度（m）</Text>
-            <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.hub_height} placeholder="默认 100" placeholderClass="sform__ph" onInput={set('hub_height')} /></View></View>}
+          {form.type === 'solar' ? <>
+            <View className="sform__field"><Text className="sform__label">安装方式</Text>
+              <SegmentedTabs value={form.mounting} options={[{ value: 'fixed', label: '固定支架' }, { value: 'single_axis', label: '单轴跟踪' }]} onChange={(v) => patch({ mounting: v as Mounting })} /></View>
+            {form.mounting === 'fixed' && <View className="sform__coords">
+              <View className="sform__field sform__field--half"><Text className="sform__label">组件倾角（°）</Text>
+                <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.tilt} placeholder="默认 = 纬度" placeholderClass="sform__ph" onInput={set('tilt')} /></View></View>
+              <View className="sform__field sform__field--half"><Text className="sform__label">方位角（°）</Text>
+                <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.azimuth} placeholder="默认 180" placeholderClass="sform__ph" onInput={set('azimuth')} /></View></View>
+            </View>}
+            <View className="sform__switch"><Text className="sform__label">双面组件</Text><Switch checked={form.bifacial} color="#1677ff" onChange={(e) => patch({ bifacial: !!e.detail.value })} /></View>
+          </> : <>
+            <View className="sform__field"><Text className="sform__label">机型</Text>
+              <Picker mode="selector" range={TURBINES.map((t) => t.label)} value={TURBINES.findIndex((t) => t.value === form.turbine)} onChange={(e) => patch({ turbine: TURBINES[Number(e.detail.value)]!.value })}>
+                <View className="sform__select"><Text className="sform__select-value">{TURBINES.find((t) => t.value === form.turbine)!.label}</Text><Icon name="chevronDown" size={14} color="#64748b" /></View></Picker></View>
+            {form.turbine === 'custom' && <View className="sform__field"><Text className="sform__label">功率曲线</Text>
+              <Textarea className="sform__textarea" value={form.curveText} placeholder={CURVE_PLACEHOLDER} placeholderClass="sform__ph" maxlength={2000} autoHeight onInput={(e) => patch({ curveText: e.detail.value })} /></View>}
+            <View className="sform__field"><Text className="sform__label">轮毂高度（m）</Text>
+              <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.hub_height} placeholder="默认 100" placeholderClass="sform__ph" onInput={set('hub_height')} /></View></View>
+          </>}
         </View>
 
         <View className="sform__card">

@@ -82,3 +82,5 @@
 .sform__remove { display: flex; align-items: center; gap: 4px; min-height: 32px; font-size: var(--font-caption); color: #98521a; }
 .sform__add-window { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; border-radius: var(--radius-button); border: 1px dashed #b7c9e2; color: #1264d6; font-size: var(--font-caption); @include pressable; }
 .sform__delete { margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; color: #b91c1c; font-size: var(--font-body); @include pressable; }
+.sform__switch { display: flex; align-items: center; justify-content: space-between; min-height: 42px; }
+.sform__textarea { width: 100%; min-height: 120px; padding: 10px 12px; box-sizing: border-box; border-radius: var(--radius-button); background: var(--color-bg); font-size: var(--font-body); line-height: 1.6; color: var(--color-text); font-variant-numeric: tabular-nums; }

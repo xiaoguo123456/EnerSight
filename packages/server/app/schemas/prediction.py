@@ -32,6 +32,7 @@ class GenerationPrediction(BaseModel):
     curtailed_kwh: float | None = None
     grid_power_kw: list[PowerPoint] | None = None
     basis: ForecastBasis | None = None
+    resolution_minutes: int = Field(default=60, description="曲线间隔：15 为 96 点，60 为 24 点")
     assumptions: list[str] = Field(default_factory=list)
 
 
@@ -49,7 +50,8 @@ class DailyOutlook(BaseModel):
     peak_kw: float | None
     power_kw: list[PowerPoint]
     grid_power_kw: list[PowerPoint] | None
-    lead_days: int = Field(description="距今天数，0 为今日；≥3 为中期预报")
+    lead_days: int = Field(description="距今天数，0 为今日；1–3 为短期（日前）；≥4 为中期")
+    resolution_minutes: int = Field(description="15：96 点，对应两个细则短期口径；60：24 点")
 
 
 class StationOutlook(BaseModel):

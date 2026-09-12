@@ -208,6 +208,7 @@ async def build_home(
         station,
         grid_kw=v.snapshot.grid_hourly_kw,
         curtailment_note=v.snapshot.curtailment_note,
+        notes=v.snapshot.notes,
     )
     from app.services import prediction_archive
 

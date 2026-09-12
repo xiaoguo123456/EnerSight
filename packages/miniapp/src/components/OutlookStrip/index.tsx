@@ -29,7 +29,7 @@ export function energyUnit(maxKwh: number) {
 
 /**
  * 未来 7 天横向条：周几 / 日期 / 说明 / 电量竖条 / 数值 / 适宜度。
- * 第 4 天起为中期预报，用浅色竖条与虚线分隔表示，不在列里写字。
+ * 第 5 天起为中期预报（1 小时曲线），用浅色竖条与虚线分隔表示，不在列里写字；前 4 天为 15 分钟曲线。
  */
 export function OutlookStrip({ days, selected, onSelect }: { days: StripDay[]; selected: number; onSelect: (i: number) => void }) {
   const max = Math.max(...days.map((d) => d.energy_kwh ?? 0), 0)
@@ -42,7 +42,7 @@ export function OutlookStrip({ days, selected, onSelect }: { days: StripDay[]; s
         {days.map((d, i) => (
           <View
             key={d.date}
-            className={`strip__col ${selected === i ? 'strip__col--active' : ''} ${d.lead_days >= 3 ? 'strip__col--mid' : ''} ${d.lead_days === 3 ? 'strip__col--mid-first' : ''}`}
+            className={`strip__col ${selected === i ? 'strip__col--active' : ''} ${d.lead_days >= 4 ? 'strip__col--mid' : ''} ${d.lead_days === 4 ? 'strip__col--mid-first' : ''}`}
             hoverClass="pressed"
             onClick={() => onSelect(i)}
           >

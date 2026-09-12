@@ -8,11 +8,13 @@ import { thousands } from '@enersight/core/format'
  */
 
 export interface ChartData {
-  /** 逐小时值，25 个点对应 00:00 – 24:00。缺测用 null，断线不补 0 */
+  /** 等间隔序列：逐小时 25 点对应 00:00 – 24:00，或 15 分钟 96 点。缺测用 null，断线不补 0 */
   values: (number | null)[]
   unit: string
   /** 固定纵轴上限；null 表示按数据自适应。由服务端下发，见 docs/06 §八 */
   yMax: number | null
+  /** 点间隔分钟数，默认 60；横轴标签与数据点密度据此计算 */
+  stepMinutes?: number
 }
 
 /** 接口的 TrendSeries → 图表输入 */
@@ -56,8 +58,10 @@ function fmtTick(v: number): string {
   return v >= 1000 ? thousands(v) : String(v)
 }
 
-function hhmm(i: number): string {
-  return `${String(i).padStart(2, '0')}:00`
+function hhmm(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 /** 手画圆角矩形。不用 ctx.roundRect —— 小程序 canvas 上它存在但行为不一致 */
@@ -88,6 +92,7 @@ export function draw(
   ctx.clearRect(0, 0, w, h)
 
   const n = data.values.length
+  const step = data.stepMinutes ?? 60
   const max = niceMax(data.values, data.yMax)
   const x0 = PAD_LEFT
   const y0 = PAD_TOP
@@ -158,9 +163,10 @@ export function draw(
     ctx.stroke()
   }
 
-  // ── 数据点：空心圆 ──
+  // ── 数据点：空心圆；96 点太密，只在逐小时以下的密度画 ──
   ctx.lineWidth = 1.5
   for (let i = 0; i < n; i++) {
+    if (n > 40) break
     const v = data.values[i]
     if (v === null || v === undefined) continue
     if (i === active) continue
@@ -176,9 +182,10 @@ export function draw(
   ctx.fillStyle = t.axisText
   ctx.font = '11px sans-serif'
   ctx.textBaseline = 'top'
-  for (let i = 0; i < n; i += 4) {
+  const every = Math.max(1, Math.round(240 / step))
+  for (let i = 0; i < n; i += every) {
     ctx.textAlign = i === 0 ? 'left' : i === n - 1 ? 'right' : 'center'
-    ctx.fillText(hhmm(i), px(i), y0 + ih + 6)
+    ctx.fillText(hhmm(i * step), px(i), y0 + ih + 6)
   }
 
   // ── 选中态：纵向虚线 + 实心点 + 悬浮气泡 ──
@@ -205,7 +212,7 @@ export function draw(
   ctx.stroke()
 
   // 气泡：两行（时刻 / 数值+单位），贴边时自动收进画布内
-  const title = hhmm(active)
+  const title = hhmm(active * step)
   const value = `${Number(av.toFixed(2))} ${data.unit}`
   ctx.font = '11px sans-serif'
   const tw = Math.max(ctx.measureText(title).width, ctx.measureText(value).width)

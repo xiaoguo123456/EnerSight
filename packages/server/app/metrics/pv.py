@@ -43,6 +43,9 @@ class PvInputs:
     temp_air: pd.Series
     wind_speed: pd.Series
     dc_capacity_kw: float | None = None  # 直流侧已知时给出；否则按容配比换算
+    step_minutes: int = 60  # 区间长度：逐小时 60，短期 96 点曲线 15
+    mounting: str = "fixed"  # fixed | single_axis，见 docs/07 §2.1
+    bifacial: bool = False
 
 
 def default_tilt(latitude: float) -> float:
@@ -87,8 +90,8 @@ def ac_power(
 
 def poa_from_components(
     *,
-    tilt: float,
-    azimuth: float,
+    tilt: float | pd.Series,
+    azimuth: float | pd.Series,
     solar_zenith: pd.Series,
     solar_azimuth: pd.Series,
     dni: pd.Series,
@@ -120,6 +123,65 @@ def poa_from_components(
     return total["poa_global"].fillna(0.0).where(valid, np.nan)
 
 
+def bifacial_poa(
+    *,
+    tilt: float | pd.Series,
+    azimuth: float | pd.Series,
+    solar_zenith: pd.Series,
+    solar_azimuth: pd.Series,
+    dni: pd.Series,
+    ghi: pd.Series,
+    dhi: pd.Series,
+) -> pd.Series:
+    """双面组件的有效辐照：pvlib infinite_sheds，背面按双面率折算进 poa_global。
+
+    几何按行间距比 gcr 归一化（宽度 1）：行距 1/gcr、离地高度 0.6。未用实测校准，
+    增益量级 5–12%，与行业经验一致；docs/07 §2.1。
+    """
+    from pvlib.bifacial import infinite_sheds
+
+    times = pd.DatetimeIndex(solar_zenith.index)
+    valid = dni.notna() & ghi.notna() & dhi.notna()
+    res = infinite_sheds.get_irradiance(
+        surface_tilt=tilt,
+        surface_azimuth=azimuth,
+        solar_zenith=solar_zenith,
+        solar_azimuth=solar_azimuth,
+        gcr=settings.pv_tracking_gcr,
+        height=0.6,
+        pitch=1.0 / settings.pv_tracking_gcr,
+        ghi=ghi.fillna(0.0),
+        dhi=dhi.fillna(0.0),
+        dni=dni.fillna(0.0),
+        albedo=settings.pv_albedo,
+        model="haydavies",
+        dni_extra=pvlib.irradiance.get_extra_radiation(times),
+        bifaciality=settings.pv_bifaciality,
+    )
+    return pd.Series(res["poa_global"], index=times).fillna(0.0).where(valid, np.nan)
+
+
+def surface_orientation(
+    inp: PvInputs, pos: pd.DataFrame
+) -> tuple[float | pd.Series, float | pd.Series]:
+    """固定支架用站点倾角 / 方位角；单轴跟踪按 pvlib singleaxis 逐时刻求支架姿态。
+
+    南北向水平轴、最大转角与背轨参数取 settings；夜间 pvlib 给 NaN，按平放处理。
+    """
+    if inp.mounting != "single_axis":
+        return inp.tilt, inp.azimuth
+    tr = pvlib.tracking.singleaxis(
+        pos["apparent_zenith"],
+        pos["azimuth"],
+        axis_tilt=0.0,
+        axis_azimuth=180.0,
+        max_angle=settings.pv_tracking_max_angle,
+        backtrack=True,
+        gcr=settings.pv_tracking_gcr,
+    )
+    return tr["surface_tilt"].fillna(0.0), tr["surface_azimuth"].fillna(180.0)
+
+
 def hourly_power(
     inp: PvInputs,
     *,
@@ -129,9 +191,9 @@ def hourly_power(
     temp_air: pd.Series | None = None,
     wind_speed: pd.Series | None = None,
 ) -> pd.Series:
-    """逐时交流出力（kW）。关键字参数用于替换某个输入（指数分母、归因）。
+    """逐区间交流出力（kW）。关键字参数用于替换某个输入（指数分母、归因）。
 
-    太阳位置取区间中点：辐射是前一小时均值，标在区间末。见 solar 模块说明。
+    太阳位置取区间中点：辐射是前一区间均值，标在区间末。见 solar 模块说明。
     """
     ghi = inp.ghi if ghi is None else ghi
     dni = inp.dni if dni is None else dni
@@ -139,10 +201,14 @@ def hourly_power(
     temp_air = inp.temp_air if temp_air is None else temp_air
     wind_speed = inp.wind_speed if wind_speed is None else wind_speed
 
-    pos = solar.solar_position_interval(inp.latitude, inp.longitude, inp.tz, inp.times)
-    poa = poa_from_components(
-        tilt=inp.tilt,
-        azimuth=inp.azimuth,
+    pos = solar.solar_position_interval(
+        inp.latitude, inp.longitude, inp.tz, inp.times, inp.step_minutes
+    )
+    tilt, azimuth = surface_orientation(inp, pos)
+    poa_fn = bifacial_poa if inp.bifacial else poa_from_components
+    poa = poa_fn(
+        tilt=tilt,
+        azimuth=azimuth,
         solar_zenith=pos["apparent_zenith"],
         solar_azimuth=pos["azimuth"],
         dni=dni,
@@ -158,6 +224,6 @@ def hourly_power(
     )
 
 
-def daily_energy_kwh(power_kw: pd.Series) -> float:
-    """逐时功率求和为日发电量。假定采样间隔 1 小时；任一小时缺测则为 NaN。"""
-    return float(power_kw.sum(skipna=False))
+def daily_energy_kwh(power_kw: pd.Series, step_minutes: int = 60) -> float:
+    """逐区间功率积分为日发电量（kW × 小时）；任一区间缺测则为 NaN。"""
+    return float(power_kw.sum(skipna=False)) * step_minutes / 60.0

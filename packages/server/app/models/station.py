@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Float, String
+from sqlalchemy import JSON, Boolean, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base, utcnow
@@ -42,6 +42,12 @@ class Station(Base):
     # 场站级出力约束（限电 / 检修），只有自建站点有。结构见 schemas.station.CurtailmentRule，
     # 应用见 services/curtailment。docs/17 §四
     curtailment: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
+
+    # 机型与安装方式，自建站点选填。docs/07 §2.1–2.3
+    turbine_class: Mapped[str | None] = mapped_column(String(16), default=None)
+    power_curve: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    mounting: Mapped[str | None] = mapped_column(String(16), default=None)
+    bifacial: Mapped[bool | None] = mapped_column(Boolean, default=None)
 
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

@@ -14,6 +14,7 @@ from app.schemas.common import Coord
 from app.schemas.station import (
     CreateStationRequest,
     CurtailmentRule,
+    PowerCurvePoint,
     PublicStationListResponse,
     StationCounts,
     StationListResponse,
@@ -53,6 +54,12 @@ def to_summary(s: Station, coord: Coord) -> StationSummary:
         metrics=StationMetrics.empty(),
         is_own=s.owner_id != CATALOG_OWNER,
         curtailment=CurtailmentRule.model_validate(s.curtailment) if s.curtailment else None,
+        turbine_class=s.turbine_class,
+        power_curve=[PowerCurvePoint.model_validate(p) for p in s.power_curve]
+        if s.power_curve
+        else None,
+        mounting=s.mounting,
+        bifacial=s.bifacial,
         **getattr(s, "_catalog_metadata", {}),
     )
 
@@ -307,6 +314,10 @@ async def create_station(
         azimuth=req.azimuth,
         hub_height=req.hub_height,
         curtailment=req.curtailment.model_dump() if req.curtailment else None,
+        turbine_class=req.turbine_class,
+        power_curve=[p.model_dump() for p in req.power_curve] if req.power_curve else None,
+        mounting=req.mounting,
+        bifacial=req.bifacial,
         address=address or None,
         catalog_id=req.catalog_id,
     )

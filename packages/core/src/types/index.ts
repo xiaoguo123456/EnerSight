@@ -81,3 +81,6 @@ export type StationOutlook = S['StationOutlook']
 export type DailyOutlook = S['DailyOutlook']
 export type CurtailmentRule = S['CurtailmentRule']
 export type CurtailmentWindow = S['CurtailmentWindow']
+export type PowerCurvePoint = S['PowerCurvePoint']
+export type TurbineClass = NonNullable<S['StationSummary']['turbine_class']>
+export type Mounting = NonNullable<S['StationSummary']['mounting']>

@@ -155,6 +155,11 @@ forecast 接口追加 past_days=1
 - 未来 7 天逐日发电预测：单站 `GET /v1/predictions/station`、全目录 `days[]`。
   每次请求已拉「昨日 + 7 天」共 192 点，7 天预测是把 `day_offset` 0…6 各算一遍，
   仍走同一条 pvlib 链路。7 天是四个模型的公共上限（ICON 全球 7.5 天），不做到 16 天。
+- 15 分钟序列（`minutely_15`）：当日与随后 3 天的 96 点曲线用它，字段为气温、10/80/100/120 m
+  风速、辐射三项、气压、天气代码。境内由上游按晴空指数从逐小时插值。辐射为前 15 分钟均值
+  标在区间末（实测：13:00 的小时值 725 对应 12:15–13:00 四个值的均值 715，而非 12:00–12:45）。
+- `surface_pressure`（hPa）与响应里的 `elevation`（90 m DEM）：风电空气密度修正用，
+  见 [07 §2.2](./07-metrics.md)。
 
 
 ### 起报时间
@@ -633,6 +638,10 @@ v = -wind_speed × cos(wind_direction × π / 180)
 | `azimuth` | number | 否 | 光伏组件方位角（°），默认 180 正南 |
 | `hub_height` | number | 否 | 风机轮毂高度（m），默认 100 m |
 | `curtailment` | object | 否 | 场站级出力约束（限电 / 检修），结构见 [06 §5.2](./06-api-contract.md)，口径见 [17 §四](./17-user-stations-and-outlook.md) |
+| `turbine_class` | enum | 否 | 风电机型档 `generic / low_wind / medium_wind / high_wind / custom`，见 [07 §2.2](./07-metrics.md) |
+| `power_curve` | array | `custom` 档必填 | 自定义功率曲线 `[{v, p}]`，风速 m/s 递增、出力为额定百分比 |
+| `mounting` | enum | 否 | 光伏 `fixed / single_axis`，见 [07 §2.1](./07-metrics.md) |
+| `bifacial` | bool | 否 | 光伏双面组件 |
 
 `tilt` / `azimuth` / `hub_height` 是物理出力模型的输入（见 [07 §2.3](./07-metrics.md)），
 选填，不填用默认值。`curtailment` 只有自建场站有，目录电站为 null。

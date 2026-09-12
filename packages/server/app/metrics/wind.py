@@ -8,6 +8,7 @@
 """
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -21,6 +22,63 @@ LEVEL_COLUMNS: dict[float, str] = {
     100.0: "wind_speed_100m",
     120.0: "wind_speed_120m",
 }
+
+
+@dataclass(frozen=True)
+class Turbine:
+    """机型：档位或自定义曲线。curve 为 (轮毂风速 m/s, 出力 / 额定 0–1) 升序点列。"""
+
+    cls: str = "generic"
+    curve: tuple[tuple[float, float], ...] | None = None
+
+
+# 机型档：(切入, 额定, 切出) m/s。通用档取 settings；低 / 中 / 高风速按比功率区分。docs/07 §2.2
+TURBINE_CLASSES: dict[str, tuple[float, float, float]] = {
+    "low_wind": (2.5, 9.5, 22.0),
+    "medium_wind": (3.0, 11.0, 25.0),
+    "high_wind": (3.5, 12.5, 25.0),
+}
+TURBINE_LABELS = {
+    "generic": "通用功率曲线",
+    "low_wind": "低风速机型（额定 9.5 m/s）",
+    "medium_wind": "中风速机型（额定 11 m/s）",
+    "high_wind": "高风速机型（额定 12.5 m/s）",
+    "custom": "自定义功率曲线",
+}
+
+
+def turbine_for(station) -> Turbine:
+    """站点字段 → Turbine。自定义档没有曲线时退回通用档。"""
+    cls = getattr(station, "turbine_class", None) or "generic"
+    raw = getattr(station, "power_curve", None)
+    if cls == "custom" and raw:
+        curve = tuple(sorted((float(p["v"]), float(p["p"]) / 100.0) for p in raw))
+        return Turbine("custom", curve)
+    return Turbine(cls if cls in TURBINE_CLASSES else "generic", None)
+
+
+def air_density(
+    pressure_hpa: pd.Series | None, temp_c: pd.Series, elevation: float | None
+) -> pd.Series:
+    """轮毂高度空气密度 ρ = p / (R T)。
+
+    有气压用气压；缺气压按 ISA 由海拔换算；连海拔都没有按标称 1.225。
+    3000 m 海拔 ρ 约 0.9，不修正会把额定以下的出力系统性高估两到三成。
+    """
+    t_k = temp_c.astype(float) + 273.15
+    p = (
+        pressure_hpa.astype(float) * 100.0
+        if pressure_hpa is not None
+        else pd.Series(np.nan, index=temp_c.index)
+    )
+    if elevation is not None:
+        p = p.fillna(101325.0 * (1.0 - 2.25577e-5 * elevation) ** 5.25588)
+    return (p / (287.05 * t_k)).fillna(settings.wind_air_density_ref)
+
+
+def density_corrected_speed(v_hub: pd.Series, rho: pd.Series) -> pd.Series:
+    """IEC 61400-12-1 变桨机组密度修正：v' = v (ρ / ρ0)^(1/3)，再查标称曲线。"""
+    return v_hub * (rho / settings.wind_air_density_ref) ** (1.0 / 3.0)
 
 
 def default_hub_height() -> float:
@@ -82,28 +140,45 @@ def hub_wind_speed(
     return pd.Series(out, index=index), pd.Series(fallback, index=index)
 
 
-def power_curve(v_hub: pd.Series, capacity_kw: float) -> pd.Series:
+def power_curve(
+    v_hub: pd.Series, capacity_kw: float, turbine: Turbine | None = None
+) -> pd.Series:
     """通用功率曲线（机组毛出力）。切入以下与切出以上出力为 0 —— 这是物理事实，
     不能被其他因素补偿，这也是环境指数不用加权求和的原因之一。
 
     NaN 风速 → NaN 出力，不当 0。
     """
-    v_in, v_r, v_out = settings.wind_v_in, settings.wind_v_rated, settings.wind_v_out
+    turbine = turbine or Turbine()
     v = v_hub.to_numpy(dtype=float)
-
-    ramp = capacity_kw * (v**3 - v_in**3) / (v_r**3 - v_in**3)
-    p = np.select(
-        [v < v_in, v < v_r, v <= v_out],
-        [0.0, ramp, capacity_kw],
-        default=0.0,
-    )
+    if turbine.curve:
+        vs = np.array([c[0] for c in turbine.curve], dtype=float)
+        ps = np.array([c[1] for c in turbine.curve], dtype=float) * capacity_kw
+        # 首点之前为切入前、末点之后为切出，都是 0
+        p = np.interp(v, vs, ps, left=0.0, right=0.0)
+    else:
+        v_in, v_r, v_out = TURBINE_CLASSES.get(
+            turbine.cls, (settings.wind_v_in, settings.wind_v_rated, settings.wind_v_out)
+        )
+        ramp = capacity_kw * (v**3 - v_in**3) / (v_r**3 - v_in**3)
+        p = np.select(
+            [v < v_in, v < v_r, v <= v_out],
+            [0.0, ramp, capacity_kw],
+            default=0.0,
+        )
     p = np.where(np.isfinite(v), p, np.nan)
     return pd.Series(p, index=v_hub.index).clip(lower=0, upper=capacity_kw)
 
 
-def plant_power(v_hub: pd.Series, capacity_kw: float) -> pd.Series:
-    """场站净出力：功率曲线 × (1 − 尾流 / 可利用率 / 电气损耗)。"""
-    return power_curve(v_hub, capacity_kw) * (1 - settings.wind_losses)
+def plant_power(
+    v_hub: pd.Series,
+    capacity_kw: float,
+    *,
+    rho: pd.Series | None = None,
+    turbine: Turbine | None = None,
+) -> pd.Series:
+    """场站净出力：密度修正 → 功率曲线 × (1 − 尾流 / 可利用率 / 电气损耗)。"""
+    v = density_corrected_speed(v_hub, rho) if rho is not None else v_hub
+    return power_curve(v, capacity_kw, turbine) * (1 - settings.wind_losses)
 
 
 def capacity_factor(daily_kwh: float, capacity_kw: float) -> float:

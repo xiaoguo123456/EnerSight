@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     max_stations_per_user: int = 10
     # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二
     forecast_outlook_days: int = 7
+    # 当日 + 短期 3 天按 15 分钟 96 点（两个细则短期口径），其余按 1 小时。docs/07 §2.7
+    outlook_fine_days: int = 4
+    outlook_fine_step_minutes: int = 15
     ttl_hourly_forecast: int = 3600  # 图层网格块
 
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码
@@ -76,6 +79,12 @@ class Settings(BaseSettings):
     wind_hub_height_default: float = 100.0  # 未填轮毂高度时的默认值
     # 只有 10 m 风速时的幂律外推指数（降级路径）；正常用 80/100/120 m 各层按对数廓线插值
     wind_shear_alpha: float = 0.18
+    wind_air_density_ref: float = 1.225  # 功率曲线标称空气密度，IEC 61400-12-1 密度修正的基准
+    # 光伏跟踪与双面：pvlib singleaxis / infinite_sheds 的默认几何。docs/07 §2.1
+    pv_tracking_gcr: float = 0.35
+    pv_tracking_max_angle: float = 60.0
+    pv_bifaciality: float = 0.7
+    pv_albedo: float = 0.2
 
     # 指数分档阈值，上线前需按 docs/07 §八 校准
     # 公开电站目录同步：GEM 下载要提交联系人信息（表单），按月一次。docs/04 §七

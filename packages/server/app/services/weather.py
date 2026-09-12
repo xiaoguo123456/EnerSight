@@ -34,6 +34,10 @@ class Forecast:
     model: str = "best_match"
     meta: ModelMeta | None = field(default=None, compare=False)
     fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC), compare=False)
+    # 15 分钟序列（上游插值），只有 forecast 接口带；archive 与旧缓存为 None，调用方退回逐小时
+    quarter: pd.DataFrame | None = field(default=None, compare=False)
+    # 站点海拔（Open-Meteo 90 m DEM），风电空气密度的降级来源
+    elevation: float | None = None
 
     def basis(self) -> ForecastBasis:
         from app.services.model_resolution import resolve
@@ -101,7 +105,20 @@ def parse_forecast(
     h = raw["hourly"]
     idx = pd.DatetimeIndex(pd.to_datetime(h["time"])).tz_localize(tz)
     df = pd.DataFrame({k: v for k, v in h.items() if k != "time"}, index=idx)
-    return Forecast(tz=tz, hourly=df, model=model or current_model.get(), meta=meta)
+    quarter = None
+    q = raw.get("minutely_15")
+    if isinstance(q, dict) and q.get("time"):
+        qidx = pd.DatetimeIndex(pd.to_datetime(q["time"])).tz_localize(tz)
+        quarter = pd.DataFrame({k: v for k, v in q.items() if k != "time"}, index=qidx)
+    elev = raw.get("elevation")
+    return Forecast(
+        tz=tz,
+        hourly=df,
+        model=model or current_model.get(),
+        meta=meta,
+        quarter=quarter,
+        elevation=float(elev) if isinstance(elev, int | float) else None,
+    )
 
 
 async def get_model_meta(http: httpx.AsyncClient, model: str) -> ModelMeta | None:

@@ -40,6 +40,26 @@ class CurtailmentRule(BaseModel):
         return self
 
 
+TurbineClass = Literal["generic", "low_wind", "medium_wind", "high_wind", "custom"]
+Mounting = Literal["fixed", "single_axis"]
+
+
+class PowerCurvePoint(BaseModel):
+    v: float = Field(ge=0, le=60, description="轮毂高度风速 m/s")
+    p: float = Field(ge=0, le=100, description="出力占额定容量百分比")
+
+
+def _check_curve(curve: list[PowerCurvePoint] | None) -> list[PowerCurvePoint] | None:
+    if curve is None:
+        return None
+    if len(curve) < 3:
+        raise ValueError("功率曲线至少 3 个点")
+    for a, b in zip(curve, curve[1:], strict=False):
+        if b.v <= a.v:
+            raise ValueError("功率曲线的风速必须递增")
+    return curve
+
+
 class StationMetrics(BaseModel):
     """运行指标。V1 无实测数据，由气象推算；推算前为 None，前端展示「—」。
 
@@ -88,6 +108,10 @@ class StationSummary(BaseModel):
     metrics: StationMetrics
     is_own: bool = Field(description="True 为本账号自建站点，可编辑删除；目录电站为 False")
     curtailment: CurtailmentRule | None = Field(description="出力约束，目录电站与未设置时为 null")
+    turbine_class: TurbineClass | None = Field(description="风电机型档，未设置为 null 即通用曲线")
+    power_curve: list[PowerCurvePoint] | None = Field(description="自定义功率曲线，仅 custom 档")
+    mounting: Mounting | None = Field(description="光伏安装方式，未设置为 null 即固定支架")
+    bifacial: bool | None = Field(description="光伏是否双面组件，未设置为 null 即单面")
     source: str | None = None
     original_name: str | None = None
     local_name: str | None = None
@@ -135,6 +159,22 @@ class CreateStationRequest(BaseModel):
     azimuth: float | None = Field(default=None, ge=0, le=360)
     hub_height: float | None = Field(default=None, gt=0, le=200)
     curtailment: CurtailmentRule | None = None
+    # 机型与安装方式，docs/07 §2.3
+    turbine_class: TurbineClass | None = None
+    power_curve: list[PowerCurvePoint] | None = Field(default=None, max_length=60)
+    mounting: Mounting | None = None
+    bifacial: bool | None = None
+
+    @field_validator("power_curve")
+    @classmethod
+    def _curve(cls, v: list[PowerCurvePoint] | None) -> list[PowerCurvePoint] | None:
+        return _check_curve(v)
+
+    @model_validator(mode="after")
+    def _custom_needs_curve(self) -> "CreateStationRequest":
+        if self.turbine_class == "custom" and not self.power_curve:
+            raise ValueError("自定义机型需要功率曲线")
+        return self
 
     @field_validator("name")
     @classmethod
@@ -162,3 +202,12 @@ class UpdateStationRequest(BaseModel):
     hub_height: float | None = Field(default=None, gt=0, le=200)
     # 传 null 清除规则；不传保持不变
     curtailment: CurtailmentRule | None = None
+    turbine_class: TurbineClass | None = None
+    power_curve: list[PowerCurvePoint] | None = Field(default=None, max_length=60)
+    mounting: Mounting | None = None
+    bifacial: bool | None = None
+
+    @field_validator("power_curve")
+    @classmethod
+    def _curve(cls, v: list[PowerCurvePoint] | None) -> list[PowerCurvePoint] | None:
+        return _check_curve(v)

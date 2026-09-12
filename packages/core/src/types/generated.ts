@@ -583,6 +583,14 @@ export interface components {
             /** Hub Height */
             hub_height?: number | null;
             curtailment?: components["schemas"]["CurtailmentRule"] | null;
+            /** Turbine Class */
+            turbine_class?: ("generic" | "low_wind" | "medium_wind" | "high_wind" | "custom") | null;
+            /** Power Curve */
+            power_curve?: components["schemas"]["PowerCurvePoint"][] | null;
+            /** Mounting */
+            mounting?: ("fixed" | "single_axis") | null;
+            /** Bifacial */
+            bifacial?: boolean | null;
         };
         /** CurrentAlertResponse */
         CurrentAlertResponse: {
@@ -706,9 +714,14 @@ export interface components {
             grid_power_kw: components["schemas"]["PowerPoint"][] | null;
             /**
              * Lead Days
-             * @description 距今天数，0 为今日；≥3 为中期预报
+             * @description 距今天数，0 为今日；1–3 为短期（日前）；≥4 为中期
              */
             lead_days: number;
+            /**
+             * Resolution Minutes
+             * @description 15：96 点，对应两个细则短期口径；60：24 点
+             */
+            resolution_minutes: number;
         };
         /**
          * EnergyIndex
@@ -873,6 +886,12 @@ export interface components {
             /** Grid Power Kw */
             grid_power_kw?: components["schemas"]["PowerPoint"][] | null;
             basis?: components["schemas"]["ForecastBasis"] | null;
+            /**
+             * Resolution Minutes
+             * @description 曲线间隔：15 为 96 点，60 为 24 点
+             * @default 60
+             */
+            resolution_minutes: number;
             /** Assumptions */
             assumptions?: string[];
             /** Status */
@@ -992,6 +1011,12 @@ export interface components {
             /** Grid Power Kw */
             grid_power_kw?: components["schemas"]["PowerPoint"][] | null;
             basis?: components["schemas"]["ForecastBasis"] | null;
+            /**
+             * Resolution Minutes
+             * @description 曲线间隔：15 为 96 点，60 为 24 点
+             * @default 60
+             */
+            resolution_minutes: number;
             /** Assumptions */
             assumptions?: string[];
         };
@@ -1226,6 +1251,19 @@ export interface components {
              * @description 较昨日同期百分比，None 时前端隐藏标签
              */
             delta_percent: number | null;
+        };
+        /** PowerCurvePoint */
+        PowerCurvePoint: {
+            /**
+             * V
+             * @description 轮毂高度风速 m/s
+             */
+            v: number;
+            /**
+             * P
+             * @description 出力占额定容量百分比
+             */
+            p: number;
         };
         /** PowerPoint */
         PowerPoint: {
@@ -1462,6 +1500,26 @@ export interface components {
             is_own: boolean;
             /** @description 出力约束，目录电站与未设置时为 null */
             curtailment: components["schemas"]["CurtailmentRule"] | null;
+            /**
+             * Turbine Class
+             * @description 风电机型档，未设置为 null 即通用曲线
+             */
+            turbine_class: ("generic" | "low_wind" | "medium_wind" | "high_wind" | "custom") | null;
+            /**
+             * Power Curve
+             * @description 自定义功率曲线，仅 custom 档
+             */
+            power_curve: components["schemas"]["PowerCurvePoint"][] | null;
+            /**
+             * Mounting
+             * @description 光伏安装方式，未设置为 null 即固定支架
+             */
+            mounting: ("fixed" | "single_axis") | null;
+            /**
+             * Bifacial
+             * @description 光伏是否双面组件，未设置为 null 即单面
+             */
+            bifacial: boolean | null;
             /** Source */
             source?: string | null;
             /** Original Name */
@@ -1547,6 +1605,14 @@ export interface components {
             /** Hub Height */
             hub_height?: number | null;
             curtailment?: components["schemas"]["CurtailmentRule"] | null;
+            /** Turbine Class */
+            turbine_class?: ("generic" | "low_wind" | "medium_wind" | "high_wind" | "custom") | null;
+            /** Power Curve */
+            power_curve?: components["schemas"]["PowerCurvePoint"][] | null;
+            /** Mounting */
+            mounting?: ("fixed" | "single_axis") | null;
+            /** Bifacial */
+            bifacial?: boolean | null;
         };
         /** ValidationError */
         ValidationError: {

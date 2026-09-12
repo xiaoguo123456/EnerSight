@@ -29,6 +29,22 @@ HOURLY_FIELDS = [
     "diffuse_radiation",
     "direct_normal_irradiance",
     "is_day",
+    "surface_pressure",  # 风电空气密度修正：ρ = p / (R T)，见 metrics/wind
+]
+
+# 15 分钟字段：境内没有 15 分钟原生模式，是上游按晴空指数插值的，只用于当日与短期 3 天的
+# 96 点曲线（docs/07 §2.7）。辐射同样是「前 15 分钟均值标在区间末」。
+MINUTELY_FIELDS = [
+    "temperature_2m",
+    "wind_speed_10m",
+    "wind_speed_80m",
+    "wind_speed_100m",
+    "wind_speed_120m",
+    "shortwave_radiation",
+    "diffuse_radiation",
+    "direct_normal_irradiance",
+    "surface_pressure",
+    "weather_code",
 ]
 
 
@@ -99,6 +115,7 @@ class OpenMeteoProvider:
             "latitude": latitude,
             "longitude": longitude,
             "hourly": ",".join(HOURLY_FIELDS),
+            "minutely_15": ",".join(MINUTELY_FIELDS),
             "timezone": "auto",
             "forecast_days": forecast_days,
             "past_days": past_days,

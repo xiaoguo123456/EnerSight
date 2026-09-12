@@ -219,7 +219,7 @@ def test_未来7天逐日预测_指数不受限电影响():
     assert out.days[0].index_score == out.days[3].index_score
     assert out.days[0].weekday == date.fromisoformat(out.days[0].date).isoweekday()
     assert out.basis is not None and out.basis.issued_at is None  # 无元数据：不猜
-    assert any("中期预报" in a for a in out.assumptions)
+    assert any("中期参考" in a for a in out.assumptions)
 
 
 async def test_单站7天接口(client: AsyncClient, open_meteo):

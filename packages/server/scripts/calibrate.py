@@ -47,7 +47,7 @@ PV_CAPACITY_KW = 500.0  # 交流侧；直流侧 = × settings.pv_dc_ac_ratio，�
 WIND_CAPACITY_KW = 2000.0
 PVGIS_TOLERANCE = 0.15
 TZ = "Asia/Shanghai"
-CACHE_VERSION = "v2"
+CACHE_VERSION = "v3"  # v3：加 surface_pressure，风电做空气密度修正
 
 ARCHIVE_VARS = [
     "shortwave_radiation",
@@ -58,6 +58,7 @@ ARCHIVE_VARS = [
     "cloud_cover",
     "precipitation",
     "wind_speed_100m",  # ERA5 有 100 m 风，用来标定 10 m → 轮毂高度的幂律指数
+    "surface_pressure",  # 空气密度修正与线上同口径（07 §2.2）
 ]
 LEVELS = ("excellent", "good", "fair", "poor")
 
@@ -210,7 +211,7 @@ def run_wind_days(site: Site, df: pd.DataFrame, alpha: float) -> pd.DataFrame:
         prep = energy.prepare(station, fc, day=day, version=VERSION)
         if not prep.complete or prep.v_hub is None:
             continue
-        daily = float(wind.plant_power(prep.v_hub, WIND_CAPACITY_KW).sum())
+        daily = float(wind.plant_power(prep.v_hub, WIND_CAPACITY_KW, rho=prep.rho).sum())
         v10 = prep.frame["wind_speed_10m"].astype(float)
         v_old = v10 * (hub / 10.0) ** alpha
         daily_old = float(wind.power_curve(v_old, WIND_CAPACITY_KW).sum())

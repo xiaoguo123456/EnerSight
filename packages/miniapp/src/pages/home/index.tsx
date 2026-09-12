@@ -49,12 +49,12 @@ function Value({ value }: { value?: number | null }) {
   const v = energy(value)
   return <View className="forecast-value"><Text>{v.value}</Text><Text className="forecast-value__unit">{v.unit}</Text></View>
 }
-function PowerCurve({ points, id, title }: { points: { value: number | null }[]; id: string; title: string }) {
+function PowerCurve({ points, id, title, step = 60 }: { points: { value: number | null }[]; id: string; title: string; step?: number }) {
   const values = points.map(p => p.value)
   const divisor = Math.max(...values.map(v => v ?? 0)) >= 1e6 ? 1e6 : 1000
   return <View className="forecast-curve">
-    <View className="forecast-row"><Text className="forecast-subtitle">{title}</Text><Text className="forecast-unit">{divisor === 1e6 ? 'GW' : 'MW'}</Text></View>
-    <TrendChart id={id} key={id} height={168} data={{ values: values.map(v => v == null ? null : v / divisor), unit: divisor === 1e6 ? 'GW' : 'MW', yMax: null }} />
+    <View className="forecast-row"><Text className="forecast-subtitle">{title}</Text><Text className="forecast-unit">{`${step === 15 ? '15 分钟 · ' : '1 小时 · '}${divisor === 1e6 ? 'GW' : 'MW'}`}</Text></View>
+    <TrendChart id={id} key={id} height={168} data={{ values: values.map(v => v == null ? null : v / divisor), unit: divisor === 1e6 ? 'GW' : 'MW', yMax: null, stepMinutes: step }} />
   </View>
 }
 /** 上网口径按数字优先摆两格；没有规则不出现。 */
@@ -85,7 +85,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
     content: [
       ...(req.data?.assumptions ?? p?.assumptions ?? []),
       station.type === 'wind' ? '风电按轮毂高度风速与通用功率曲线估算，低于切入或高于切出风速时功率为零，不代表实测停机。' : '光伏按倾斜面辐射与 PVWatts 估算，夜间功率为零。',
-      '曲线按电站当地时间逐小时给出；第 4–7 天为中期预报，参考为主。',
+      '当日与随后 3 天为 15 分钟 96 点曲线，对应两个细则的短期（日前）口径；第 5–7 天为 1 小时曲线，中期参考为主。曲线按电站当地时间。',
       basisDetail(req.data?.basis ?? p?.basis),
       DISCLAIMER,
     ].join('\n'),
@@ -98,7 +98,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
     {req.status === 'error' ? <ErrorState error={req.error} onRetry={req.reload} />
       : req.status !== 'success' ? <Skeleton height={120} lines={2} />
       : <OutlookStrip days={days.map(d => ({ ...d, caption: d.weather_text, level: d.index_level, score: d.index_score }))} selected={selected} onSelect={setSelected} />}
-    {value != null && points && <PowerCurve points={points} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title={`${label} 预测功率`} />}
+    {value != null && points && <PowerCurve points={points} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title={`${label} 预测功率`} step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)} />}
     {value != null && peak && <Text className="forecast-caption">峰值 {formatPower(peak.value).value} {formatPower(peak.value).unit} · {peak.time}{day?.weather_text ? ` · 日间 ${day.weather_text}` : ''}</Text>}
     {value == null && <Text className="forecast-state">{station.prediction_blocked_reason ? `${station.prediction_blocked_reason}，暂不估算日电量` : !p && !day ? '预测服务暂未就绪，请稍后刷新' : '气象数据或电站参数不完整，暂不估算'}</Text>}
     {refreshError && <Text className="forecast-warning" onClick={onReload}>刷新失败，当前保留上次预测 · 点击重试</Text>}

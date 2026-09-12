@@ -51,12 +51,14 @@ def pv_index(inp: PvInputs) -> IndexResult:
     """光伏指数。分子分母跑同一个模型链，只换输入。输入须完整（无 NaN）。"""
     _check_complete(inp)
     # 理想基准与 Open-Meteo 同口径：前一小时均值，不是整点瞬时值
-    cs = solar.clearsky_hourly_mean(inp.latitude, inp.longitude, inp.tz, inp.times)
+    cs = solar.clearsky_interval_mean(
+        inp.latitude, inp.longitude, inp.tz, inp.times, inp.step_minutes
+    )
     ideal_temp = pd.Series(pv.IDEAL_TEMP_AIR, index=inp.times)
     ideal_wind = pd.Series(pv.IDEAL_WIND_SPEED, index=inp.times)
 
     actual_kw = pv.hourly_power(inp)
-    actual = pv.daily_energy_kwh(actual_kw)
+    actual = pv.daily_energy_kwh(actual_kw, inp.step_minutes)
     ideal = pv.daily_energy_kwh(
         pv.hourly_power(
             inp,
@@ -65,7 +67,8 @@ def pv_index(inp: PvInputs) -> IndexResult:
             dhi=cs["dhi"],
             temp_air=ideal_temp,
             wind_speed=ideal_wind,
-        )
+        ),
+        inp.step_minutes,
     )
 
     score = 0.0 if ideal <= 0 else min(100.0, actual / ideal * 100.0)
@@ -79,7 +82,7 @@ def pv_index(inp: PvInputs) -> IndexResult:
             return v / ideal * 100.0
 
         no_cloud = pv.daily_energy_kwh(
-            pv.hourly_power(inp, ghi=cs["ghi"], dni=cs["dni"], dhi=cs["dhi"])
+            pv.hourly_power(inp, ghi=cs["ghi"], dni=cs["dni"], dhi=cs["dhi"]), inp.step_minutes
         )
         kt = actual / no_cloud if no_cloud > 0 else 0.0
         attribution.append(
@@ -90,7 +93,9 @@ def pv_index(inp: PvInputs) -> IndexResult:
             )
         )
 
-        ideal_temp_only = pv.daily_energy_kwh(pv.hourly_power(inp, temp_air=ideal_temp))
+        ideal_temp_only = pv.daily_energy_kwh(
+            pv.hourly_power(inp, temp_air=ideal_temp), inp.step_minutes
+        )
         t_avg = float(inp.temp_air.mean())
         attribution.append(
             IndexAttribution(
@@ -100,7 +105,9 @@ def pv_index(inp: PvInputs) -> IndexResult:
             )
         )
 
-        ideal_wind_only = pv.daily_energy_kwh(pv.hourly_power(inp, wind_speed=ideal_wind))
+        ideal_wind_only = pv.daily_energy_kwh(
+            pv.hourly_power(inp, wind_speed=ideal_wind), inp.step_minutes
+        )
         v_avg = float(inp.wind_speed.mean())
         attribution.append(
             IndexAttribution(

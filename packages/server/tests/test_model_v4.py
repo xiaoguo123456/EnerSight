@@ -54,7 +54,7 @@ def test_光伏与风电输出按相同区间起点对齐(monkeypatch):
     day = fc.current_hour().normalize()
     fc.hourly["shortwave_radiation"] = np.arange(len(fc.hourly))
     monkeypatch.setattr(pv, "hourly_power", lambda inp: inp.ghi)
-    monkeypatch.setattr(wind, "plant_power", lambda speed, capacity: speed * capacity)
+    monkeypatch.setattr(wind, "plant_power", lambda speed, capacity, **_kw: speed * capacity)
     sol = station("solar")
     w = station("wind")
     ps = prediction.compute(sol, fc)
