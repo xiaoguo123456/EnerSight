@@ -201,12 +201,17 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 小程序真机地面覆盖层与模拟器显示；不能只以 `/ready` 成功判断地图发布完成。
 
 
-### 测试环境配置准备（2026-09-12）
+### 测试环境上线（2026-09-13）
 
-- 已在现有 RDS 创建 `enersight_test`，控制台状态为运行中；不复制生产用户数据。
-- 测试服务器 `/opt/enersight-test` 已上传独立 Compose 和部署脚本，`.env` 权限为 600。
-- GitHub 已配置 `test` 环境、`TEST_SSH_HOST` 和 `TEST_SSH_KNOWN_HOSTS`。
-- 已准备 main 推送自动部署工作流；只有工作流提交并推送后才会生效。
-- `pnpm build:test` / `pnpm build:prod` 均已实际构建并核验产物地址。
-- Nginx 候选配置已通过测试服务器上的 `nginx -t`，尚未替换正在使用的配置。
-- 尚待创建普通账号 `enersight_test_app` 并授予测试库 DBOwner、首次发布、Nginx reload 和公网验收；当前不能视为测试后端已上线。
+- 测试入口：`https://test-www.qhzhiyin.com/enersight`；ECS `47.93.60.25`，部署目录 `/opt/enersight-test`，回环端口 `8002`。
+- 已创建独立数据库 `enersight_test`，普通账号 `enersight_test_app` 仅绑定该库 owner；不复制生产用户数据。
+- 服务器 `.env` 权限为 600，数据库密码与 JWT 独立生成；经用户授权，复用本项目微信 AppID、AppSecret 与腾讯位置服务配置。
+- GitHub `test` 环境和测试主机 Secrets 已配置。后端或部署文件推送到 main 后，自动检查、构建并部署测试；生产继续手工指定提交。
+- [首次成功自动部署](https://github.com/xiaoguo123456/EnerSight/actions/runs/34704250341)，提交 `5cf561f4ed82b46a49392723f968b56976765df2`。代码检查、单元测试、PostgreSQL 迁移与写入检查、镜像地图依赖验证均通过。
+- 修复报告测试依赖主机日期的问题：测试数据使用站点时区，UTC 环境下 17 项报告测试通过。
+- Nginx 语法检查通过并已平滑加载，原配置备份为 `/opt/weishen/deploy/nginx.conf.before-enersight-20260913001428`。原有测试首页、花花狗测试与生产健康接口、EnerSight 生产就绪接口均仍为 200。
+- 测试公网 `/enersight/ready` 返回 200；无效微信 code 返回 400 / `INVALID_CODE`。真实用户登录及手机端合法域名仍需小程序联调。
+- `pnpm build:test` / `pnpm build:prod` 已实际构建并核验产物地址。测试默认关闭全量定时采集和卫星归档，地图预热不在本次上线验收范围内。
+- 测试服务器 Nginx 已生效；花花狗仓库 `deploy/nginx.conf` 对应修改仍待用户确认后推送，避免后续花花狗发版覆盖新增路由。
+
+本次只将部署配置与必要测试修复合入 main，没有合入当前开发分支其余 7 个提交。
