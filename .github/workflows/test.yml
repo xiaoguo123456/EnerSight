@@ -1,0 +1,142 @@
+name: 测试部署
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/server/**'
+      - 'packages/core/**'
+      - 'deploy/**'
+      - '.github/workflows/test.yml'
+      - 'Makefile'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enersight-test
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: enersight-backend
+
+jobs:
+  checks:
+    name: 发布前检查
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: enersight_test
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: enersight_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U enersight_test -d enersight_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 验证并选择发布提交
+        id: release
+        env:
+          REQUESTED_SHA: ${{ github.sha }}
+        run: |
+          [[ "$REQUESTED_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          git merge-base --is-ancestor "$REQUESTED_SHA" origin/main
+          git checkout --detach "$REQUESTED_SHA"
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=${REQUESTED_SHA:0:12}" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: packages/server/uv.lock
+      - run: pnpm install --frozen-lockfile
+      - run: cd packages/server && uv sync --frozen
+      - run: make check
+      - name: 验证 PostgreSQL 16 迁移和写入
+        working-directory: packages/server
+        env:
+          ENERSIGHT_DATABASE_URL: postgresql+asyncpg://enersight_test:ci-only-password@localhost:5432/enersight_test
+          ENERSIGHT_ENABLE_SCHEDULER: 'false'
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run python scripts/check_postgres.py
+
+  deploy:
+    name: 构建镜像并发布测试
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.checks.outputs.sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - name: 构建并推送固定提交镜像
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: packages/server
+          platforms: linux/amd64
+          push: true
+          tags: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ needs.checks.outputs.tag }}
+          cache-from: type=gha,scope=test
+          cache-to: type=gha,mode=max,scope=test
+      - name: 验证实际测试镜像启动和地图运行库
+        env:
+          REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          TAG: ${{ needs.checks.outputs.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG@$DIGEST"
+          docker run --rm --memory 768m --cpus 1 --network none \
+            --entrypoint /app/.venv/bin/python "$IMAGE" -m scripts.check_map_runtime
+      - name: 准备已验证的 SSH 凭据
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.TEST_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: 上传部署文件并执行更新
+        env:
+          TEST_HOST: ${{ secrets.TEST_SSH_HOST }}
+          PULL_REGISTRY: ${{ secrets.ACR_PULL_REGISTRY }}
+          NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          TAG: ${{ needs.checks.outputs.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          [[ "$TEST_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
+          IMAGE="$PULL_REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG@$DIGEST"
+          [[ "$IMAGE" =~ ^[a-zA-Z0-9./_-]+:[a-f0-9]{12}@sha256:[a-f0-9]{64}$ ]] || exit 1
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes root@"$TEST_HOST" 'install -d -m 750 /opt/enersight-test/scripts'
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes deploy/docker-compose.test.yml root@"$TEST_HOST":/opt/enersight-test/docker-compose.yml
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes deploy/scripts/*.sh root@"$TEST_HOST":/opt/enersight-test/scripts/
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes root@"$TEST_HOST" "bash /opt/enersight-test/scripts/deploy.sh '$IMAGE' test"
+          echo "发布镜像：$IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo '公网入口：https://test-www.qhzhiyin.com/enersight/' >> "$GITHUB_STEP_SUMMARY"
+      - name: 清理临时 SSH 密钥
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
