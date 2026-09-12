@@ -37,14 +37,10 @@
 
 .catalog__active-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px; font-size: 12px; color: #1264d6; > text { padding: 10px; background: #eaf3ff; border-radius: 8px; } }
 
-// 我的站点（自建）。docs/17 §一
-.catalog__types { gap: 18px; }
-.catalog__mine { padding-top: 12px; }
-.catalog__add { display: flex; align-items: center; gap: 12px; margin: 0 20px; padding: 14px; border-radius: 12px; background: #eaf3ff; @include pressable; }
-.catalog__add-icon { width: 36px; height: 36px; border-radius: 10px; background: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.catalog__add-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.catalog__add-title { font-size: 15px; font-weight: 600; color: #1264d6; }
-.catalog__add-sub { font-size: 12px; line-height: 1.5; color: var(--color-text-sub); }
+// 公开目录 / 我的电站。docs/17 §一
+.catalog__scope { padding: 10px 0 2px; }
+.catalog__results-title { display: flex; align-items: center; gap: 4px; }
+.catalog__add { display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px; color: #1264d6; font-size: 13px; font-weight: 600; }
 .catalog__tag { font-size: 11px; line-height: 22px; padding: 0 7px; border-radius: 5px; background: #fff4e5; color: #98521a; }
 .catalog__own-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .catalog__own-metric { flex: 1; min-width: 0; font-size: 12px; color: var(--color-text-sub); }

@@ -118,9 +118,8 @@ export default function Report() {
         </View>
 
         <View className="report__card">
-          <SectionHeader icon="barChart" title="估算数据" />
+          <SectionHeader icon="barChart" title="估算数据" info={{ title: '估算口径', content: `发电量与收益为模型估算，非实际结算。电价假设 ${r.tariff_yuan_per_kwh ?? '未记录'} 元/kWh，减排系数 ${r.co2_factor_kg_per_kwh ?? '未记录'} kg/kWh。环比为较昨日同期，昨日缺记录时不显示。` }} />
           <DataSummaryGrid cells={cells} />
-          <Text className="report__data-note">发电量与收益为模型估算，非实际结算。电价假设：{r.tariff_yuan_per_kwh ?? '未记录'} 元/kWh；减排系数：{r.co2_factor_kg_per_kwh ?? '未记录'} kg/kWh。</Text>
         </View>
         <Text className="report__generated">生成时间：{r.generated_at_iso ? `${formatBeijingTime(r.generated_at_iso)}（北京时间）` : r.generated_at}</Text>
       </View>

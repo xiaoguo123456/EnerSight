@@ -67,16 +67,22 @@
   &__submit-text { font-size: var(--font-body); font-weight: 600; color: #fff; }
 }
 
-// 自建场站表单补充。docs/17 §一、§四
-.sform__actions { display: flex; gap: 10px; }
+// 自建电站表单补充。docs/17 §一、§四
+.sform__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sform__origin { font-size: var(--font-caption); color: var(--color-text-sub); }
+.sform__input-wrap { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border-radius: var(--radius-button); background: var(--color-bg); }
+.sform__input--bare { flex: 1; min-width: 0; height: 42px; padding: 0; background: transparent; }
+.sform__adorn { flex-shrink: 0; font-size: var(--font-caption); color: var(--color-text-sub); font-variant-numeric: tabular-nums; }
 .sform__select { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 12px; border-radius: var(--radius-button); background: var(--color-bg); }
-.sform__select .sform__label { flex-shrink: 0; }
 .sform__select-value { flex: 1; min-width: 0; font-size: var(--font-body); color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sform__select--half { flex: 1; }
 .sform__dash { align-self: center; font-size: var(--font-caption); color: var(--color-text-sub); }
+.sform__map-wrap { display: flex; flex-direction: column; gap: 6px; }
+.sform__map { width: 100%; height: 140px; border-radius: var(--radius-module); overflow: hidden; }
+.sform__map-note { font-size: var(--font-micro); color: var(--color-text-weak); }
+.sform__map-placeholder { height: 64px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-module); background: var(--color-bg); font-size: var(--font-caption); color: var(--color-text-weak); }
 .sform__window { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--radius-module); background: var(--color-bg); }
 .sform__window-head { display: flex; align-items: center; justify-content: space-between; }
 .sform__remove { display: flex; align-items: center; gap: 4px; min-height: 32px; font-size: var(--font-caption); color: #98521a; }
-.sform__add-window { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; border-radius: var(--radius-button); border: 1px dashed #b7c9e2; color: #1264d6; font-size: var(--font-caption); @include pressable; }
-.sform__delete { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; color: #b91c1c; font-size: var(--font-body); @include pressable; }
-.sform__foot { display: block; text-align: center; font-size: var(--font-micro); line-height: 1.7; color: var(--color-text-weak); }
+.sform__add-window { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; border-radius: var(--radius-button); border: 1px dashed #b7c9e2; color: #1264d6; font-size: var(--font-caption); @include pressable; }
+.sform__delete { margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; color: #b91c1c; font-size: var(--font-body); @include pressable; }

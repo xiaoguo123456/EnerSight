@@ -71,3 +71,21 @@
 .outlook__bar { height: 4px; margin-top: 7px; border-radius: 4px; background: #e7edf5; overflow: hidden; }
 .outlook__bar > view { height: 100%; background: #1677ff; border-radius: 4px; }
 .home .forecast-row .section-header { margin-bottom: 0; flex: 1; }
+
+// 2026-09-12 紧凑化：一个 Hero、一条 7 天横条、一张曲线；说明收进 ⓘ。
+.forecast-toolbar { min-height: 44px; }
+.forecast-model { flex: 1; min-width: 0; > text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } }
+.forecast-subtitle { font-size: 14px; font-weight: 600; color: #233146; }
+.forecast-unit { font-size: 12px; color: #617084; }
+.forecast-label { display: block; font-size: 12px; font-weight: 400; color: #617084; margin-bottom: 4px; }
+.forecast-split--tight { padding: 12px 0; font-size: 16px; border-bottom: 1px solid #eef2f6; }
+.forecast-caption { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; color: #617084; }
+.forecast-state { display: block; margin-top: 10px; font-size: 13px; line-height: 1.6; color: #526174; }
+.forecast-link { color: #1264d6; }
+.forecast-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid #eef2f6; font-size: 12px; color: #617084; }
+.forecast-foot .forecast-link { min-height: 32px; display: flex; align-items: center; }
+.forecast-curve { padding-top: 14px; }
+.forecast-coverage { padding: 14px 0 4px; }
+.home__card .forecast-caption:last-child { margin-top: 10px; }
+.fleet-history-link { padding: 0 4px; }
+.fleet-history-link { flex-shrink: 0; white-space: nowrap; }

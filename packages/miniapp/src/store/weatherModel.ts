@@ -4,7 +4,7 @@ import { create } from 'zustand'
 // 自动选择在境内实测就是 ECMWF IFS 9 km（docs/17 §二），请求仍传 best_match 以保留上游回退，
 // 展示直接标明模型；原先单独的 ECMWF 选项与它是同一份数据，已合并。
 export const WEATHER_MODELS = [
-  { id: 'best_match', label: 'ECMWF IFS 9 km · 自动', description: '欧洲中期天气预报中心，境内默认' },
+  { id: 'best_match', label: 'ECMWF IFS 9 km', description: '自动选择，境内即 ECMWF IFS 9 km' },
   { id: 'gfs_global', label: 'GFS', description: '美国 NOAA 全球预报' },
   { id: 'icon_global', label: 'ICON', description: '德国气象局全球预报' },
 ] as const

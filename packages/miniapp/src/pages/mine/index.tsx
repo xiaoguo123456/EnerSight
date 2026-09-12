@@ -23,7 +23,7 @@ export default function Mine() {
   const addStation = () => void Taro.navigateTo({ url: '/pages/station/form' })
   const clear = async () => {
     if (!recent.length) return
-    const answer = await Taro.showModal({ title: '清除最近浏览', content: '仅移除本机浏览记录，当前电站和自建场站不受影响。', confirmText: '清除' })
+    const answer = await Taro.showModal({ title: '清除最近浏览', content: '仅移除本机浏览记录，当前电站和自建电站不受影响。', confirmText: '清除' })
     if (answer.confirm) { clearRecent(); void Taro.showToast({ title: '已清除', icon: 'success' }) }
   }
   const privacy = async () => {
@@ -40,13 +40,13 @@ export default function Mine() {
       <View className="mine__avatar"><Icon name="user" size={26} color="#1264d6" strokeWidth={1.6} /></View>
       <View className="mine__identity-text">
         <Text className="mine__brand">微信用户</Text>
-        <Text className="mine__description">{loggedIn ? '已通过微信登录 · 自建场站按账号隔离' : '首次访问后自动通过微信登录，无需注册'}</Text>
+        <Text className="mine__description">{loggedIn ? '已通过微信登录 · 自建电站按账号隔离' : '首次访问后自动通过微信登录，无需注册'}</Text>
       </View>
     </View>
-    <View><Text className="mine__group-title">我的场站</Text><View className="mine__card">
-      {row('我的站点', goMine, mineCount == null ? undefined : `${mineCount} 座`)}
-      {row('添加场站', addStation, '定位 / 地图选点 / 手动输入')}
-    </View><Text className="mine__group-note">自建场站仅本账号可见，参与预测、预警、报告与卫星归档，可填写限电规则。</Text></View>
+    <View><Text className="mine__group-title">我的电站</Text><View className="mine__card">
+      {row('我的电站', goMine, mineCount == null ? undefined : `${mineCount} 座`)}
+      {row('添加电站', addStation)}
+    </View></View>
     <View><Text className="mine__group-title">浏览记录</Text><View className="mine__card">
       {row('常看电站', () => Taro.switchTab({ url: '/pages/station/index' }), favorites.length ? `${favorites.length} 座` : '暂无收藏')}
       <View className="mine__row" hoverClass="pressed" onClick={clear}><Text className="mine__row-label">清除最近浏览</Text><Text className="mine__row-value">{recent.length ? `${recent.length} 条` : '暂无记录'}</Text></View>
@@ -65,6 +65,6 @@ export default function Mine() {
       {row('关于晴川观象', () => info('about'))}
       <View className="mine__row"><Text className="mine__row-label">当前版本</Text><Text className="mine__row-value">{version}</Text></View>
     </View></View>
-    <Text className="mine__note">气象推算供参考，非电站实时运行数据</Text>
+    
   </View></View>
 }
