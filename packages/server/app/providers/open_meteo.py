@@ -10,26 +10,25 @@ from app.weather_model import current_model
 
 # 逐小时字段。新增字段前先更新 docs/04
 # 辐射类是「前一小时平均值」，标在区间末；太阳位置要按区间中点算，见 metrics/solar
+# 字段数直接决定 Open-Meteo 的计费权重：超过 10 个变量按比例计为多次调用。
+# 只列真正有消费方的字段，加字段前先确认谁在读，并同步 docs/04 §二。
 HOURLY_FIELDS = [
+    # 出力模型必需（与 fleet_prediction.FIELDS 同一套）
     "temperature_2m",
-    "apparent_temperature",
-    "relative_humidity_2m",
     "wind_speed_10m",
     "wind_speed_80m",  # 80 / 100 / 120 m：风电轮毂高度风速按对数廓线插值，见 metrics/wind
     "wind_speed_100m",
     "wind_speed_120m",
-    "wind_direction_10m",
-    "cloud_cover",
-    "cloud_cover_low",
-    "cloud_cover_mid",
-    "cloud_cover_high",
-    "weather_code",
     "shortwave_radiation",
-    "direct_radiation",
     "diffuse_radiation",
     "direct_normal_irradiance",
-    "is_day",
     "surface_pressure",  # 风电空气密度修正：ρ = p / (R T)，见 metrics/wind
+    # 预警与展示
+    "cloud_cover",  # 云层预警阈值 + 首页
+    "weather_code",  # AI 报告天气描述 + 首页
+    "apparent_temperature",  # 首页体感
+    "relative_humidity_2m",  # 首页湿度
+    "wind_direction_10m",  # 首页风向
 ]
 
 # 15 分钟字段：境内没有 15 分钟原生模式，是上游按晴空指数插值的，只用于当日与短期 3 天的
@@ -109,19 +108,37 @@ class OpenMeteoProvider:
         推出来，见 docs/04「昨日同期对比数据」。
         forecast_days=7 供 7 天趋势；24 小时趋势要到「明日 00:00」这一点也包含在内。
 
+        **不带 minutely_15**：15 分钟序列只有单站 7 天预测一个消费方，
+        混在这里会让每次后台扫描都为它付计费权重。要它走 `quarter()`。
+
         wind_speed_unit=ms 必须传：Open-Meteo 默认 km/h，漏了风速会错 3.6 倍。
         """
         params = {
             "latitude": latitude,
             "longitude": longitude,
             "hourly": ",".join(HOURLY_FIELDS),
-            "minutely_15": ",".join(MINUTELY_FIELDS),
             "timezone": "auto",
             "forecast_days": forecast_days,
             "past_days": past_days,
             "wind_speed_unit": "ms",
         }
         params["models"] = current_model.get()
+        return await self._get(f"{settings.open_meteo_base}/forecast", params)
+
+    async def quarter(self, latitude: float, longitude: float, *, forecast_days: int) -> dict:
+        """15 分钟序列，只含 minutely_15。单站 7 天预测的细粒度曲线用，按需拉取。
+
+        没有 past_days —— 细粒度曲线只画今日起的几天，昨日由逐小时序列负责。
+        """
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "minutely_15": ",".join(MINUTELY_FIELDS),
+            "timezone": "auto",
+            "forecast_days": forecast_days,
+            "wind_speed_unit": "ms",
+            "models": current_model.get(),
+        }
         return await self._get(f"{settings.open_meteo_base}/forecast", params)
 
     async def model_meta(self, slug: str) -> ModelMeta | None:
@@ -156,6 +173,9 @@ class OpenMeteoProvider:
 
         if res.status_code >= 500:
             raise UpstreamUnavailable()
+        if res.status_code == 429:
+            # 配额/限流。不带重试：额度是按天算的，立刻重试只会烧得更快
+            raise UpstreamUnavailable("气象服务调用已达配额上限，请稍后重试")
         if res.status_code == 400:
             # Open-Meteo 对超出覆盖范围的坐标返回 400 —— 重试无用
             raise DataUnavailable()

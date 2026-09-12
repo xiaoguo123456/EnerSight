@@ -53,7 +53,10 @@ class Settings(BaseSettings):
     ttl_model_meta: int = 300
 
     # 缓存 TTL（秒），见 docs/05 §五
-    ttl_current_weather: int = 600  # 站点整份 Forecast（实时天气、指数、趋势共用）
+    # 元数据拿不到、无法确认起报时的退化时间片；正常路径按批次指纹缓存，见 services/weather
+    ttl_current_weather: int = 600
+    # 一批模型输出的缓存寿命。上游 6 小时一批，留足延迟余量；同批次内重复拉毫无意义
+    ttl_forecast_batch: int = 8 * 3600
     # 自建站点每用户上限。docs/17 §一
     max_stations_per_user: int = 10
     # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二

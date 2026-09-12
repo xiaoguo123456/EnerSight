@@ -92,8 +92,7 @@ https://api.open-meteo.com/v1/forecast
 | 风速 | `wind_speed_10m` | m/s | 10 米风速，界面展示值 |
 | 高层风速 | `wind_speed_80m` / `_100m` / `_120m` | m/s | 风电轮毂高度风速按各层对数廓线插值（07 §2.2），不展示 |
 | 风向 | `wind_direction_10m` | ° | 0–360，正北为 0，顺时针 |
-| 云量 | `cloud_cover` | % | 总云量 |
-| 分层云量 | `cloud_cover_low` / `_mid` / `_high` | % | 用于云层风险判断 |
+| 云量 | `cloud_cover` | % | 总云量，云层预警阈值也用它 |
 | 天气现象 | `weather_code` | WMO code | 映射为「晴」「晴转多云」等文案 |
 | 数据时间 | `time` | ISO8601 | 界面显示为「数据更新时间」 |
 
@@ -158,9 +157,35 @@ forecast 接口追加 past_days=1
 - 15 分钟序列（`minutely_15`）：当日与随后 3 天的 96 点曲线用它，字段为气温、10/80/100/120 m
   风速、辐射三项、气压、天气代码。境内由上游按晴空指数从逐小时插值。辐射为前 15 分钟均值
   标在区间末（实测：13:00 的小时值 725 对应 12:15–13:00 四个值的均值 715，而非 12:00–12:45）。
+  **单独请求、按需拉取**：只有 `GET /v1/predictions/station` 要它，混进主请求会让每次
+  后台扫描都为它付计费权重。拉不到就退回逐小时，`resolution_minutes` 随之变 60。
 - `surface_pressure`（hPa）与响应里的 `elevation`（90 m DEM）：风电空气密度修正用，
   见 [07 §2.2](./07-metrics.md)。
 
+
+### 字段预算与拉取节奏
+
+Open-Meteo 按**加权调用数**计费，不是按请求数：超过 10 个变量或超过 2 周跨度的请求
+按比例计为多次调用（15 个变量的 2 周请求 = 1.5 次）。免费层 10,000 次/天且**禁止商用**，
+商用最低档 $29/月 1M 次。
+
+因此两条硬规矩：
+
+**① 字段只列有消费方的。** 清单在 `providers/open_meteo.HOURLY_FIELDS`，新增前先确认谁读它，
+并同步本节的表。曾经带过 `direct_radiation`、`is_day`、`cloud_cover_low/_mid/_high` 五个字段，
+全项目无人读取，白付了 26% 的权重。出力模型必需的 9 个字段有回归测试兜底，删不掉。
+
+**② 按模型批次缓存，不按时间片。** 上游每 6 小时出一批（00/06/12/18 UTC，落地比起报晚
+3–6 小时），而定时任务每 15 分钟扫一轮。若按 TTL 缓存，每个 0.1° 网格每天回源 96 次，
+其中 92 次拿回来的字节完全相同。缓存键因此带起报时刻：
+
+```
+{model}:{issued_at}:{0.1°网格}
+```
+
+新批次一落地键就变、立刻刷新；同批次内永远命中。元数据拿不到时**必须**退回时间片
+（`unknown-{时间片}`），用固定字符串会让该网格的数据再也不刷新。
+实现见 `services/weather.batch_stamp`。
 
 ### 起报时间
 
@@ -206,7 +231,6 @@ https://api.open-meteo.com/data/{slug}/static/meta.json
 | 名称 | 字段 | 单位 | 用途 |
 | --- | --- | --- | --- |
 | Shortwave Radiation | `shortwave_radiation` | W/m² | 总辐射，界面主展示值 |
-| Direct Radiation | `direct_radiation` | W/m² | 直射分量 |
 | Diffuse Radiation | `diffuse_radiation` | W/m² | 散射分量 |
 | DNI | `direct_normal_irradiance` | W/m² | 法向直射 |
 | GTI | `global_tilted_irradiance` | W/m² | 倾斜面总辐射，光伏发电估算用 |
@@ -222,8 +246,8 @@ https://api.open-meteo.com/data/{slug}/static/meta.json
 
 | 语义 | 字段 | 标签含义 | 「当前」取哪一格 |
 | --- | --- | --- | --- |
-| 区间均值 | `shortwave_radiation`、`direct_radiation`、`diffuse_radiation`、`direct_normal_irradiance` | 前一小时均值，标在区间末 | 包含当前时刻的区间，即 `ceil` |
-| 瞬时 | `temperature_2m`、`apparent_temperature`、`relative_humidity_2m`、各层 `wind_speed_*`、`wind_direction_10m`、`cloud_cover*`、`weather_code` | 标注时刻的瞬时值 | 当前整点，即 `floor` |
+| 区间均值 | `shortwave_radiation`、`diffuse_radiation`、`direct_normal_irradiance` | 前一小时均值，标在区间末 | 包含当前时刻的区间，即 `ceil` |
+| 瞬时 | `temperature_2m`、`apparent_temperature`、`relative_humidity_2m`、各层 `wind_speed_*`、`wind_direction_10m`、`cloud_cover`、`weather_code` | 标注时刻的瞬时值 | 当前整点，即 `floor` |
 
 由辐射推出的量（光伏逐时出力、晴空指数 kt）跟随辐射走；
 由瞬时风速推出的量（风电逐时出力、强风预警）跟随瞬时值走。

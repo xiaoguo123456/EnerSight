@@ -4,7 +4,9 @@
 不各自去调 Open-Meteo。
 """
 
-from dataclasses import dataclass, field
+import logging
+import time
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -17,7 +19,13 @@ from app.providers.open_meteo import ModelMeta, OpenMeteoProvider
 from app.schemas.prediction import ForecastBasis
 from app.weather_model import current_model
 
-_cache = AsyncTTLCache(maxsize=2048, ttl_seconds=settings.ttl_current_weather)
+log = logging.getLogger(__name__)
+
+# 缓存键带批次指纹，所以 TTL 按「一批数据的寿命」设，不是按新鲜度设：
+# 同一批数据重复拉没有任何意义，新批次一落地键就换了。maxsize 是内存上限，
+# 被 LRU 挤掉的条目下次访问重拉即可。
+_cache = AsyncTTLCache(maxsize=2048, ttl_seconds=settings.ttl_forecast_batch)
+_quarter_cache = AsyncTTLCache(maxsize=512, ttl_seconds=settings.ttl_forecast_batch)
 _meta_cache = AsyncTTLCache(maxsize=16, ttl_seconds=settings.ttl_model_meta)
 
 
@@ -98,6 +106,15 @@ class Forecast:
             return None
 
 
+def parse_quarter(raw: dict) -> pd.DataFrame | None:
+    """响应里的 minutely_15 → DataFrame。没有该段返回 None，调用方退回逐小时。"""
+    q = raw.get("minutely_15")
+    if not isinstance(q, dict) or not q.get("time"):
+        return None
+    idx = pd.DatetimeIndex(pd.to_datetime(q["time"])).tz_localize(raw["timezone"])
+    return pd.DataFrame({k: v for k, v in q.items() if k != "time"}, index=idx)
+
+
 def parse_forecast(
     raw: dict, *, model: str | None = None, meta: ModelMeta | None = None
 ) -> Forecast:
@@ -105,18 +122,14 @@ def parse_forecast(
     h = raw["hourly"]
     idx = pd.DatetimeIndex(pd.to_datetime(h["time"])).tz_localize(tz)
     df = pd.DataFrame({k: v for k, v in h.items() if k != "time"}, index=idx)
-    quarter = None
-    q = raw.get("minutely_15")
-    if isinstance(q, dict) and q.get("time"):
-        qidx = pd.DatetimeIndex(pd.to_datetime(q["time"])).tz_localize(tz)
-        quarter = pd.DataFrame({k: v for k, v in q.items() if k != "time"}, index=qidx)
     elev = raw.get("elevation")
     return Forecast(
         tz=tz,
         hourly=df,
         model=model or current_model.get(),
         meta=meta,
-        quarter=quarter,
+        # 同一份响应里带了 minutely_15 就直接收下（合成夹具、历史缓存走这条）
+        quarter=parse_quarter(raw),
         elevation=float(elev) if isinstance(elev, int | float) else None,
     )
 
@@ -140,20 +153,63 @@ async def get_model_meta(http: httpx.AsyncClient, model: str) -> ModelMeta | Non
 _MISSING = object()  # 缓存里的「拿过但没拿到」，避免每次请求都重打元数据接口
 
 
-async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: float) -> Forecast:
-    """按 0.1° 网格缓存 10 分钟。相邻站点命中同一份。"""
+def batch_stamp(meta: ModelMeta | None) -> str:
+    """一批模型输出的指纹，进缓存键。
+
+    上游每 6 小时才出一批（00/06/12/18 UTC），按时间片缓存等于反复拉同一份数据：
+    10 分钟 TTL 下每个网格每天回源 96 次，其中 92 次拿回来的字节完全相同。
+    按起报时刻做键，新批次一落地键就变、立刻刷新，同批次内永远命中。
+
+    元数据拿不到时**必须**退回时间片 —— 固定字符串会让这个网格的数据再也不刷新。
+    """
+    if meta is not None:
+        return meta.issued_at.isoformat()
+    return f"unknown-{int(time.time()) // settings.ttl_current_weather}"
+
+
+async def get_forecast(
+    http: httpx.AsyncClient, latitude: float, longitude: float, *, fine: bool = False
+) -> Forecast:
+    """按 0.1° 网格 + 模型批次缓存。相邻站点、同一批次命中同一份。
+
+    fine=True 额外拉 15 分钟序列（单站 7 天预测的细粒度曲线）。它单独计费、
+    单独缓存，拿不到就退回逐小时，不影响主链路。
+    """
     model = current_model.get()
-    key = f"{model}:{grid_key(latitude, longitude)}"
+    # 先取元数据再取预报：两次调用之间若有新批次落地，元数据只会偏旧，不会冒充更新
+    meta = await get_model_meta(http, model)
+    cell = grid_key(latitude, longitude)
+    key = f"{model}:{batch_stamp(meta)}:{cell}"
 
     async def _load() -> Forecast:
-        # 先取元数据再取预报：两次调用之间若有新批次落地，元数据只会偏旧，不会冒充更新
-        meta = await get_model_meta(http, model)
         raw = await OpenMeteoProvider(http).forecast(latitude, longitude)
         return parse_forecast(raw, model=model, meta=meta)
 
-    return await _cache.get_or_load(key, _load)
+    base: Forecast = await _cache.get_or_load(key, _load)
+    if not fine or base.quarter is not None:
+        return base
+    return replace(base, quarter=await _get_quarter(http, latitude, longitude, key))
+
+
+async def _get_quarter(
+    http: httpx.AsyncClient, latitude: float, longitude: float, key: str
+) -> pd.DataFrame | None:
+    """15 分钟序列。失败不入缓存：这是用户触发的低频路径，宁可下次重试也不要一坏坏一批。"""
+
+    async def _load() -> pd.DataFrame | None:
+        raw = await OpenMeteoProvider(http).quarter(
+            latitude, longitude, forecast_days=settings.outlook_fine_days + 1
+        )
+        return parse_quarter(raw)
+
+    try:
+        return await _quarter_cache.get_or_load(key, _load)
+    except Exception:  # noqa: BLE001  退回逐小时，prepare 里已有降级分支
+        log.warning("15 分钟序列拉取失败，退回逐小时：%s", key, exc_info=True)
+        return None
 
 
 def clear_cache() -> None:
     _cache.clear()
+    _quarter_cache.clear()
     _meta_cache.clear()
