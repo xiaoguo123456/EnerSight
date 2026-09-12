@@ -4,10 +4,16 @@
 一天内多次覆盖，日终那次即最终值。累计 = 所有记录求和。
 
 每个站点的「今日」按其时区算，Forecast 已处理。
+
+**算与写分离**：算可以并发（受 `accumulate_concurrency` 限），写必须串行 ——
+AsyncSession 不能被多个任务同时用。分批查询 + 分批提交，避免全表进内存、
+也避免跑到一半出错就整轮回滚。
 """
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import date
 
 import httpx
@@ -52,35 +58,86 @@ async def upsert_daily(
     await db.execute(stmt)
 
 
-async def accumulate_station(
-    db: AsyncSession, http: httpx.AsyncClient, station: Station
-) -> float | None:
-    """不可算（气象缺测）时不写记录：宁可缺一天，也不把 0 累进总量。"""
-    fc = await weather.get_forecast(http, station.latitude, station.longitude)
-    loop = asyncio.get_running_loop()
-    snap = await loop.run_in_executor(None, energy.compute, station, fc)
+@dataclass(frozen=True)
+class Daily:
+    """一座站点算完的当日记录。只带写入需要的值，不再持有 ORM 对象。"""
+
+    station_id: str
+    day: date
+    kwh: float
+    current_kw: float | None
+    curtailed_kwh: float | None
+
+
+async def compute_station(
+    http: httpx.AsyncClient, station: Station, sem: asyncio.Semaphore
+) -> Daily | None:
+    """只算不写，可并发。不可算（气象缺测）时返回 None：宁可缺一天，也不把 0 累进总量。
+
+    闸门同时管住在途的上游请求与线程池里的 pvlib 计算 —— 两者都不该随站点数线性膨胀。
+    """
+    async with sem:
+        fc = await weather.get_forecast(http, station.latitude, station.longitude)
+        loop = asyncio.get_running_loop()
+        snap = await loop.run_in_executor(None, energy.compute, station, fc)
     if snap.daily_kwh is None or snap.blocked:
         log.warning("accumulate skipped (%s): station=%s", snap.blocked or "缺测", station.id)
         return None
-    today = fc.now().date()
-    current = round(snap.current_kw, 1) if snap.current_kw is not None else None
-    # kwh 记可发电量，限电损失另记一列；没有规则为 None，不写 0。docs/17 §四
-    curtailed = round(snap.daily_kwh - snap.grid_kwh, 1) if snap.grid_kwh is not None else None
-    await upsert_daily(db, station.id, today, round(snap.daily_kwh, 1), current, curtailed)
-    return snap.daily_kwh
+    return Daily(
+        station_id=station.id,
+        day=fc.now().date(),
+        kwh=round(snap.daily_kwh, 1),
+        current_kw=round(snap.current_kw, 1) if snap.current_kw is not None else None,
+        # kwh 记可发电量，限电损失另记一列；没有规则为 None，不写 0。docs/17 §四
+        curtailed_kwh=(
+            round(snap.daily_kwh - snap.grid_kwh, 1) if snap.grid_kwh is not None else None
+        ),
+    )
+
+
+async def _pages(db: AsyncSession, size: int) -> AsyncIterator[list[Station]]:
+    """按主键翻页。全表一次进内存在几万座站上就是个定时炸弹，而且没有任何必要。"""
+    last = ""
+    while True:
+        page = list(
+            (
+                await db.execute(
+                    select(Station).where(Station.id > last).order_by(Station.id).limit(size)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not page:
+            return
+        last = page[-1].id  # 在 yield（以及随后的 commit）之前取，不依赖 expire_on_commit
+        yield page
 
 
 async def accumulate_all(db: AsyncSession, http: httpx.AsyncClient) -> int:
-    """全部站点跑一遍，返回处理数。单站失败不影响其他站。"""
-    stations = (await db.execute(select(Station))).scalars().all()
+    """全部站点跑一遍，返回处理数。单站失败不影响其他站。
+
+    每批算完就提交：攒到最后一次 commit 的话，跑到一半出错前面的全白跑。
+    """
+    sem = asyncio.Semaphore(settings.accumulate_concurrency)
     done = 0
-    for s in stations:
-        try:
-            await accumulate_station(db, http, s)
+    async for page in _pages(db, settings.accumulate_batch_size):
+        ids = [s.id for s in page]  # 提交后再读 ORM 属性要看 expire 配置，先取出来
+        rows = await asyncio.gather(
+            *(compute_station(http, s, sem) for s in page), return_exceptions=True
+        )
+        for station_id, row in zip(ids, rows, strict=True):
+            if isinstance(row, BaseException):
+                # 定时任务里单站失败只记日志，不能掀翻整批
+                log.error("accumulate failed: station=%s", station_id, exc_info=row)
+                continue
+            if row is None:
+                continue
+            await upsert_daily(
+                db, row.station_id, row.day, row.kwh, row.current_kw, row.curtailed_kwh
+            )
             done += 1
-        except Exception:  # noqa: BLE001  定时任务里单站失败只记日志
-            log.exception("accumulate failed: station=%s", s.id)
-    await db.commit()
+        await db.commit()
     return done
 
 

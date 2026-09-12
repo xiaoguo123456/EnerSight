@@ -242,10 +242,11 @@ def _make_backfill_address(app: FastAPI):
 
 def start(app: FastAPI) -> AsyncIOScheduler:
     sched = AsyncIOScheduler(timezone="UTC")
-    # 每小时第 5 分钟，错开整点的气象数据更新
+    # 每小时第 10 分钟：错开整点的气象数据更新，也错开 scan_alerts 的 5/20/35/50
+    # ——两者都遍历全部站点，叠在同一分钟只会把 CPU 峰值堆起来（气象数据本就共享缓存）
     sched.add_job(
         _make_accumulate(app),
-        CronTrigger(minute=5),
+        CronTrigger(minute=10),
         id="accumulate_generation",
         max_instances=1,
         coalesce=True,

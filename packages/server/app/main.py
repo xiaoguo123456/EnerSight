@@ -47,7 +47,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not logging.getLogger("app").handlers:
         logging.getLogger("app").addHandler(logging.StreamHandler())
     _check_production_config()
-    app.state.http = httpx.AsyncClient(timeout=10.0)
+    # 限并发：累积任务并发算站点时，连接数不该随站点数线性膨胀
+    app.state.http = httpx.AsyncClient(
+        timeout=10.0,
+        limits=httpx.Limits(
+            max_connections=settings.upstream_max_connections,
+            max_keepalive_connections=settings.upstream_max_connections // 2,
+        ),
+    )
     sched = scheduler.start(app) if settings.enable_scheduler else None
     try:
         yield

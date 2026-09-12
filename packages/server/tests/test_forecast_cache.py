@@ -185,6 +185,71 @@ class TestUpstreamErrors:
         assert "配额" in exc.value.message
 
 
+class TestRetry:
+    """上游拉取一律带退避重试、限并发（CLAUDE.md）。但只对重试有意义的错误重试。"""
+
+    @pytest.fixture(autouse=True)
+    def _no_backoff(self, monkeypatch: pytest.MonkeyPatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "upstream_backoff_seconds", 0.0)
+
+    async def _fetch(self, responses: list) -> tuple[int, object]:
+        """responses 逐次返回；返回 (实际请求次数, 结果或异常)。"""
+        from app.providers.open_meteo import OpenMeteoProvider
+
+        calls = {"n": 0}
+
+        def side_effect(_request):
+            calls["n"] += 1
+            item = responses[min(calls["n"] - 1, len(responses) - 1)]
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        with respx.mock:
+            respx.get(url__regex=r".*/v1/forecast.*").mock(side_effect=side_effect)
+            async with httpx.AsyncClient() as http:
+                try:
+                    # 先 await 再读计数：元组是从左到右求值的
+                    out: object = await OpenMeteoProvider(http).forecast(LAT, LON)
+                except Exception as exc:  # noqa: BLE001
+                    out = exc
+        return calls["n"], out
+
+    async def test_传输错误重试后成功(self):
+        ok = Response(200, json=make_forecast(start_date=_yesterday_midnight()))
+        n, out = await self._fetch([httpx.ConnectError("TLS 拒连"), ok])
+        assert n == 2
+        assert isinstance(out, dict)
+
+    async def test_5xx重试后成功(self):
+        ok = Response(200, json=make_forecast(start_date=_yesterday_midnight()))
+        n, out = await self._fetch([Response(502), ok])
+        assert n == 2
+        assert isinstance(out, dict)
+
+    async def test_一直失败则报上游不可用(self):
+        n, out = await self._fetch([httpx.ConnectError("boom")])
+        assert n == 3  # upstream_retries
+        assert isinstance(out, UpstreamUnavailable)
+
+    async def test_429不重试(self):
+        """额度按天算，立刻重试只会烧得更快。"""
+        n, out = await self._fetch([Response(429)])
+        assert n == 1
+        assert isinstance(out, UpstreamUnavailable)
+        assert "配额" in out.message
+
+    async def test_400不重试(self):
+        """坐标超出覆盖范围，重试多少次都一样。"""
+        from app.errors import DataUnavailable
+
+        n, out = await self._fetch([Response(400)])
+        assert n == 1
+        assert isinstance(out, DataUnavailable)
+
+
 class TestFieldBudget:
     async def test_字段数控制在计费基准内(self):
         """Open-Meteo 超过 10 个变量按比例计为多次调用。加字段前先想清楚谁在读。"""

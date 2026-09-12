@@ -1,5 +1,6 @@
 """Open-Meteo 适配。字段清单见 docs/04 §二。"""
 
+import asyncio
 from datetime import UTC, date, datetime
 
 import httpx
@@ -166,18 +167,27 @@ class OpenMeteoProvider:
         return await self._get(f"{settings.open_meteo_archive_base}/archive", params)
 
     async def _get(self, url: str, params: dict) -> dict:
-        try:
-            res = await self._client.get(url, params=params)
-        except httpx.HTTPError as exc:
-            raise UpstreamUnavailable() from exc
+        """带退避重试。经本机代理出网时偶发 TLS 拒连/超时，不重试会白丢一个站一整轮。
 
-        if res.status_code >= 500:
-            raise UpstreamUnavailable()
-        if res.status_code == 429:
-            # 配额/限流。不带重试：额度是按天算的，立刻重试只会烧得更快
-            raise UpstreamUnavailable("气象服务调用已达配额上限，请稍后重试")
-        if res.status_code == 400:
-            # Open-Meteo 对超出覆盖范围的坐标返回 400 —— 重试无用
-            raise DataUnavailable()
-        res.raise_for_status()
-        return res.json()
+        只重试传输错误与 5xx。429 是配额、400 是坐标越界，重试都无用 —— 对 429
+        尤其有害：额度按天算，立刻重试只会烧得更快。
+        """
+        last: Exception | None = None
+        for attempt in range(settings.upstream_retries):
+            if attempt:
+                await asyncio.sleep(settings.upstream_backoff_seconds * attempt)
+            try:
+                res = await self._client.get(url, params=params)
+            except httpx.HTTPError as exc:
+                last = exc
+                continue
+            if res.status_code == 429:
+                raise UpstreamUnavailable("气象服务调用已达配额上限，请稍后重试")
+            if res.status_code == 400:
+                raise DataUnavailable()
+            if res.status_code >= 500:
+                last = None
+                continue
+            res.raise_for_status()
+            return res.json()
+        raise UpstreamUnavailable() from last

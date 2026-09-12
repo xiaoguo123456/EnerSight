@@ -131,6 +131,102 @@ class TestAccumulate:
         assert n == 1  # 坏站失败，好站成功
 
 
+class TestConcurrencyAndBatching:
+    """算并发、写串行、分批提交。docs/05 §五"""
+
+    async def _make(self, client: AsyncClient, n: int) -> list[str]:
+        ids = []
+        for i in range(n):
+            r = await client.post(
+                "/v1/stations",
+                json={**SUZHOU, "name": f"站{i}", "latitude": 30.0 + i, "longitude": 110.0 + i},
+            )
+            ids.append(r.json()["data"]["id"])
+        return ids
+
+    async def test_算是并发的且不超过闸门(
+        self, client: AsyncClient, open_meteo, monkeypatch: pytest.MonkeyPatch
+    ):
+        import asyncio
+
+        from app.services import weather as weather_mod
+
+        await self._make(client, 5)
+        monkeypatch.setattr(settings, "accumulate_concurrency", 2)
+        live = {"now": 0, "peak": 0}
+        real = weather_mod.get_forecast
+
+        async def spy(http, lat, lon, **kw):
+            live["now"] += 1
+            live["peak"] = max(live["peak"], live["now"])
+            try:
+                await asyncio.sleep(0.02)
+                return await real(http, lat, lon, **kw)
+            finally:
+                live["now"] -= 1
+
+        monkeypatch.setattr(accumulate.weather, "get_forecast", spy)
+        db, gen = await _session()
+        try:
+            n = await accumulate.accumulate_all(db, app.state.http)
+        finally:
+            await gen.aclose()
+        assert n == 5
+        assert live["peak"] > 1, "还是串行的，闸门没起作用"
+        assert live["peak"] <= 2, "在途数超过了闸门"
+
+    async def test_并发算但每站仍只有一条记录(self, client: AsyncClient, open_meteo):
+        await self._make(client, 5)
+        db, gen = await _session()
+        try:
+            await accumulate.accumulate_all(db, app.state.http)
+            rows = (await db.execute(select(DailyGeneration))).scalars().all()
+        finally:
+            await gen.aclose()
+        assert len(rows) == 5
+        assert len({r.station_id for r in rows}) == 5
+
+    async def test_分批提交_中途失败前面的不白跑(
+        self, client: AsyncClient, open_meteo, monkeypatch: pytest.MonkeyPatch
+    ):
+        """攒到最后一次 commit 的话，跑到一半出错前面全回滚 —— 白跑一小时。"""
+        await self._make(client, 3)
+        monkeypatch.setattr(settings, "accumulate_batch_size", 1)
+        calls = {"n": 0}
+        real = accumulate.upsert_daily
+
+        async def flaky(*args, **kw):
+            calls["n"] += 1
+            if calls["n"] == 3:
+                raise RuntimeError("第三站写入炸了")
+            return await real(*args, **kw)
+
+        monkeypatch.setattr(accumulate, "upsert_daily", flaky)
+        db, gen = await _session()
+        try:
+            with pytest.raises(RuntimeError):
+                await accumulate.accumulate_all(db, app.state.http)
+            await db.rollback()
+            rows = (await db.execute(select(DailyGeneration))).scalars().all()
+        finally:
+            await gen.aclose()
+        assert len(rows) == 2, "前两批应已各自提交"
+
+    async def test_翻页不漏站(
+        self, client: AsyncClient, open_meteo, monkeypatch: pytest.MonkeyPatch
+    ):
+        """按主键翻页容易写成漏最后一页或死循环。"""
+        await self._make(client, 7)
+        monkeypatch.setattr(settings, "accumulate_batch_size", 2)
+        db, gen = await _session()
+        try:
+            n = await accumulate.accumulate_all(db, app.state.http)
+            rows = (await db.execute(select(DailyGeneration))).scalars().all()
+        finally:
+            await gen.aclose()
+        assert n == 7 and len(rows) == 7
+
+
 class TestListMetrics:
     async def test_列表指标来自累积表(self, client: AsyncClient, open_meteo):
         r = await client.post("/v1/stations", json=SUZHOU)

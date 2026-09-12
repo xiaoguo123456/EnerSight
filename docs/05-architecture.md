@@ -239,6 +239,30 @@ export interface HttpAdapter {
 渲染与 AI 都放在定时任务里跑，不进请求路径 —— 这是 BFF 能用单体扛住的前提。
 
 
+### 定时任务的错峰与并发
+
+| 任务 | 触发 | 说明 |
+| --- | --- | --- |
+| `scan_alerts` | 每小时 5/20/35/50 分 | 卫星 10 分钟一帧，短临外推要跟得上 |
+| `accumulate_generation` | 每小时 10 分 | 错开整点的气象更新，也错开 scan_alerts |
+| `archive_cloud` | 每小时 2/12/…/52 分 | JMA 帧延迟约 10 分钟 |
+| `backfill_address` | 每小时 20 分 | 逆地理编码，每轮 100 条省配额 |
+
+`accumulate_generation` 与 `scan_alerts` 都要遍历全部站点。气象数据本就共享同一份
+批次缓存，撞在同一分钟不会多打上游，但会把 CPU 峰值堆到一起 —— 所以错开一格。
+
+**遍历站点的任务一律「算并发、写串行」。** `AsyncSession` 不能被多个任务同时使用，
+所以只有计算阶段进 `asyncio.gather`（受 `accumulate_concurrency` 闸门限，默认 8），
+写入阶段串行。查询与提交都按 `accumulate_batch_size`（默认 200）分批：
+全表一次进内存在几万座站上是定时炸弹，而攒到最后一次 `commit` 则意味着
+跑到一半出错前面全白跑。实现见 `services/accumulate`。
+
+**上游拉取一律带退避重试、限并发。** `upstream_retries` 3 次、`upstream_backoff_seconds`
+线性退避，只重试传输错误与 5xx；429（配额）与 400（坐标越界）立即抛出 —— 对 429
+重试尤其有害，额度按天算。连接池上限 `upstream_max_connections`，避免并发算站点时
+连接数随站点数线性膨胀。
+
+
 ### 缓存策略
 
 | 数据 | TTL | 缓存键 |

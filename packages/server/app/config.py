@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     ttl_current_weather: int = 600
     # 一批模型输出的缓存寿命。上游 6 小时一批，留足延迟余量；同批次内重复拉毫无意义
     ttl_forecast_batch: int = 8 * 3600
+
+    # 上游拉取：一律带退避重试、限并发。CLAUDE.md「已知的环境坑」
+    # 只重试传输错误与 5xx；429（配额）与 400（坐标越界）重试无用，只会烧得更快
+    upstream_retries: int = 3
+    upstream_backoff_seconds: float = 0.5
+    upstream_max_connections: int = 32
+
+    # 逐日累积：算并发、写串行，分批提交。见 services/accumulate
+    accumulate_concurrency: int = 8
+    accumulate_batch_size: int = 200
     # 自建站点每用户上限。docs/17 §一
     max_stations_per_user: int = 10
     # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二

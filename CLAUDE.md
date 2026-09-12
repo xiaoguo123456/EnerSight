@@ -159,6 +159,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 把气象预报按时间片缓存 —— 上游 6 小时才出一批，10 分钟 TTL 等于每天重复拉 92 次
   同一份数据。缓存键带起报时刻（`weather.batch_stamp`），元数据缺失时退回时间片，
   不能用固定键，否则数据永不刷新
+- ❌ 在遍历站点的定时任务里并发写 DB —— `AsyncSession` 不能被多个任务同时用。
+  算进 `gather`（受闸门限），写串行，查询与提交都分批，见 `services/accumulate`
 - ❌ 把 `minutely_15` 混进主请求 —— 只有单站 7 天预测要它，混进去等于让每次后台扫描
   都为它付权重。走 `get_forecast(..., fine=True)`
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）
@@ -256,7 +258,7 @@ make codegen                         # openapi.json → core/types/
 | 两端共用 `outputRoot` 会互相覆盖 | 已按 `dist/${TARO_ENV}` 分目录 |
 | Taro 组件 props 不兼容 `exactOptionalPropertyTypes` | miniapp 的 tsconfig 关掉该项，core 保留 |
 | 本机起 BFF 用 `.claude/launch.json` 的 `api` 配置（`ENERSIGHT_DEBUG=true uv run uvicorn app.main:app`） | 开发态免登录靠 DEBUG；`.env` 里没有它，且 venv 没装 `fastapi[standard]` CLI，`make dev-server` 的 `fastapi dev` 起不来 |
-| 本机系统代理下并发出网偶发 TLS 拒连/超时 | 上游拉取一律带重试退避、限并发（Himawari 瓦片并发 4）；卫星拿不到按 `unavailable` 处理 |
+| 本机系统代理下并发出网偶发 TLS 拒连/超时 | 上游拉取一律带重试退避、限并发（Himawari 瓦片并发 4，Open-Meteo `upstream_retries` 3 次；429/400 不重试）；卫星拿不到按 `unavailable` 处理 |
 | H5 构建默认读 `.env.production`，连不上本机后端 | `make shot` / `make preview` 已注入 `API_BASE`（默认 127.0.0.1:8000） |
 
 ## 当前状态
