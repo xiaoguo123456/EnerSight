@@ -30,10 +30,6 @@
   &__coords { display: flex; gap: 12px; }
   &__label { font-size: var(--font-caption); color: var(--color-text-sub); }
   &__input {
-    height: 42px;
-    padding: 0 12px;
-    border-radius: var(--radius-button);
-    background: var(--color-bg);
     font-size: var(--font-body);
     color: var(--color-text);
   }
@@ -71,7 +67,7 @@
 .sform__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sform__origin { font-size: var(--font-caption); color: var(--color-text-sub); }
 .sform__input-wrap { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border-radius: var(--radius-button); background: var(--color-bg); }
-.sform__input--bare { flex: 1; min-width: 0; height: 42px; padding: 0; background: transparent; }
+.sform__input--bare { flex: 1; min-width: 0; height: 24px; line-height: 24px; padding: 0; background: transparent; }
 .sform__adorn { flex-shrink: 0; font-size: var(--font-caption); color: var(--color-text-sub); font-variant-numeric: tabular-nums; }
 .sform__select { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 12px; border-radius: var(--radius-button); background: var(--color-bg); }
 .sform__select-value { flex: 1; min-width: 0; font-size: var(--font-body); color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

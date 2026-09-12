@@ -186,7 +186,7 @@ export default function StationForm() {
         <View className="sform__card">
           <View className="sform__row-head"><Text className="sform__card-title">基本信息</Text><InfoTip {...FORM_INFO} /></View>
           <View className="sform__field"><Text className="sform__label">电站名称</Text>
-            <Input className="sform__input" value={form.name} maxlength={64} placeholder="例如：某某光伏电站" placeholderClass="sform__ph" onInput={set('name')} /></View>
+            <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" value={form.name} maxlength={64} placeholder="例如：某某光伏电站" placeholderClass="sform__ph" onInput={set('name')} /></View></View>
           <View className="sform__field"><Text className="sform__label">类型</Text>
             <SegmentedTabs value={form.type} options={[{ value: 'solar', label: '光伏' }, { value: 'wind', label: '风电' }]} onChange={(v) => patch({ type: v as StationType })} /></View>
           <View className="sform__field"><Text className="sform__label">装机容量（kW，交流侧）</Text>
@@ -202,9 +202,9 @@ export default function StationForm() {
           </View>
           <View className="sform__coords">
             <View className="sform__field sform__field--half"><Text className="sform__label">纬度</Text>
-              <Input className="sform__input" type="digit" value={form.latitude} placeholder="31.30000" placeholderClass="sform__ph" onInput={setCoordField('latitude')} /></View>
+              <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.latitude} placeholder="31.30000" placeholderClass="sform__ph" onInput={setCoordField('latitude')} /></View></View>
             <View className="sform__field sform__field--half"><Text className="sform__label">经度</Text>
-              <Input className="sform__input" type="digit" value={form.longitude} placeholder="120.62000" placeholderClass="sform__ph" onInput={setCoordField('longitude')} /></View>
+              <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.longitude} placeholder="120.62000" placeholderClass="sform__ph" onInput={setCoordField('longitude')} /></View></View>
           </View>
           <View className="sform__field"><Text className="sform__label">读数坐标系</Text>
             <SegmentedTabs value={form.coord} options={[{ value: 'wgs84', label: 'WGS84（GPS）' }, { value: 'gcj02', label: 'GCJ-02（高德等）' }]} onChange={(v) => patch({ coord: v as Coord, origin: 'manual' })} /></View>
@@ -219,11 +219,11 @@ export default function StationForm() {
           <View className="sform__row-head"><Text className="sform__card-title">出力模型参数</Text><InfoTip {...MODEL_INFO} /></View>
           {form.type === 'solar' ? <View className="sform__coords">
             <View className="sform__field sform__field--half"><Text className="sform__label">组件倾角（°）</Text>
-              <Input className="sform__input" type="digit" value={form.tilt} placeholder="默认 = 纬度" placeholderClass="sform__ph" onInput={set('tilt')} /></View>
+              <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.tilt} placeholder="默认 = 纬度" placeholderClass="sform__ph" onInput={set('tilt')} /></View></View>
             <View className="sform__field sform__field--half"><Text className="sform__label">方位角（°）</Text>
-              <Input className="sform__input" type="digit" value={form.azimuth} placeholder="默认 180" placeholderClass="sform__ph" onInput={set('azimuth')} /></View>
+              <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.azimuth} placeholder="默认 180" placeholderClass="sform__ph" onInput={set('azimuth')} /></View></View>
           </View> : <View className="sform__field"><Text className="sform__label">轮毂高度（m）</Text>
-            <Input className="sform__input" type="digit" value={form.hub_height} placeholder="默认 100" placeholderClass="sform__ph" onInput={set('hub_height')} /></View>}
+            <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.hub_height} placeholder="默认 100" placeholderClass="sform__ph" onInput={set('hub_height')} /></View></View>}
         </View>
 
         <View className="sform__card">
@@ -231,7 +231,7 @@ export default function StationForm() {
           <SegmentedTabs value={form.mode} options={[{ value: 'none', label: '不设置' }, { value: 'ratio', label: '固定比例' }, { value: 'schedule', label: '分时段上限' }]}
             onChange={(v) => patch({ mode: v as Form['mode'], windows: v === 'schedule' && !form.windows.length ? [{ start: 11, end: 14, limit: '60', days: 'all' }] : form.windows })} />
           {form.mode === 'ratio' && <View className="sform__field"><Text className="sform__label">限电比例（%）</Text>
-            <Input className="sform__input" type="digit" value={form.ratio} placeholder="例如 15" placeholderClass="sform__ph" onInput={set('ratio')} /></View>}
+            <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.ratio} placeholder="例如 15" placeholderClass="sform__ph" onInput={set('ratio')} /></View></View>}
           {form.mode === 'schedule' && <>
             {form.windows.map((w, i) => <View key={i} className="sform__window">
               <View className="sform__window-head"><Text className="sform__label">时段 {i + 1}{w.limit === '0' ? ' · 停机' : ''}</Text>
@@ -245,7 +245,7 @@ export default function StationForm() {
               </View>
               <View className="sform__coords">
                 <View className="sform__field sform__field--half"><Text className="sform__label">出力上限（装机 %）</Text>
-                  <Input className="sform__input" type="digit" value={w.limit} placeholder="0 表示停机" placeholderClass="sform__ph" onInput={(e) => setWindow(i, { limit: e.detail.value })} /></View>
+                  <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={w.limit} placeholder="0 表示停机" placeholderClass="sform__ph" onInput={(e) => setWindow(i, { limit: e.detail.value })} /></View></View>
                 <View className="sform__field sform__field--half"><Text className="sform__label">适用</Text>
                   <Picker mode="selector" range={DAY_PRESETS.map((d) => d.label)} value={DAY_PRESETS.findIndex((d) => d.value === w.days)} onChange={(e) => setWindow(i, { days: DAY_PRESETS[Number(e.detail.value)]!.value })}>
                     <View className="sform__select"><Text className="sform__select-value">{DAY_PRESETS.find((d) => d.value === w.days)!.label}</Text><Icon name="chevronDown" size={14} color="#64748b" /></View></Picker></View>
