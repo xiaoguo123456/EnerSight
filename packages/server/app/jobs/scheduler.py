@@ -22,7 +22,8 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from app.config import settings
-from app.db import SessionLocal
+from app.db import SessionLocal, id_pages
+from app.db import pages as db_pages
 from app.models import CatalogPlant, Station
 from app.satellite import himawari
 from app.services import accumulate, alerts, geo, reports, satellite, weather
@@ -39,60 +40,98 @@ def _make_accumulate(app: FastAPI):
     return job
 
 
-async def _stations_to_scan(db) -> list[Station]:
-    """个人站点 + 首页顺手扫过、仍有生效预警的公开电站（否则它们的预警只有再次被打开才会解除）。"""
-    from app.models import Alert
-    from app.services.station import from_catalog
+def _orphan_alert_plants():
+    """仍有生效预警、但不在个人站点表里的公开电站。
 
-    stations = list((await db.execute(select(Station))).scalars().all())
-    known = {s.id for s in stations}
-    active_ids = (
-        (await db.execute(select(Alert.station_id).where(Alert.active.is_(True)).distinct()))
-        .scalars()
-        .all()
+    首页顺手扫过它们才会留下预警，不接着扫的话只有再次被打开才会解除。
+    用 NOT EXISTS 而不是把全部站点 id 拉进内存做差集 —— 后者又把表读回来了。
+    """
+    from app.models import Alert
+
+    active = (
+        select(Alert.station_id)
+        .where(Alert.active.is_(True))
+        .where(~select(Station.id).where(Station.id == Alert.station_id).exists())
+        .distinct()
+        .scalar_subquery()
     )
-    pending = [sid for sid in active_ids if sid not in known]
-    if pending:
-        plants = (
-            (await db.execute(select(CatalogPlant).where(CatalogPlant.id.in_(pending))))
-            .scalars()
-            .all()
-        )
-        stations.extend(from_catalog(p) for p in plants)
-    return stations
+    return select(CatalogPlant).where(CatalogPlant.id.in_(active))
 
 
 def _make_scan_alerts(app: FastAPI):
+    """按站点串行扫描，只把「取站点」改成分批。
+
+    不并发是有意的：`alerts.scan_station` 自带 per-station 锁并各自提交，
+    跨站点本身独立，但这里整轮共用一个会话 —— AsyncSession 不能被多个任务同时用。
+    真要并发得改成一任务一会话，而预警扫描每 15 分钟一轮、没有这个必要。
+    """
+
+    async def scan_one(db, station: Station) -> int:
+        try:
+            fc = await weather.get_forecast(app.state.http, station.latitude, station.longitude)
+            # 扫描只用云图内容，URL 前缀由读接口按请求补
+            sat = await satellite.load_scene_safely(app.state.http, station, "")
+            return await alerts.scan_station(db, station, fc, sat)
+        except Exception:  # noqa: BLE001  单站失败不能掀翻整轮
+            log.exception("scan_alerts failed: station=%s", station.id)
+            return 0
+
     async def job() -> None:
+        from app.services.station import from_catalog
+
+        size = settings.scan_batch_size
+        seen = found = 0
         async with SessionLocal() as db:
-            stations = await _stations_to_scan(db)
-            n = 0
-            for s in stations:
-                try:
-                    fc = await weather.get_forecast(app.state.http, s.latitude, s.longitude)
-                    # 扫描只用云图内容，URL 前缀由读接口按请求补
-                    sat = await satellite.load_scene_safely(app.state.http, s, "")
-                    n += await alerts.scan_station(db, s, fc, sat)
-                except Exception:  # noqa: BLE001
-                    log.exception("scan_alerts failed: station=%s", s.id)
-            await db.commit()
-        log.info("scan_alerts: %d detections over %d stations", n, len(stations))
+            async for page in db_pages(db, select(Station), Station, size):
+                for s in page:
+                    found += await scan_one(db, s)
+                    seen += 1
+            async for plants in db_pages(db, _orphan_alert_plants(), CatalogPlant, size):
+                for p in plants:
+                    found += await scan_one(db, from_catalog(p))
+                    seen += 1
+        log.info("scan_alerts: %d detections over %d stations", found, seen)
 
     return job
 
 
 def _make_generate_reports(app: FastAPI):
-    async def job() -> None:
+    """一任务一会话地并发生成。
+
+    这里不能用 accumulate 那种「算并发、写串行」：`generate_and_store` 从取数、
+    算指数到写库全程用同一个会话，算与写分不开，而且它已经自己提交。所以改为每个
+    任务开自己的会话。
+
+    并发上限受数据库连接预算约束 —— 线上 `db_pool_size` + `db_max_overflow`
+    一共 3 个连接，还要给请求流量留余量，所以按 `db_pool_size` 夹一次。
+    翻页用 `id_pages`，每页取完就放掉连接，不跟工作任务抢。
+    """
+
+    async def one(station_id: str) -> bool:
         async with SessionLocal() as db:
-            stations = (await db.execute(select(Station))).scalars().all()
-            n = 0
-            for s in stations:
-                try:
-                    await reports.generate_and_store(db, app.state.http, s)
-                    n += 1
-                except Exception:  # noqa: BLE001
-                    log.exception("generate_report failed: station=%s", s.id)
-        log.info("generate_reports: %d/%d", n, len(stations))
+            station = await db.get(Station, station_id)
+            if station is None:  # 本轮跑到一半被删了
+                return False
+            await reports.generate_and_store(db, app.state.http, station)
+            return True
+
+    async def job() -> None:
+        sem = asyncio.Semaphore(max(1, min(settings.reports_concurrency, settings.db_pool_size)))
+
+        async def guarded(station_id: str) -> bool:
+            async with sem:
+                return await one(station_id)
+
+        total = done = 0
+        async for ids in id_pages(Station, settings.reports_batch_size):
+            total += len(ids)
+            results = await asyncio.gather(*(guarded(i) for i in ids), return_exceptions=True)
+            for station_id, r in zip(ids, results, strict=True):
+                if isinstance(r, BaseException):
+                    log.error("generate_report failed: station=%s", station_id, exc_info=r)
+                elif r:
+                    done += 1
+        log.info("generate_reports: %d/%d", done, total)
 
     return job
 
@@ -331,9 +370,13 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         await map_prepare.refresh(app.state.http)
 
     sched.add_job(
-        prepare_map, "interval", minutes=10, id="map_prepare",
+        prepare_map,
+        "interval",
+        minutes=10,
+        id="map_prepare",
         next_run_time=datetime.now(UTC) + timedelta(seconds=10),
-        max_instances=1, coalesce=True,
+        max_instances=1,
+        coalesce=True,
     )
     sched.start()
     log.info("scheduler started: %s", [j.id for j in sched.get_jobs()])

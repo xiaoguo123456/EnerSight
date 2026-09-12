@@ -160,7 +160,9 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
   同一份数据。缓存键带起报时刻（`weather.batch_stamp`），元数据缺失时退回时间片，
   不能用固定键，否则数据永不刷新
 - ❌ 在遍历站点的定时任务里并发写 DB —— `AsyncSession` 不能被多个任务同时用。
-  算进 `gather`（受闸门限），写串行，查询与提交都分批，见 `services/accumulate`
+  算与写分得开就「算并发写串行」（`services/accumulate`），分不开就「一任务一会话」
+  （`generate_reports`，并发上限受 `db_pool_size` 约束）。取站点一律用
+  `db.pages` / `db.id_pages` 分批，不要 `select(Station)` 全表 `.all()`
 - ❌ 把 `minutely_15` 混进主请求 —— 只有单站 7 天预测要它，混进去等于让每次后台扫描
   都为它付权重。走 `get_forecast(..., fine=True)`
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）

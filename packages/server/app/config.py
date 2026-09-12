@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     # 逐日累积：算并发、写串行，分批提交。见 services/accumulate
     accumulate_concurrency: int = 8
     accumulate_batch_size: int = 200
+    # 预警扫描：按站点串行（共用一个会话），只分批取站点
+    scan_batch_size: int = 200
+    # 报告预生成：一任务一会话，并发上限还会被 db_pool_size 夹一次
+    reports_batch_size: int = 100
+    reports_concurrency: int = 2
     # 自建站点每用户上限。docs/17 §一
     max_stations_per_user: int = 10
     # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二

@@ -12,7 +12,6 @@ AsyncSession 不能被多个任务同时用。分批查询 + 分批提交，避�
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import date
 
@@ -21,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db import upsert_insert
+from app.db import pages, upsert_insert
 from app.models import DailyGeneration, Station
 from app.services import energy, weather
 
@@ -95,25 +94,6 @@ async def compute_station(
     )
 
 
-async def _pages(db: AsyncSession, size: int) -> AsyncIterator[list[Station]]:
-    """按主键翻页。全表一次进内存在几万座站上就是个定时炸弹，而且没有任何必要。"""
-    last = ""
-    while True:
-        page = list(
-            (
-                await db.execute(
-                    select(Station).where(Station.id > last).order_by(Station.id).limit(size)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if not page:
-            return
-        last = page[-1].id  # 在 yield（以及随后的 commit）之前取，不依赖 expire_on_commit
-        yield page
-
-
 async def accumulate_all(db: AsyncSession, http: httpx.AsyncClient) -> int:
     """全部站点跑一遍，返回处理数。单站失败不影响其他站。
 
@@ -121,7 +101,7 @@ async def accumulate_all(db: AsyncSession, http: httpx.AsyncClient) -> int:
     """
     sem = asyncio.Semaphore(settings.accumulate_concurrency)
     done = 0
-    async for page in _pages(db, settings.accumulate_batch_size):
+    async for page in pages(db, select(Station), Station, settings.accumulate_batch_size):
         ids = [s.id for s in page]  # 提交后再读 ORM 属性要看 expire 配置，先取出来
         rows = await asyncio.gather(
             *(compute_station(http, s, sem) for s in page), return_exceptions=True

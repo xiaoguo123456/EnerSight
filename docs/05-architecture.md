@@ -251,11 +251,20 @@ export interface HttpAdapter {
 `accumulate_generation` 与 `scan_alerts` 都要遍历全部站点。气象数据本就共享同一份
 批次缓存，撞在同一分钟不会多打上游，但会把 CPU 峰值堆到一起 —— 所以错开一格。
 
-**遍历站点的任务一律「算并发、写串行」。** `AsyncSession` 不能被多个任务同时使用，
-所以只有计算阶段进 `asyncio.gather`（受 `accumulate_concurrency` 闸门限，默认 8），
-写入阶段串行。查询与提交都按 `accumulate_batch_size`（默认 200）分批：
-全表一次进内存在几万座站上是定时炸弹，而攒到最后一次 `commit` 则意味着
-跑到一半出错前面全白跑。实现见 `services/accumulate`。
+**遍历站点的任务一律分批取站点**，用 `db.pages` / `db.id_pages` 做 keyset 翻页 ——
+全表一次 `.all()` 在几万座站上是定时炸弹，offset 分页在深页又会退化成全表扫描。
+
+并发口径按「算与写能不能分开」分成两种，不要套用错：
+
+| 任务 | 口径 | 为什么 |
+| --- | --- | --- |
+| `accumulate_generation` | **算并发、写串行**（`accumulate_concurrency`，默认 8） | 算完只产出一个数据类，写入集中在末尾。`AsyncSession` 不能被多个任务同时用，所以只有算的阶段进 `gather`。查询与提交按 `accumulate_batch_size` 分批 —— 攒到最后一次 `commit`，跑到一半出错前面全白跑 |
+| `generate_reports` | **一任务一会话**（`reports_concurrency`，还会被 `db_pool_size` 夹一次） | `generate_and_store` 从取数、算指数到写库全程同一个会话，算与写分不开，且它自己提交。只能每个任务开自己的会话，因此并发上限受连接预算约束（线上 `db_pool_size` + `db_max_overflow` 一共 3 个），翻页用 `id_pages` 每页取完就放掉连接 |
+| `scan_alerts` | **串行**，只分批取站点 | `scan_station` 自带 per-station 锁并各自提交，跨站点本就独立；但整轮共用一个会话。每 15 分钟一轮，没必要为并发再引入一套会话管理 |
+
+`scan_alerts` 除个人站点外还要回扫「仍有生效预警、但已不在站点表里的公开电站」——
+首页顺手扫过它们才会留下预警，不接着扫就永远解除不掉。用 `NOT EXISTS` 子查询挑出来，
+而不是把全部站点 id 拉进内存做差集。
 
 **上游拉取一律带退避重试、限并发。** `upstream_retries` 3 次、`upstream_backoff_seconds`
 线性退避，只重试传输错误与 5xx；429（配额）与 400（坐标越界）立即抛出 —— 对 429
