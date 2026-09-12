@@ -140,19 +140,40 @@ def eligible(plants):
     return rows, duplicate, invalid
 
 
-def cell(p):
-    return math.floor(p.latitude) + 0.5, math.floor(p.longitude) + 0.5
+def grid_step(station_type: str) -> float:
+    """该类型取气象用多大的网格。光伏 1°、风电 0.25°，见 settings 的说明。"""
+    return (
+        settings.fleet_grid_step_wind if station_type == "wind" else settings.fleet_grid_step_solar
+    )
 
 
-def calculate_cell(plants, raw, model, day):
-    """一个 1° 网格内全部场站的未来 N 天单位容量曲线。返回 [(plant, [day0, day1, …])]，
+def cell(p) -> tuple[str, float, float]:
+    """分组键 = (类型, 格心纬度, 格心经度)。
+
+    类型进键是必须的：两种类型步长不同，同一座标附近的光伏与风电属于不同的格。
+    格心取整到 4 位小数，避免 0.25 这类步长把浮点噪声带进缓存键与请求参数。
+    """
+    step = grid_step(p.type)
+    return (
+        p.type,
+        round(math.floor(p.latitude / step) * step + step / 2, 4),
+        round(math.floor(p.longitude / step) * step + step / 2, 4),
+    )
+
+
+def coord_key(lat: float, lon: float) -> str:
+    """天气缓存键只认坐标，不认类型 —— 同一座标的光伏与风电本就该共用一份气象。"""
+    return f"{lat},{lon}"
+
+
+def calculate_cell(plants, raw, model, day, lat: float, lon: float):
+    """一个网格内全部场站的未来 N 天单位容量曲线。返回 [(plant, [day0, day1, …])]，
     某天不可算时该位为 None；今日不可算的场站不计入覆盖。"""
     fc = weather.parse_forecast(raw, model=model)
     if fc.current_hour().date().isoformat() != day:
         raise ValueError("统计日期已变化")
     curves: dict[tuple, list[np.ndarray | None]] = {}
     results = []
-    lat, lon = cell(plants[0])
     for p in plants:
         hub = wind.default_hub_height() if p.type == "wind" else None
         basis, blocked = catalog_basis(p)
@@ -277,15 +298,22 @@ async def build(http, model: str, day: str, plants) -> None:
             out.message = "统计日期已变化，请刷新"
             break
         batch = keys[start : start + per_request]
-        missing = [k for k in batch if f"{k[0]},{k[1]}" not in raw_cache]
+        # 同一座标可能同时是光伏格与风电格，只取一次
+        missing: list[tuple[float, float]] = []
+        pending: set[str] = set()
+        for _type, lat, lon in batch:
+            ck = coord_key(lat, lon)
+            if ck not in raw_cache and ck not in pending:
+                pending.add(ck)
+                missing.append((lat, lon))
         if missing:
             await pacer.take(len(missing))  # 只为真正出网的坐标付时间
             try:
                 r = await http.get(
                     f"{settings.open_meteo_base}/forecast",
                     params={
-                        "latitude": ",".join(str(k[0]) for k in missing),
-                        "longitude": ",".join(str(k[1]) for k in missing),
+                        "latitude": ",".join(str(a) for a, _ in missing),
+                        "longitude": ",".join(str(b) for _, b in missing),
                         "models": model,
                         "hourly": ",".join(FIELDS),
                         "timezone": TZ,
@@ -303,8 +331,8 @@ async def build(http, model: str, day: str, plants) -> None:
                     payload = payload if isinstance(payload, list) else [payload]
                     if len(payload) != len(missing):
                         raise ValueError("批量响应数量不一致")
-                    for key, raw in zip(missing, payload, strict=True):
-                        raw_cache[f"{key[0]},{key[1]}"] = raw
+                    for (lat, lon), raw in zip(missing, payload, strict=True):
+                        raw_cache[coord_key(lat, lon)] = raw
                     write(
                         cache_path, {"saved_at": datetime.now(UTC).timestamp(), "cells": raw_cache}
                     )
@@ -312,11 +340,14 @@ async def build(http, model: str, day: str, plants) -> None:
                 log.warning("fleet weather batch failed: %s %s", model, start, exc_info=True)
                 out.message = "部分区域气象数据暂不可用，显示已覆盖范围"
         for key in batch:
-            raw = raw_cache.get(f"{key[0]},{key[1]}")
+            _type, lat, lon = key
+            raw = raw_cache.get(coord_key(lat, lon))
             if not raw:
                 continue
             try:
-                results = await asyncio.to_thread(calculate_cell, groups[key], raw, model, day)
+                results = await asyncio.to_thread(
+                    calculate_cell, groups[key], raw, model, day, lat, lon
+                )
             except Exception:
                 log.warning("fleet cell failed: %s %s", model, key, exc_info=True)
                 continue

@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     fleet_coords_per_request: int = 100
     # 因此要按坐标限速。上限 600/分钟，留两成余量给站点预报与元数据（同一个 IP 共享）
     fleet_coords_per_minute: int = 480
+    # 汇总取气象的网格步长，按能源类型分开。辐射场在百公里尺度上平滑，风速不是 ——
+    # 实测 1° 下光伏容量加权汇总偏差 +0.75%、风电 -8.46%，0.25° 分别为 +0.15% / +0.09%。
+    # 见 docs/04 §七。改小要同步看坐标预算：风电占可算场站的六成
+    fleet_grid_step_solar: float = 1.0
+    fleet_grid_step_wind: float = 0.25
     # 自建站点每用户上限。docs/17 §一
     max_stations_per_user: int = 10
     # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二

@@ -339,9 +339,14 @@ async def test_全目录未来7天_顶层字段等于首日(tmp_path, monkeypatc
     monkeypatch.setattr(fleet.tiles, "tile_dir", lambda: tmp_path / "tiles")
     with respx.mock(assert_all_called=False) as mock:
         mock.get(url__regex=r".*/static/meta\.json").mock(return_value=Response(200, json=META))
-        route = mock.get(url__regex=r".*/v1/forecast.*").mock(
-            return_value=Response(200, json=_forecast(wind_today=15))
-        )
+        fc_raw = _forecast(wind_today=15)
+
+        def batched(request):
+            # 光伏与风电步长不同，一批里的坐标数不再恒为 1；响应条数必须对上
+            n = len(request.url.params["latitude"].split(","))
+            return Response(200, json=fc_raw if n == 1 else [fc_raw] * n)
+
+        route = mock.get(url__regex=r".*/v1/forecast.*").mock(side_effect=batched)
         async with httpx.AsyncClient() as c:
             plants = [_plant("a"), _plant("b", 500, "solar")]
             await fleet.build(c, "gfs_global", fleet.day_key(), plants)

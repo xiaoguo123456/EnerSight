@@ -69,3 +69,61 @@ class TestBatchSize:
             assert requests * per_request >= coords
         # 无论怎么切，付出去的坐标数不变
         assert coords == 741
+
+
+class TestGridStep:
+    """光伏 1°、风电 0.25°。辐射场在百公里尺度上平滑，风速不是。docs/04 §七"""
+
+    async def test_风电网格比光伏细(self):
+        from app.services.fleet_prediction import grid_step
+
+        assert grid_step("wind") <= grid_step("solar")
+
+    async def test_分组键带类型(self):
+        """两种类型步长不同，同一坐标附近的光伏与风电属于不同的格，键不带类型会错分。"""
+        from app.models import CatalogPlant
+        from app.services.fleet_prediction import cell
+
+        def at(kind: str):
+            return CatalogPlant(
+                id=kind,
+                source="gem",
+                source_id=kind,
+                type=kind,
+                name=kind,
+                latitude=36.62,
+                longitude=100.37,
+                capacity_kw=1000,
+                status="operating",
+            )
+
+        assert cell(at("solar"))[0] == "solar"
+        assert cell(at("wind"))[0] == "wind"
+        assert cell(at("solar"))[1:] != cell(at("wind"))[1:]
+
+    async def test_格心不带浮点噪声(self):
+        """0.25 这类步长容易算出 36.375000000000004，会污染缓存键与请求参数。"""
+        from app.models import CatalogPlant
+        from app.services.fleet_prediction import cell
+
+        for lat in (36.62, 21.75, 43.24, -0.13):
+            _, clat, clon = cell(
+                CatalogPlant(
+                    id="x",
+                    source="gem",
+                    source_id="x",
+                    type="wind",
+                    name="x",
+                    latitude=lat,
+                    longitude=lat + 60,
+                    capacity_kw=1,
+                    status="operating",
+                )
+            )
+            assert len(str(clat).split(".")[-1]) <= 4
+            assert len(str(clon).split(".")[-1]) <= 4
+
+    async def test_同坐标的两类场站共用一份气象(self):
+        from app.services.fleet_prediction import coord_key
+
+        assert coord_key(36.5, 100.5) == coord_key(36.5, 100.5)

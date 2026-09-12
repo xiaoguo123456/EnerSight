@@ -97,6 +97,20 @@ def test_光伏夜间零值与缺测不同():
     assert result.energy_kwh == pytest.approx(sum(p.value for p in result.power_kw), abs=0.03)
 
 
+def batched(raw: dict):
+    """按请求里的坐标数回相同条数的响应。
+
+    多坐标请求的响应是个列表，条数必须与坐标数一致 —— 光伏与风电现在用不同步长，
+    同一批里的坐标数不再恒等于 1。
+    """
+
+    def side_effect(request):
+        n = len(request.url.params["latitude"].split(","))
+        return httpx.Response(200, json=raw if n == 1 else [raw] * n)
+
+    return side_effect
+
+
 async def test_汇总去重覆盖与贡献相加(tmp_path, monkeypatch):
     monkeypatch.setattr(fleet, "directory", lambda: tmp_path)
     raw = forecast()
@@ -108,9 +122,7 @@ async def test_汇总去重覆盖与贡献相加(tmp_path, monkeypatch):
     ]
     with respx.mock:
         respx.get(url__regex=r".*/static/meta\.json").mock(return_value=httpx.Response(404))
-        route = respx.get(url__regex=r".*open-meteo.*/v1/forecast.*").mock(
-            return_value=httpx.Response(200, json=raw)
-        )
+        route = respx.get(url__regex=r".*open-meteo.*/v1/forecast.*").mock(side_effect=batched(raw))
         async with httpx.AsyncClient() as c:
             await fleet.build(c, "gfs_global", fleet.day_key(), plants)
     out = fleet.load(tmp_path / f"gfs_global-{fleet.day_key()}.json")
@@ -168,10 +180,10 @@ async def test_有场站算不出时状态为partial(tmp_path, monkeypatch):
     plants = [plant("a"), plant("c", lat=40.3)]
     real = fleet.calculate_cell
 
-    def flaky(cell_plants, raw_, model, day):
+    def flaky(cell_plants, raw_, model, day, lat, lon):
         if cell_plants[0].id == "c":
             raise RuntimeError("气象缺口")
-        return real(cell_plants, raw_, model, day)
+        return real(cell_plants, raw_, model, day, lat, lon)
 
     monkeypatch.setattr(fleet, "calculate_cell", flaky)
     with respx.mock:
