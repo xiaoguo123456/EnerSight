@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 仅更新 /opt/enersight 中的 API；失败恢复上一镜像，不回退数据库迁移。
+# 仅更新当前部署目录中的 API；失败恢复上一镜像，不回退数据库迁移。
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 exec 9>.deploy.lock
@@ -9,6 +9,12 @@ IMAGE=${1:?用法：deploy.sh 镜像完整摘要}
   echo '镜像必须包含 12 位提交标签和 SHA256 摘要'; exit 1;
 }
 export ENERSIGHT_IMAGE="$IMAGE"
+export ENERSIGHT_DEPLOY_ENV=${2:-prod}
+case "$ENERSIGHT_DEPLOY_ENV" in
+  prod) export ENERSIGHT_DEPLOY_PORT=8001 ;;
+  test) export ENERSIGHT_DEPLOY_PORT=8002 ;;
+  *) echo "未知部署环境"; exit 1 ;;
+esac
 bash scripts/preflight.sh
 # 拉取成功后再保存版本和替换服务。
 docker compose pull api
@@ -21,7 +27,7 @@ wait_ready() {
   for attempt in $(seq 1 60); do
     cid=$(docker compose ps -aq api)
     state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null || true)
-    if [[ "$state" == healthy ]] && curl --max-time 5 -fsS http://127.0.0.1:8001/ready >/dev/null; then
+    if [[ "$state" == healthy ]] && curl --max-time 5 -fsS http://127.0.0.1:${ENERSIGHT_DEPLOY_PORT}/ready >/dev/null; then
       return 0
     fi
     sleep 5

@@ -1,0 +1,48 @@
+# EnerSight BFF 测试 Compose。docs/10-deployment.md
+# 只跑应用容器；PostgreSQL 用外部托管实例。镜像固定摘要，升级时改这里并提交，禁止 latest。
+name: enersight-test
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    image: ${ENERSIGHT_IMAGE:?必须提供固定摘要镜像}
+    restart: unless-stopped
+    init: true
+    environment:
+      # 栅格进程各一个，限制数值库内部线程，避免争抢业务 API 的 CPU。
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      GDAL_NUM_THREADS: "1"
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8002:8000"
+    mem_limit: 640m
+    cpus: 0.75
+    pids_limit: 256
+    volumes:
+      # 渲染好的图层瓦片、卫星归档帧、校准缓存。丢了会重新生成，但归档帧无法补
+      - ./data:/app/data
+    networks:
+      default: {}
+      test-gateway:
+        aliases: [enersight-test-api]
+    logging: *default-logging
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+# 复用测试 Nginx 已有网络，仅用唯一别名解析本服务。
+networks:
+  test-gateway:
+    external: true
+    name: weishen-test_default

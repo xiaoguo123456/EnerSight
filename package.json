@@ -9,7 +9,9 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "build:test": "pnpm --filter @enersight/miniapp build:weapp:test",
+    "build:prod": "pnpm --filter @enersight/miniapp build:weapp:prod"
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0",

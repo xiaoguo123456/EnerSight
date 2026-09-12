@@ -1,6 +1,8 @@
-# 晴川观象生产部署
+# 晴川观象测试与生产部署
 
-本文对应 `deploy/` 和 `.github/workflows/prod.yml`。参考 `new-api-deploy` 的独立服务边界、固定镜像摘要，以及 `huahuadog` 的 GitHub Actions → ACR → ECS 发布流程。
+测试环境配置、前端构建命令和回滚方式见 [部署目录说明](../deploy/README.md)。
+
+本文生产部分对应 `deploy/` 和 `.github/workflows/prod.yml`。参考 `new-api-deploy` 的独立服务边界、固定镜像摘要，以及 `huahuadog` 的 GitHub Actions → ACR → ECS 发布流程。
 
 ## 资源与访问路径
 
@@ -197,3 +199,14 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 
 验收应包含：当前三个图层成果已就绪、全国/新疆视野、PNG 透明缺测、热缓存响应、
 小程序真机地面覆盖层与模拟器显示；不能只以 `/ready` 成功判断地图发布完成。
+
+
+### 测试环境配置准备（2026-09-12）
+
+- 已在现有 RDS 创建 `enersight_test`，控制台状态为运行中；不复制生产用户数据。
+- 测试服务器 `/opt/enersight-test` 已上传独立 Compose 和部署脚本，`.env` 权限为 600。
+- GitHub 已配置 `test` 环境、`TEST_SSH_HOST` 和 `TEST_SSH_KNOWN_HOSTS`。
+- 已准备 main 推送自动部署工作流；只有工作流提交并推送后才会生效。
+- `pnpm build:test` / `pnpm build:prod` 均已实际构建并核验产物地址。
+- Nginx 候选配置已通过测试服务器上的 `nginx -t`，尚未替换正在使用的配置。
+- 尚待创建普通账号 `enersight_test_app` 并授予测试库 DBOwner、首次发布、Nginx reload 和公网验收；当前不能视为测试后端已上线。
