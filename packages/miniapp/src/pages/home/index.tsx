@@ -126,33 +126,34 @@ function FleetForecast({ f, selected, onSelect, version, onReload, refreshError 
   const coveredCount = day?.covered_count ?? f.covered_count
   const coveredCapacity = day?.covered_capacity_kw ?? f.covered_capacity_kw
   const coverage = f.total_capacity_kw ? Math.min(100, coveredCapacity / f.total_capacity_kw * 100) : 0
-  const [common, setCommon] = useState(false)
   const info = {
     title: '全目录口径',
     content: [
       ...(f.assumptions ?? []),
       `已计算 ${thousands(coveredCount)} / ${thousands(f.total_count)} 座；口径待核验或参数不足 ${thousands(f.invalid_count)} 座，气象待补 ${thousands(day?.failed_count ?? f.failed_count)} 座，已排除完全重复记录 ${thousands(f.duplicate_count)} 条。`,
+      '七天电量、选中日电量及功率曲线统一使用该日已计算电站。各日有完整气象数据的电站可能不同，因此柱形变化也会受到覆盖范围影响。后 3 天预报仅作参考。',
+      `计算时间：${formatBeijingTime(f.generated_at)}（北京时间）。${f.message ?? ''}`,
       '覆盖率按目录申报容量计算，不是全国覆盖率或准确率。区域汇总采用分能源类型的气象网格与默认设备参数，网格大小见上述说明；本站预测使用本站位置，二者可能存在近似差异。',
       basisDetail(f.basis),
       DISCLAIMER,
     ].join('\n'),
   }
+  if (value == null && !days.some(d => d.energy_kwh != null)) {
+    return <View className="home__card fleet-preparing">
+      <Text className="forecast-title">{f.status === 'error' ? '预测暂不可用' : '预测准备中'}</Text>
+      {f.status === 'error' ? <Button className="forecast-action" onClick={onReload}>重试</Button> : <Skeleton height={180} lines={2} />}
+    </View>
+  }
   return <View className="home__card forecast-main">
     <View className="forecast-row"><Text className="forecast-title">{label} {coveredCount === f.total_count ? '发电量合计' : '已覆盖电站合计'}</Text><InfoTip {...info} /></View>
     <Value value={value} />
     <View className="forecast-split forecast-split--tight"><View><Text className="forecast-label">光伏</Text><Text>{fmtEnergy(value == null ? null : solar)}</Text></View><View><Text className="forecast-label">风电</Text><Text>{fmtEnergy(value == null ? null : wind)}</Text></View></View>
-    <View className="forecast-coverage"><View className="forecast-row"><Text>目录容量覆盖率</Text><Text>{coverage.toFixed(1)}%</Text></View><View className="forecast-progress"><View style={{ width: `${coverage}%` }} /></View><Text className="forecast-caption">已计算 {thousands(coveredCount)} / {thousands(f.total_count)} 座</Text></View>
-    {['queued','building'].includes(f.status) && <Text className="forecast-state">{f.status === 'queued' ? '后台排队计算中' : '后台正在计算更多区域'}，结果自动更新</Text>}
-    {f.message && <Text className="forecast-warning">{f.message}</Text>}
-    {refreshError && <Text className="forecast-warning" onClick={onReload}>刷新失败，保留上次结果 · 点击重试</Text>}
-    {days.length > 0 && <>
-      <View className="forecast-row"><Text className="forecast-caption">七天电量对比</Text><Button className="forecast-action" disabled={!f.common_covered_count} onClick={() => setCommon(v => !v)}>{common ? '共同电站' : '各日已覆盖'} · 切换</Button></View>
-      <Text className="forecast-caption">{common ? `固定 ${thousands(f.common_covered_count ?? 0)} 座电站比较天气变化` : '各日电站覆盖可能不同，电量变化不全由天气引起'}</Text>
-    </>}
-    {days.length > 0 && <OutlookStrip days={days.map(d => ({ ...d, energy_kwh: common ? d.common_energy_kwh ?? null : d.energy_kwh, caption: common ? `共同覆盖 ${thousands(f.common_covered_count ?? 0)} 座` : `已覆盖 ${thousands(d.covered_count ?? 0)} 座${d.energy_kwh ? ` · 光伏占比 ${Math.round(d.solar_kwh / d.energy_kwh * 100)}%` : ''}` }))} selected={selected} onSelect={onSelect} />}
+    <View className="fleet-status"><Text>容量覆盖 {coverage.toFixed(1)}%</Text><Text>{value == null ? (f.status === 'error' ? '暂不可用' : '准备中') : ''}</Text></View>
+    {refreshError && <Text className="forecast-warning" onClick={onReload}>刷新失败 · 点击重试</Text>}
+    {days.length > 0 && <OutlookStrip days={days} selected={selected} onSelect={onSelect} title="七天电量" showHorizonNote={false} />}
     {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title={`${label} 预测功率合计`} step={day?.resolution_minutes ?? f.resolution_minutes ?? 60} />}
     {value == null && days.length > 0 && <Text className="forecast-state">该日尚无覆盖电站结果</Text>}
-    <View className="forecast-foot"><Text>预测计算于 {formatBeijingTime(f.generated_at)}</Text><Text className="forecast-link" onClick={onReload}>刷新</Text></View>
+    <View className="forecast-foot fleet-refresh"><Button className="forecast-action" onClick={onReload}>刷新</Button></View>
   </View>
 }
 
@@ -184,7 +185,7 @@ export default function Home() {
   const d = home.data && (!home.data.prediction || home.data.prediction.model === model) ? home.data : null
   useEffect(() => {
     if (!visible || !f) return
-    const timer = setTimeout(() => void fleet.reload(), ['queued','building'].includes(f.status) ? 8000 : 120000)
+    const timer = setTimeout(() => void fleet.reload(), f.updating || ['queued','building'].includes(f.status) ? 8000 : 120000)
     return () => clearTimeout(timer)
   }, [f, visible, fleet.reload])
   usePullDownRefresh(async () => { await Promise.all([refreshStation(), fleet.reload()]); Taro.stopPullDownRefresh() })
@@ -209,7 +210,7 @@ export default function Home() {
     <View className="home__body">
       <View className="forecast-toolbar">
         <Picker mode="selector" range={WEATHER_MODELS.map(m => m.label)} value={WEATHER_MODELS.findIndex(m => m.id === model)} onChange={e => choose(Number(e.detail.value))}>
-          <View className="forecast-model"><Text>{`${model === 'best_match' ? (basis?.resolved_model ? `自动 · ${RESOLVED_LABEL[basis.resolved_model] ?? basis.resolved_model}` : '自动选择 · 模型待确认') : weatherModelLabel(model)}${basisShort(basis)}`}</Text><Icon name="chevronDown" size={14} strokeWidth={1.5} /></View>
+          <View className="forecast-model"><Text>{`${model === 'best_match' ? (basis?.resolved_model ? `自动 · ${RESOLVED_LABEL[basis.resolved_model] ?? basis.resolved_model}` : '自动选择 · 模型待确认') : weatherModelLabel(model)}${scope === 'fleet' ? '' : basisShort(basis)}`}</Text><Icon name="chevronDown" size={14} strokeWidth={1.5} /></View>
         </Picker>
         {scope === 'fleet' && <View className="fleet-history-link" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: '/pages/fleet-history/index' })}><Icon name="trendingUp" size={15} strokeWidth={1.5} /><Text>历史趋势</Text></View>}
       </View>

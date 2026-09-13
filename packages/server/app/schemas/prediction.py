@@ -92,6 +92,7 @@ class FleetDay(BaseModel):
 
 
 class FleetPrediction(GenerationPrediction):
+    updating: bool = Field(default=False, description="后台检查或计算中；已完成快照继续可用")
     input_archive_id: str | None = Field(default=None, description="不可变气象与目录输入留档标识")
     batch_stamp: str | None = None
     catalog_revision: str | None = None

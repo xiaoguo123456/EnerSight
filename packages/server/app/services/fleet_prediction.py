@@ -28,6 +28,7 @@ from app.weather_model import MODELS
 
 log = logging.getLogger(__name__)
 _jobs: dict[str, asyncio.Task] = {}
+_checked: dict[str, float] = {}
 _gate = asyncio.Lock()
 TZ = "Asia/Shanghai"
 FIELDS = [
@@ -314,6 +315,8 @@ async def build(http, model: str, day: str, plants) -> None:
         ]
 
     def publish():
+        if out.status == "building":
+            return
         out.generated_at = datetime.now(UTC).isoformat()
         # 顶层字段始终是今日，与历史留档兼容；未来各天在 days 里。docs/17 §二
         out.energy_kwh = float(total[0].sum()) * 0.25 if out.covered_count else None
@@ -350,7 +353,18 @@ async def build(http, model: str, day: str, plants) -> None:
             )
             for k in range(n_days)
         ]
-        write(path, out.model_dump())
+        # 中间批次只用于计算，不覆盖用户正在查看的已完成快照。
+        if out.status != "building":
+            previous = load(path)
+            if out.energy_kwh is not None or not usable(previous, day):
+                published = out.model_dump()
+                if out.status == "error":
+                    published["_retry_at"] = time.time() + 1800
+                write(path, published)
+            else:
+                previous["_retry_at"] = time.time() + 1800
+                previous["message"] = "本轮更新未取得有效数据，保留上次预测"
+                write(path, previous)
         log.info(
             "fleet curve cache %s: hits=%d misses=%d covered=%d",
             model,
@@ -510,6 +524,63 @@ async def build(http, model: str, day: str, plants) -> None:
             old.unlink(missing_ok=True)
 
 
+def usable(saved: dict | None, day: str) -> bool:
+    return bool(
+        saved
+        and saved.get("calculation_version") == calculation_version(day)
+        and saved.get("status") in ("ready", "partial")
+        and saved.get("energy_kwh") is not None
+    )
+
+
+def carry_previous(model: str, day: str) -> dict | None:
+    """跨日按实际日期续用昨日预报，不把昨日电量冒充今日，也不补造第七天。"""
+    yesterday = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+    previous = load(directory() / f"{model}-{yesterday}.json")
+    if not usable(previous, day):
+        return None
+    by_date = {d["date"]: d for d in previous.get("days", [])}
+    if by_date.get(day, {}).get("energy_kwh") is None:
+        return None
+    result = FleetPrediction.model_validate(previous)
+    result.date = day
+    result.days = []
+    for k in range(days_count()):
+        target = date.fromisoformat(day) + timedelta(days=k)
+        row = by_date.get(target.isoformat())
+        if row:
+            row = {**row, "lead_days": k}
+        else:
+            row = dict(
+                date=target.isoformat(),
+                weekday=target.isoweekday(),
+                lead_days=k,
+                energy_kwh=None,
+                solar_kwh=0,
+                wind_kwh=0,
+                power_kw=[],
+                resolution_minutes=15,
+                status="queued",
+            )
+        result.days.append(FleetDay.model_validate(row))
+    today = result.days[0]
+    for field in (
+        "energy_kwh",
+        "solar_kwh",
+        "wind_kwh",
+        "power_kw",
+        "covered_count",
+        "covered_capacity_kw",
+        "failed_count",
+        "regions",
+        "resolution_minutes",
+    ):
+        setattr(result, field, getattr(today, field))
+    result.status = "partial"
+    result.message = "新一轮预报准备中，当前使用上一批对应日期的预测"
+    return {**result.model_dump(), "_carried": True}
+
+
 async def ensure(http, model: str) -> FleetPrediction:
     if model not in MODELS:
         raise ValueError("不支持的模型")
@@ -517,43 +588,54 @@ async def ensure(http, model: str) -> FleetPrediction:
     key = f"{model}-{day}"
     path = directory() / f"{key}.json"
     saved = load(path)
+    if not usable(saved, day):
+        carried = carry_previous(model, day)
+        if carried:
+            saved = carried
+            write(path, saved)
+    initial = (
+        FleetPrediction.model_validate(saved)
+        if usable(saved, day)
+        or (
+            saved
+            and saved.get("status") == "error"
+            and saved.get("calculation_version") == calculation_version(day)
+        )
+        else blank(model, day)
+    )
+    if saved and saved.get("_retry_at", 0) > time.time():
+        return initial
     task = _jobs.get(key)
     if task and not task.done():
-        return FleetPrediction.model_validate(saved) if saved else blank(model, day)
-    if (
-        saved
-        and saved.get("calculation_version") == calculation_version(day)
-        and saved["status"] in ("ready", "partial", "error")
-    ):
-        meta = await weather.get_model_meta(http, model)
-        async with SessionLocal() as db:
-            count, updated = (
-                await db.execute(
-                    select(func.count(), func.max(CatalogPlant.updated_at))
-                    .select_from(CatalogPlant)
-                    .where(CatalogPlant.status == "operating")
-                )
-            ).one()
-        revision = f"{count}:{updated.isoformat() if updated else ''}"
-        age = (
-            datetime.now(UTC).timestamp()
-            - datetime.fromisoformat(saved["generated_at"]).timestamp()
-        )
-        if (
-            saved.get("batch_stamp") == weather.batch_stamp(meta)
-            and saved.get("catalog_revision") == revision
-            and (
-                (saved["status"] == "ready" and age < 43200)
-                or (saved["status"] in ("partial", "error") and age < 1800)
-            )
-        ):
-            return FleetPrediction.model_validate(saved)
-    initial = blank(model, day)
-    write(path, initial.model_dump())
+        return initial.model_copy(update={"updating": True})
+    if time.monotonic() - _checked.get(key, -float("inf")) < 60:
+        return initial
+    if not usable(saved, day):
+        write(path, initial.model_dump())
 
     async def run():
         async with _gate:
             try:
+                # 数据库与上游批次检查也在后台进行，读快照的请求无需等待连接池。
+                meta = await weather.get_model_meta(http, model)
+                async with SessionLocal() as db:
+                    count, updated = (
+                        await db.execute(
+                            select(func.count(), func.max(CatalogPlant.updated_at))
+                            .select_from(CatalogPlant)
+                            .where(CatalogPlant.status == "operating")
+                        )
+                    ).one()
+                revision = f"{count}:{updated.isoformat() if updated else ''}"
+                if saved and not saved.get("_carried"):
+                    age = time.time() - datetime.fromisoformat(saved["generated_at"]).timestamp()
+                    if (
+                        usable(saved, day)
+                        and saved.get("batch_stamp") == weather.batch_stamp(meta)
+                        and saved.get("catalog_revision") == revision
+                        and age < (43200 if saved["status"] == "ready" else 1800)
+                    ):
+                        return
                 async with SessionLocal() as db:
                     plants = (
                         (
@@ -568,18 +650,21 @@ async def ensure(http, model: str) -> FleetPrediction:
             except Exception:
                 log.exception("fleet prediction failed: %s", key)
                 failed = load(path) or initial.model_dump()
-                failed.update(
-                    status="error",
-                    message="汇总暂不可用，稍后自动重试",
-                    generated_at=datetime.now(UTC).isoformat(),
-                )
+                if usable(failed, day):
+                    failed["message"] = "更新失败，保留上次预测"
+                else:
+                    failed.update(status="error", message="汇总暂不可用，稍后自动重试")
+                failed["_retry_at"] = time.time() + 1800
                 write(path, failed)
+            finally:
+                _checked[key] = time.monotonic()
 
     _jobs[key] = asyncio.create_task(run())
     for old in list(_jobs):
         if old != key and _jobs[old].done():
             del _jobs[old]
-    return initial
+            _checked.pop(old, None)
+    return initial.model_copy(update={"updating": True})
 
 
 async def shutdown():
@@ -587,3 +672,4 @@ async def shutdown():
         task.cancel()
     await asyncio.gather(*_jobs.values(), return_exceptions=True)
     _jobs.clear()
+    _checked.clear()

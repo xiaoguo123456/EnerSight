@@ -31,7 +31,7 @@ export function energyUnit(maxKwh: number) {
  * 七列只放日期和电量，天气及适宜度展示在选中日下方。
  * 第 5 天起用浅色竖条与虚线分隔，并在表头注明参考属性。
  */
-export function OutlookStrip({ days, selected, onSelect }: { days: StripDay[]; selected: number; onSelect: (i: number) => void }) {
+export function OutlookStrip({ days, selected, onSelect, title, showHorizonNote = true }: { days: StripDay[]; selected: number; onSelect: (i: number) => void; title?: string; showHorizonNote?: boolean }) {
   const max = Math.max(...days.map((d) => d.energy_kwh ?? 0), 0)
   const unit = energyUnit(max)
   const decimals = max / unit.divisor < 10 ? 1 : 0
@@ -40,7 +40,7 @@ export function OutlookStrip({ days, selected, onSelect }: { days: StripDay[]; s
   const detail = active ? [active.caption, active.score != null ? `发电适宜度 ${Math.round(active.score)} 分` : null].filter(Boolean).join(' · ') : ''
   return (
     <View className="strip">
-      <View className="strip__unit"><Text>{hasEnergy ? `日电量 ${unit.label}` : "未来天气与发电适宜度"}</Text><Text>后 3 天参考</Text></View>
+      <View className={`strip__unit ${title ? 'strip__unit--section' : ''}`}><Text>{title ?? (hasEnergy ? `日电量 ${unit.label}` : "未来天气与发电适宜度")}</Text>{title && hasEnergy ? <Text>{unit.label}</Text> : showHorizonNote && <Text>后 3 天参考</Text>}</View>
       <View className="strip__cols">
         {days.map((d, i) => (
           <Button

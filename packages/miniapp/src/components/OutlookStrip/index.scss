@@ -26,3 +26,6 @@
 .strip__date { font-size: var(--font-caption); }
 .strip__detail { display: block; margin-top: var(--space-2); font-size: var(--font-caption); line-height: 1.6; color: var(--color-text-sub); }
 .strip__col:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+
+.strip__unit--section { align-items: baseline; margin-bottom: 6px; }
+.strip__unit--section > text:first-child { font-size: 14px; font-weight: 600; color: var(--color-text); }

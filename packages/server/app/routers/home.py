@@ -50,6 +50,8 @@ async def get_trends(
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[TrendSeries]:
     station = await get_station(db, user.id, station_id)
+    # 只读事务在出网前结束，避免慢请求占满连接池。
+    await db.commit()
     fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
     return envelope(svc.build_trend(fc, metric, range_), coord)
 
@@ -93,6 +95,8 @@ async def station_outlook(
     from app.services import prediction
 
     station = await get_station(db, user.id, station_id)
+    # 只读事务在出网前结束，避免慢请求占满连接池。
+    await db.commit()
     fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
     out = await asyncio.to_thread(
         prediction.compute_days, station, fc, min(days, settings.forecast_outlook_days)

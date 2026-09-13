@@ -935,6 +935,12 @@ export interface components {
             /** Assumptions */
             assumptions?: string[];
             /**
+             * Updating
+             * @description 后台检查或计算中；已完成快照继续可用
+             * @default false
+             */
+            updating: boolean;
+            /**
              * Input Archive Id
              * @description 不可变气象与目录输入留档标识
              */
