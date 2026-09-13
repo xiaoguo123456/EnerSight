@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 import httpx
 
 from app.config import settings
-from app.errors import DataUnavailable, UpstreamUnavailable
+from app.errors import DataUnavailable, UpstreamRateLimited, UpstreamUnavailable
 from app.providers.budget import request_cost, shared
 from app.weather_model import current_model
 
@@ -150,7 +150,7 @@ class OpenMeteoProvider:
                 continue
             if res.status_code == 429:
                 shared.retry_after(res.headers.get("Retry-After"))
-                raise UpstreamUnavailable("气象服务调用已达配额上限，请稍后重试")
+                raise UpstreamRateLimited()
             if res.status_code == 400:
                 raise DataUnavailable()
             if res.status_code >= 500:

@@ -30,6 +30,8 @@ async def _resolve(db: AsyncSession, owner_id: str, station_id: str | None):
     )
     if station is None:
         raise StationNotFound()
+    # 出网前归还连接；预警页并发的两个请求不能占满测试环境的连接池。
+    await db.commit()
     return station
 
 

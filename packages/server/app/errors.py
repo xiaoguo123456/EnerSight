@@ -23,6 +23,11 @@ class DataUnavailable(ApiError):
         super().__init__("DATA_UNAVAILABLE", message, 503)
 
 
+class UpstreamRateLimited(ApiError):
+    def __init__(self) -> None:
+        super().__init__("UPSTREAM_RATE_LIMITED", "气象服务调用已达配额上限，请稍后重试", 503)
+
+
 class StationNotFound(ApiError):
     def __init__(self) -> None:
         super().__init__("STATION_NOT_FOUND", "站点不存在", 404)

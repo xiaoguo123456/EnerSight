@@ -321,3 +321,12 @@ async def test_统一预算按变量计费并遵循重试时间(monkeypatch):
     import time
 
     assert budget.paused_until - time.monotonic() > 119
+    from app.errors import UpstreamRateLimited
+
+    # 冷却两分钟也必须立即返回，不拖住请求；并且不能继续消耗额度。
+    with pytest.raises(UpstreamRateLimited):
+        await asyncio.wait_for(budget.take(1), timeout=0.1)
+    assert sum(cost for _, cost in budget.marks) == 15
+    budget.paused_until = time.monotonic() - 1
+    await budget.take(1)
+    assert sum(cost for _, cost in budget.marks) == 16

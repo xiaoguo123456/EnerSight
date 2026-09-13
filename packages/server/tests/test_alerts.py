@@ -249,6 +249,46 @@ class TestClearing:
 
 
 class TestApi:
+    @pytest.mark.parametrize("path", ["/v1/alerts", "/v1/alerts/current"])
+    async def test_预警等待上游时归还数据库连接(self, client, monkeypatch, path):
+        import asyncio
+
+        from app.db import get_session
+        from app.errors import UpstreamRateLimited
+        from app.main import app
+
+        sid = (await client.post("/v1/stations", json=SUZHOU)).json()["data"]["id"]
+        original = app.dependency_overrides[get_session]
+        sessions = []
+
+        async def tracked_session():
+            async for db in original():
+                sessions.append(db)
+                yield db
+
+        app.dependency_overrides[get_session] = tracked_session
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def slow_forecast(*args, **kwargs):
+            assert not sessions[-1].in_transaction(), "等待气象数据时仍持有数据库事务"
+            entered.set()
+            await release.wait()
+            raise UpstreamRateLimited()
+
+        monkeypatch.setattr(weather, "get_forecast", slow_forecast)
+        task = asyncio.create_task(client.get(path, params={"station_id": sid}))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=1)
+            # 气象请求未完成时，其他数据库业务仍能正常返回。
+            listed = await asyncio.wait_for(client.get("/v1/stations"), timeout=1)
+            assert listed.status_code == 200
+        finally:
+            release.set()
+            result = await task
+            app.dependency_overrides[get_session] = original
+        assert result.status_code == 503
+        assert result.json()["error"]["code"] == "UPSTREAM_RATE_LIMITED"
+
     async def _station_with(self, client: AsyncClient, raw: dict) -> str:
         with respx.mock:
             respx.get(url__regex=r".*open-meteo.*").mock(return_value=Response(200, json=raw))

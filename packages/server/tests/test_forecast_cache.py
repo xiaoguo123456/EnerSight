@@ -12,7 +12,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.errors import UpstreamUnavailable
+from app.errors import UpstreamRateLimited, UpstreamUnavailable
 from app.services import weather
 from tests.fixtures_forecast import TZ, make_forecast
 
@@ -156,16 +156,16 @@ class TestUnifiedQuarter:
 
 
 class TestUpstreamErrors:
-    async def test_429映射为可重试的上游不可用(self):
+    async def test_429映射为不自动重试的配额错误(self):
         from app.providers.open_meteo import OpenMeteoProvider
 
         with respx.mock:
             respx.get(url__regex=r".*/v1/forecast.*").mock(return_value=Response(429))
             async with httpx.AsyncClient() as http:
-                with pytest.raises(UpstreamUnavailable) as exc:
+                with pytest.raises(UpstreamRateLimited) as exc:
                     await OpenMeteoProvider(http).forecast(LAT, LON)
-        assert exc.value.code == "UPSTREAM_UNAVAILABLE"
-        assert exc.value.status == 502
+        assert exc.value.code == "UPSTREAM_RATE_LIMITED"
+        assert exc.value.status == 503
         assert "配额" in exc.value.message
 
 
@@ -222,7 +222,7 @@ class TestRetry:
         """额度按天算，立刻重试只会烧得更快。"""
         n, out = await self._fetch([Response(429)])
         assert n == 1
-        assert isinstance(out, UpstreamUnavailable)
+        assert isinstance(out, UpstreamRateLimited)
         assert "配额" in out.message
 
     async def test_400不重试(self):

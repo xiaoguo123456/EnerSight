@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 from app.config import settings
+from app.errors import UpstreamRateLimited
 
 
 class RequestBudget:
@@ -26,7 +27,10 @@ class RequestBudget:
                 now = time.monotonic()
                 while self.marks and self.marks[0][0] <= now - 60:
                     self.marks.popleft()
-                delay = max(0, self.paused_until - now)
+                # 上游冷却不是可等待的本地速率预算：前台请求须立即返回配额错误。
+                if self.paused_until > now:
+                    raise UpstreamRateLimited()
+                delay = 0
                 if sum(v for _, v in self.marks) + portion > limit:
                     delay = max(delay, self.marks[0][0] + 60 - now)
                 if delay <= 0:

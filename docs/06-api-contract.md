@@ -845,10 +845,12 @@ interface MetricWithDelta {
 | 202 | `REPORT_GENERATING` | 报告生成中，稍后重试 |
 | 429 | `RATE_LIMITED` | 请求过于频繁。已落地：每 token / IP 每分钟 120 次，响应带 `Retry-After` |
 | 502 | `UPSTREAM_UNAVAILABLE` | 上游数据源不可用 |
+| 503 | `UPSTREAM_RATE_LIMITED` | 气象源配额耗尽或处于冷却期，不自动重试 |
 | 503 | `DATA_UNAVAILABLE` | 该区域暂无数据 |
 
 `502` 与 `503` 的区别：`502` 是上游故障（可重试），
-`503` 是该位置本就没有数据（重试无用，前端应展示空态）。
+`503` 不自动重试；`DATA_UNAVAILABLE` 表示该位置无数据，`UPSTREAM_RATE_LIMITED`
+明确展示气象配额错误。冷却期间立即返回，不让业务请求排队等待额度恢复。
 
 
 ---
