@@ -109,7 +109,7 @@ def blank(model: str, day: str) -> FleetPrediction:
             "采用默认设备参数，未计入限电、检修及故障影响",
             "统一北京时间；仅汇总平台运营目录，非全国实测电量",
             f"计算版本 {calculation_version(day)}",
-            "逐时曲线按区间起点对齐光伏与风电"
+            "功率曲线按区间起点对齐光伏与风电"
             if version_for_day(day) == "model-v4"
             else "旧版逐时标签口径",
         ],
@@ -457,6 +457,7 @@ async def build(http, model: str, day: str, plants) -> None:
 
     fleet_history.capture(out.model_dump(), calculation_version(day))
     fleet_history.capture_leads(out.model_dump())
+    await asyncio.to_thread(raw_cache.prune_before, date.fromisoformat(day) - timedelta(days=2))
     # 留两天快照，清理旧天气文件，避免磁盘长期增长。
     for old in directory().glob("*.json"):
         if old.stat().st_mtime < datetime.now(UTC).timestamp() - 172800:

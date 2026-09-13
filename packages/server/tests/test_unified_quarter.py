@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -152,3 +152,20 @@ def test_流式网格留档指纹一致且不保存路径(tmp_path, quarter, mon
     assert hashlib.sha256(raw).hexdigest()[:24] == path.stem
     assert json.loads(raw)["weather_cells"]["31.3,120.6"] == quarter
     assert not list(path.parent.glob("*.tmp"))
+
+
+def test_过期网格清理不影响近期缓存其他模型或留档(tmp_path):
+    cells = WeatherCells(tmp_path / "gfs_global" / "2026-09-13")
+    expired = tmp_path / "gfs_global" / "2026-09-10"
+    keep = [
+        cells.folder,
+        tmp_path / "gfs_global" / "2026-09-11",
+        tmp_path / "gfs_global" / "prediction-fleet-inputs",
+        tmp_path / "icon_global" / "2026-09-10",
+    ]
+    for folder in [expired, *keep]:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "sample.json").write_text("{}")
+    cells.prune_before(date(2026, 9, 11))
+    assert not expired.exists()
+    assert all((folder / "sample.json").exists() for folder in keep)

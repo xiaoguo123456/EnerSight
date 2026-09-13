@@ -60,7 +60,7 @@ function PowerCurve({ points, grid, id, title, step = 60 }: { points: { time: st
     <View className="forecast-row"><Text className="forecast-subtitle">{title}</Text><Text className="forecast-unit">{unit.label}</Text></View>
     {grid && <View className="forecast-series"><Text style={{ color: '#1677ff' }}>可发</Text><Text style={{ color: '#16a34a' }}>预计上网</Text></View>}
     <TrendChart id={id} key={id} height={190} data={{ values: values.map(v => v == null ? null : v / unit.divisor), comparison: compare?.map(v => v == null ? null : v / unit.divisor), times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
-    <Button className="forecast-action" onClick={() => setTable(v => !v)}>{table ? '收起逐时数据' : '查看逐时数据'}</Button>
+    <Button className="forecast-action" onClick={() => setTable(v => !v)}>{table ? '收起数据明细' : '查看数据明细'}</Button>
     {table && <View className="forecast-table">{points.map((p, i) => <View key={p.time} className="forecast-row"><Text>{p.time.slice(11,16)}</Text><Text>可发 {p.value == null ? '—' : (p.value / unit.divisor).toFixed(2)} {unit.label}{compare ? ` · 上网 ${compare[i] == null ? '—' : (compare[i]! / unit.divisor).toFixed(2)} ${unit.label}` : ''}</Text></View>)}</View>}
   </View>
 }

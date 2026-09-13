@@ -307,7 +307,7 @@ def target_day(fc: Forecast, day_offset: int) -> date:
 
 
 def interval_end_labels(station: Station, day: date) -> bool:
-    """该日逐时序列是否为区间末标签（光伏 v4）。出力约束按墙钟起点匹配时要减一小时。"""
+    """该日逐时序列是否为区间末标签（光伏 v4）。出力约束按墙钟起点匹配时减去输入步长。"""
     return station.type == "solar" and version_for_day(day) == "model-v4"
 
 

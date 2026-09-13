@@ -25,7 +25,7 @@ IDEAL_WIND_SPEED = 1.0
 
 @dataclass(frozen=True)
 class PvInputs:
-    """一天的逐时输入。times 为区间末标注的整点（Open-Meteo 口径），各列同索引。
+    """一天的等间隔输入。times 标注区间末（Open-Meteo 口径），步长由 step_minutes 指定，各列同索引。
 
     缺测保持 NaN，模型原样透传为 NaN，不当 0 —— 判定「不可算」是调用方的事。
     """

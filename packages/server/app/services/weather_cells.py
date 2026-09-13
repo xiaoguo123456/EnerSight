@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import shutil
 from collections import OrderedDict
+from datetime import date
 from pathlib import Path
 
 
@@ -68,3 +70,15 @@ class WeatherCells:
         tmp.replace(path)
         self.references[key] = name
         self._remember(key, value)
+
+    def prune_before(self, cutoff: date):
+        """按模型清理过期日期缓存，保留当前缓存和不可变预测留档。"""
+        for folder in self.folder.parent.iterdir():
+            if folder == self.folder or folder.is_symlink() or not folder.is_dir():
+                continue
+            try:
+                day = date.fromisoformat(folder.name)
+            except ValueError:
+                continue
+            if day < cutoff:
+                shutil.rmtree(folder)
