@@ -187,11 +187,14 @@ def prepare(
         else:
             v_hub = pd.Series(np.nan, index=hours)
         # 空气密度：气压 + 气温，缺气压按海拔 ISA，都缺按标称。密度修正只影响额定以下出力
-        temp, _ = _fill_from_forecast(
+        temp, temp_filled = _fill_from_forecast(
             fc, frame, "temperature_2m", limit_hours=SECONDARY_GAP_HOURS, persistence=True, **fill
         )
-        pressure, _ = _fill_from_forecast(
+        pressure, pressure_filled = _fill_from_forecast(
             fc, frame, "surface_pressure", limit_hours=SECONDARY_GAP_HOURS, persistence=True, **fill
+        )
+        estimated |= (
+            temp_filled or pressure_filled or bool(temp.isna().any() or pressure.isna().any())
         )
         rho = wind.air_density(pressure, temp, fc.elevation)
         complete = _capacity_ok(station) and bool(np.isfinite(v_hub.to_numpy()).all())
@@ -236,9 +239,7 @@ def _blocked(station: Station) -> str | None:
     return getattr(station, "_prediction_blocked", None) or None
 
 
-def pv_inputs(
-    station: Station, frame: pd.DataFrame, tz: str, step_minutes: int = 60
-) -> PvInputs:
+def pv_inputs(station: Station, frame: pd.DataFrame, tz: str, step_minutes: int = 60) -> PvInputs:
     # 目录站点带分期核验过的 (直流, 交流) 容量；否则容量按交流侧、直流按容配比换算
     basis = getattr(station, "_pv_capacity", None)
     dc_kw, ac_kw = basis if basis else (None, station.capacity_kw)
@@ -280,7 +281,8 @@ def model_notes(station: Station, fc: Forecast, prep: Prepared) -> tuple[str, ..
             rho = float(prep.rho.mean())
             elev = f"海拔 {fc.elevation:.0f} m，" if fc.elevation is not None else ""
             parts.append(
-                f"{elev}空气密度均值 {rho:.2f} kg/m³，功率曲线按标称 "
+                f"{elev}按地面气压和 2 米气温近似，未订正轮毂高度；"
+                f"空气密度均值 {rho:.2f} kg/m³，功率曲线按标称 "
                 f"{settings.wind_air_density_ref:g} kg/m³ 做密度修正"
             )
         return tuple(parts)

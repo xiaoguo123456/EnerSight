@@ -5,6 +5,8 @@
 留档与全目录历史按版本隔离。
 """
 
+import hashlib
+import json
 import math
 from datetime import date
 
@@ -14,6 +16,46 @@ DC_AC_RATIO = settings.pv_dc_ac_ratio
 # capacity-v2：区分分期交直流容量；model-v3：太阳位置取区间中点、风电各层插值 + 场站损耗、
 # 逆变器损耗并入系统损耗
 VERSION = "model-v4"
+
+
+def calculation_parameters() -> dict:
+    """仅保留计算设置，供缓存指纹和离线复现使用。"""
+    return {
+        k: v
+        for k, v in settings.model_dump(mode="json").items()
+        if k.startswith(("pv_", "wind_", "fleet_grid_", "outlook_", "index_"))
+        or k in ("forecast_outlook_days", "model_v4_start_date")
+    }
+
+
+def calculation_version(day: date | str) -> str:
+    """时间口径与算法修订分开；参数变化必须使缓存和留档指纹变化。"""
+    parameters = calculation_parameters()
+    digest = hashlib.sha256(json.dumps(parameters, sort_keys=True).encode()).hexdigest()[:12]
+    return f"{version_for_day(day)}-修订1-{digest}"
+
+
+def station_parameters(station) -> dict:
+    """复现预测所需的设备、容量及约束快照，不包含用户身份。"""
+    keys = (
+        "type",
+        "latitude",
+        "longitude",
+        "capacity_kw",
+        "tilt",
+        "azimuth",
+        "hub_height",
+        "turbine_class",
+        "power_curve",
+        "mounting",
+        "bifacial",
+        "curtailment",
+    )
+    return {
+        **{k: getattr(station, k, None) for k in keys},
+        "capacity_basis": getattr(station, "_pv_capacity", None),
+        "blocked_reason": getattr(station, "_prediction_blocked", None),
+    }
 
 
 def version_for_day(day: date | str) -> str:

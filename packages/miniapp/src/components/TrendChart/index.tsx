@@ -15,11 +15,11 @@ const THEME: ChartTheme = {
   areaTop: 'rgba(22, 119, 255, 0.16)',
   areaBottom: 'rgba(22, 119, 255, 0)',
   grid: '#EFF3F7',
-  axisText: '#9CA3AF',
+  axisText: '#526174',
   surface: '#FFFFFF',
   tipBg: '#FFFFFF',
   tipBorder: '#E5EAF0',
-  tipTitle: '#9CA3AF',
+  tipTitle: '#526174',
   tipValue: '#1F2937',
 }
 

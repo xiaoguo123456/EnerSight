@@ -688,6 +688,11 @@ export interface components {
             /** Date */
             date: string;
             /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /**
              * Weekday
              * @description ISO 1–7
              */
@@ -856,11 +861,40 @@ export interface components {
             wind_kwh: number;
             /** Power Kw */
             power_kw: components["schemas"]["PowerPoint"][];
+            /**
+             * Covered Count
+             * @default 0
+             */
+            covered_count: number;
+            /**
+             * Covered Capacity Kw
+             * @default 0
+             */
+            covered_capacity_kw: number;
+            /**
+             * Failed Count
+             * @default 0
+             */
+            failed_count: number;
+            /**
+             * Status
+             * @default queued
+             */
+            status: string;
+            /** Common Energy Kwh */
+            common_energy_kwh?: number | null;
             /** Regions */
             regions?: components["schemas"]["RegionPrediction"][];
         };
         /** FleetPrediction */
         FleetPrediction: {
+            /** Calculation Version */
+            calculation_version?: string | null;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
             /** Model */
             model: string;
             /** Date */
@@ -894,6 +928,25 @@ export interface components {
             resolution_minutes: number;
             /** Assumptions */
             assumptions?: string[];
+            /**
+             * Input Archive Id
+             * @description 不可变气象与目录输入留档标识
+             */
+            input_archive_id?: string | null;
+            /** Batch Stamp */
+            batch_stamp?: string | null;
+            /** Catalog Revision */
+            catalog_revision?: string | null;
+            /**
+             * Common Covered Count
+             * @default 0
+             */
+            common_covered_count: number;
+            /**
+             * Common Capacity Kw
+             * @default 0
+             */
+            common_capacity_kw: number;
             /** Status */
             status: string;
             /**
@@ -986,6 +1039,13 @@ export interface components {
         };
         /** GenerationPrediction */
         GenerationPrediction: {
+            /** Calculation Version */
+            calculation_version?: string | null;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
             /** Model */
             model: string;
             /** Date */
@@ -1452,6 +1512,8 @@ export interface components {
         };
         /** StationOutlook */
         StationOutlook: {
+            /** Calculation Version */
+            calculation_version?: string | null;
             /** Station Id */
             station_id: string;
             /** Model */
@@ -1484,6 +1546,12 @@ export interface components {
              * @description kW，基础单位裸数值，前端负责进位
              */
             capacity: number;
+            /** Tilt */
+            tilt?: number | null;
+            /** Azimuth */
+            azimuth?: number | null;
+            /** Hub Height */
+            hub_height?: number | null;
             /** Latitude */
             latitude: number;
             /** Longitude */

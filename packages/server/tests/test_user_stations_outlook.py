@@ -238,7 +238,7 @@ async def test_首页预测带批次信息与上网电量(client: AsyncClient, o
     d = await _create(client, {**WIND, "curtailment": {"mode": "ratio", "ratio_percent": 10}})
     body = (await client.get("/v1/home", params={"station_id": d["id"]})).json()["data"]
     p = body["prediction"]
-    assert p["basis"]["model"] == "best_match" and p["basis"]["resolved_model"] == "ecmwf_ifs"
+    assert p["basis"]["model"] == "best_match" and p["basis"]["resolved_model"] is None
     assert p["grid_energy_kwh"] == pytest.approx(p["energy_kwh"] * 0.9)
     assert body["station"]["metrics"]["grid_generation"] == pytest.approx(
         body["station"]["metrics"]["daily_generation"] * 0.9, abs=0.2
@@ -269,6 +269,7 @@ async def test_起报时间来自模型元数据_拿不到不猜():
         async with httpx.AsyncClient() as http:
             fc = await weather.get_forecast(http, 31.3, 120.6)
     assert fc.basis().issued_at is None and fc.basis().fetched_at
+    assert fc.basis().resolved_model is None
 
 
 async def test_显式模型按各自slug取元数据():
@@ -351,7 +352,7 @@ async def test_全目录未来7天_顶层字段等于首日(tmp_path, monkeypatc
             plants = [_plant("a"), _plant("b", 500, "solar")]
             await fleet.build(c, "gfs_global", fleet.day_key(), plants)
     out = fleet.load(tmp_path / f"gfs_global-{fleet.day_key()}.json")
-    assert route.calls[0].request.url.params["forecast_days"] == "7"
+    assert route.calls[0].request.url.params["forecast_days"] == "8"  # 含最后一天光伏所需的次日零点
     assert len(out["days"]) == 7 and [d["lead_days"] for d in out["days"]] == list(range(7))
     first = out["days"][0]
     assert first["date"] == out["date"] and first["energy_kwh"] == pytest.approx(out["energy_kwh"])

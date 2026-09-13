@@ -1,7 +1,7 @@
 import { View, Text, Input, Picker, Map, Switch, Textarea } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
-import { useEffect, useState } from 'react'
-import type { CurtailmentRule, Mounting, PowerCurvePoint, StationSummary, StationType, TurbineClass } from '@enersight/core/types'
+import { useEffect, useRef, useState } from 'react'
+import type { CurtailmentRule, Mounting, PowerCurvePoint, StationSummary, StationType, TurbineClass, UpdateStationRequest } from '@enersight/core/types'
 import { ApiError } from '@enersight/core/api'
 import { formatPower } from '@enersight/core/format'
 import { homeApi } from '@/api/home'
@@ -20,7 +20,7 @@ import './form.scss'
 type Coord = 'wgs84' | 'gcj02'
 type Origin = 'manual' | 'locate' | 'choose'
 type DaysPreset = 'all' | 'weekday' | 'weekend'
-interface WindowForm { start: number; end: number; limit: string; days: DaysPreset }
+interface WindowForm { start: number; end: number; limit: string; days: DaysPreset; originalDays?: number[] }
 interface Form {
   name: string; type: StationType; capacity: string
   latitude: string; longitude: string; coord: Coord; origin: Origin
@@ -59,9 +59,9 @@ const DAY_PRESETS: { value: DaysPreset; label: string; weekdays: number[] }[] = 
   { value: 'all', label: '每天', weekdays: [] }, { value: 'weekday', label: '工作日', weekdays: [1, 2, 3, 4, 5] }, { value: 'weekend', label: '周末', weekdays: [6, 7] },
 ]
 const IS_WEAPP = process.env.TARO_ENV === 'weapp'
-const LOCATION_INFO = { title: '位置与坐标系', content: '当前定位与地图选点自动按 GCJ-02 提交。手动输入请按读数来源选择坐标系：GPS 设备、谷歌地图为 WGS84；高德、腾讯、百度地图为 GCJ-02。选错不会报错，只会让电站与云图错位几百米，保存前请在地图预览里核对点位。' }
+const LOCATION_INFO = { title: '位置与坐标系', content: '当前定位与地图选点自动按 GCJ-02 提交。手动输入请按读数来源选择坐标系：GPS 设备为 WGS84；高德、腾讯地图为 GCJ-02。百度 BD-09 坐标暂不支持，请先转换。选错不会报错，只会让电站与云图错位几百米，保存前请在地图预览里核对点位。' }
 const MODEL_INFO = { title: '出力模型参数', content: '不填用默认值：光伏倾角取纬度、方位角 180° 正南；风机轮毂高度 100 m。\n风电：机型决定切入、额定、切出风速与曲线形状；自定义曲线按「风速,出力%」逐点给出，末点之后视作切出。空气密度按站点气压与气温逐时修正，高海拔出力会低于平原。\n光伏：单轴跟踪按南北向水平轴、最大转角 60°、含背轨估算，倾角与方位角不再生效；双面组件按双面率 0.7、地面反射率 0.2 估算，增益约 5–12%，未用实测校准。' }
-const LIMIT_INFO = { title: '出力约束', content: '限电或检修只影响「预计上网电量」，可发电量与发电适宜度仍按气象条件估算。固定比例：全天出力按比例折减。分时段上限：时段内出力封顶为装机容量的百分比，0 表示停机；结束时刻早于开始表示跨零点；多条时段重叠取最低。规则由你自行填写，不来自电网调度。' }
+const LIMIT_INFO = { title: '出力约束', content: '限电或检修只影响「预计上网电量」，可发电量与发电适宜度仍按气象条件估算。固定比例：全天出力按比例折减。分时段上限：时段内出力封顶为装机容量的百分比，0 表示停机；结束时刻早于开始表示跨零点，适用星期按开始日，例如周五 22–02 含周六凌晨；多条时段重叠取最低。规则由你自行填写，不来自电网调度。' }
 const FORM_INFO = { title: '自建电站', content: '仅本账号可见，最多 10 座。参与发电预测、预警、分析报告与卫星影像归档，不进入全目录汇总。装机容量按交流侧填写，光伏直流侧按容配比换算。' }
 
 function num(s: string): number | null {
@@ -78,6 +78,8 @@ function fromStation(s: StationSummary, form: Form): Form {
   const rule = s.curtailment
   return {
     ...form, name: s.name, type: s.type, capacity: String(s.capacity),
+    tilt: s.tilt == null ? '' : String(s.tilt), azimuth: s.azimuth == null ? '' : String(s.azimuth),
+    hub_height: s.hub_height == null ? '' : String(s.hub_height),
     latitude: s.latitude.toFixed(5), longitude: s.longitude.toFixed(5), coord: 'gcj02', origin: 'manual',
     turbine: s.turbine_class ?? 'generic',
     curveText: (s.power_curve ?? []).map((pt) => `${pt.v},${pt.p}`).join('\n'),
@@ -85,7 +87,7 @@ function fromStation(s: StationSummary, form: Form): Form {
     bifacial: !!s.bifacial,
     mode: rule ? rule.mode : 'none',
     ratio: rule?.mode === 'ratio' && rule.ratio_percent != null ? String(rule.ratio_percent) : '',
-    windows: rule?.mode === 'schedule' ? (rule.windows ?? []).map((w) => ({ start: w.start_hour, end: w.end_hour, limit: String(w.limit_percent), days: presetOf(w.weekdays ?? []) })) : [],
+    windows: rule?.mode === 'schedule' ? (rule.windows ?? []).map((w) => ({ start: w.start_hour, end: w.end_hour, limit: String(w.limit_percent), days: presetOf(w.weekdays ?? []), originalDays: w.weekdays ?? [] })) : [],
   }
 }
 
@@ -116,7 +118,7 @@ function validate(f: Form): string | null {
 
 function toRule(f: Form): CurtailmentRule | null {
   if (f.mode === 'ratio') return { mode: 'ratio', ratio_percent: num(f.ratio)!, windows: [] }
-  if (f.mode === 'schedule') return { mode: 'schedule', ratio_percent: null, windows: f.windows.map((w) => ({ start_hour: w.start, end_hour: w.end, limit_percent: num(w.limit)!, weekdays: DAY_PRESETS.find((d) => d.value === w.days)!.weekdays })) }
+  if (f.mode === 'schedule') return { mode: 'schedule', ratio_percent: null, windows: f.windows.map((w) => ({ start_hour: w.start, end_hour: w.end, limit_percent: num(w.limit)!, weekdays: w.originalDays ?? DAY_PRESETS.find((d) => d.value === w.days)!.weekdays })) }
   return null
 }
 
@@ -125,6 +127,7 @@ export default function StationForm() {
   const id = decodeRouteParam(params.id)
   const editing = !!id
   const [form, setForm] = useState<Form>(EMPTY)
+  const initial = useRef<Form | null>(null)
   const [loading, setLoading] = useState(editing)
   const [failed, setFailed] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -135,7 +138,9 @@ export default function StationForm() {
     if (!editing) return
     homeApi.detail(id).then((d) => {
       if (!d.station.is_own) { setFailed('公开电站由平台维护，不能编辑'); return }
-      setForm((f) => fromStation(d.station, f))
+      const loaded = fromStation(d.station, EMPTY)
+      initial.current = loaded
+      setForm(loaded)
     }).catch(() => setFailed('电站加载失败')).finally(() => setLoading(false))
   }, [id, editing])
 
@@ -178,7 +183,20 @@ export default function StationForm() {
     }
     try {
       if (editing) {
-        const s = await stationsApi.update(id, body)
+        // 只提交改动，避免无关编辑清空参数或重复转换坐标。
+        const patchBody: UpdateStationRequest = { ...body }
+        const before = initial.current
+        if (before) {
+          const fields = { name: 'name', type: 'type', capacity: 'capacity', tilt: 'tilt', azimuth: 'azimuth', hub_height: 'hub_height', turbine_class: 'turbine', power_curve: 'curveText', mounting: 'mounting', bifacial: 'bifacial' } as const
+          for (const [key, field] of Object.entries(fields)) {
+            if (form[field] === before[field] && (form.type === before.type || key === 'name' || key === 'capacity')) delete patchBody[key as keyof Omit<UpdateStationRequest, 'coord'>]
+          }
+          if (form.latitude === before.latitude && form.longitude === before.longitude && form.coord === before.coord) {
+            delete patchBody.latitude; delete patchBody.longitude
+          }
+          if (JSON.stringify(toRule(form)) === JSON.stringify(toRule(before))) delete patchBody.curtailment
+        }
+        const s = await stationsApi.update(id, patchBody)
         remember(s)
         void Taro.showToast({ title: '已保存', icon: 'success' })
       } else {
@@ -293,8 +311,8 @@ export default function StationForm() {
                 <View className="sform__field sform__field--half"><Text className="sform__label">出力上限（装机 %）</Text>
                   <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={w.limit} placeholder="0 表示停机" placeholderClass="sform__ph" onInput={(e) => setWindow(i, { limit: e.detail.value })} /></View></View>
                 <View className="sform__field sform__field--half"><Text className="sform__label">适用</Text>
-                  <Picker mode="selector" range={DAY_PRESETS.map((d) => d.label)} value={DAY_PRESETS.findIndex((d) => d.value === w.days)} onChange={(e) => setWindow(i, { days: DAY_PRESETS[Number(e.detail.value)]!.value })}>
-                    <View className="sform__select"><Text className="sform__select-value">{DAY_PRESETS.find((d) => d.value === w.days)!.label}</Text><Icon name="chevronDown" size={14} color="#64748b" /></View></Picker></View>
+                  <Picker mode="selector" range={DAY_PRESETS.map((d) => d.label)} value={DAY_PRESETS.findIndex((d) => d.value === w.days)} onChange={(e) => setWindow(i, { days: DAY_PRESETS[Number(e.detail.value)]!.value, originalDays: undefined })}>
+                    <View className="sform__select"><Text className="sform__select-value">{w.originalDays?.length ? `周${w.originalDays.map(d => '一二三四五六日'[d - 1]).join('、')}` : DAY_PRESETS.find((d) => d.value === w.days)!.label}</Text><Icon name="chevronDown" size={14} color="#64748b" /></View></Picker></View>
               </View>
             </View>)}
             {form.windows.length < 12 && <View className="sform__actions">

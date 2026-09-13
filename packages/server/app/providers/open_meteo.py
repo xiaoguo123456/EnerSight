@@ -7,6 +7,7 @@ import httpx
 
 from app.config import settings
 from app.errors import DataUnavailable, UpstreamUnavailable
+from app.providers.budget import request_cost, shared
 from app.weather_model import current_model
 
 # 逐小时字段。新增字段前先更新 docs/04
@@ -100,7 +101,7 @@ class OpenMeteoProvider:
         latitude: float,
         longitude: float,
         *,
-        forecast_days: int = 7,
+        forecast_days: int = 8,
         past_days: int = 1,
     ) -> dict:
         """逐小时预报，默认 昨日 + 未来 7 天 共 192 点。
@@ -145,7 +146,10 @@ class OpenMeteoProvider:
     async def model_meta(self, slug: str) -> ModelMeta | None:
         """模型元数据。拿不到返回 None，不阻塞预报；调用方按「无法确认起报」处理。"""
         try:
+            await shared.take(1)
             res = await self._client.get(f"{settings.open_meteo_meta_base}/{slug}/static/meta.json")
+            if res.status_code == 429:
+                shared.retry_after(res.headers.get("Retry-After"))
             if res.status_code != 200:
                 return None
             raw = res.json()
@@ -177,11 +181,13 @@ class OpenMeteoProvider:
             if attempt:
                 await asyncio.sleep(settings.upstream_backoff_seconds * attempt)
             try:
+                await shared.take(request_cost(params))
                 res = await self._client.get(url, params=params)
             except httpx.HTTPError as exc:
                 last = exc
                 continue
             if res.status_code == 429:
+                shared.retry_after(res.headers.get("Retry-After"))
                 raise UpstreamUnavailable("气象服务调用已达配额上限，请稍后重试")
             if res.status_code == 400:
                 raise DataUnavailable()

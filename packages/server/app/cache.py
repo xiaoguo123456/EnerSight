@@ -15,23 +15,37 @@ class AsyncTTLCache:
     def __init__(self, maxsize: int, ttl_seconds: int) -> None:
         self._cache: TTLCache[str, Any] = TTLCache(maxsize=maxsize, ttl=ttl_seconds)
         self._locks: dict[str, asyncio.Lock] = {}
+        self._users: dict[str, int] = {}
 
-    async def get_or_load(self, key: str, loader: Callable[[], Awaitable[Any]]) -> Any:
+    async def get_or_load(
+        self,
+        key: str,
+        loader: Callable[[], Awaitable[Any]],
+        valid: Callable[[Any], bool] = lambda _: True,
+    ) -> Any:
         hit = self._cache.get(key)
-        if hit is not None:
+        if hit is not None and valid(hit):
             return hit
         lock = self._locks.setdefault(key, asyncio.Lock())
-        async with lock:
-            hit = self._cache.get(key)
-            if hit is not None:
-                return hit
-            value = await loader()
-            self._cache[key] = value
-            return value
+        self._users[key] = self._users.get(key, 0) + 1
+        try:
+            async with lock:
+                hit = self._cache.get(key)
+                if hit is not None and valid(hit):
+                    return hit
+                value = await loader()
+                if value is not None:
+                    self._cache[key] = value
+                return value
+        finally:
+            self._users[key] -= 1
+            if not self._users[key]:
+                del self._users[key]
+                self._locks.pop(key, None)
 
     def clear(self) -> None:
         self._cache.clear()
-        self._locks.clear()
+        # 在途等待者继续共用原锁，避免 clear 时出现并行回源。
 
 
 def grid_key(latitude: float, longitude: float, step: float = 0.1) -> str:

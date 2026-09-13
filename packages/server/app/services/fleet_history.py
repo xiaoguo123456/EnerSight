@@ -1,6 +1,7 @@
 """全目录日快照持久留存。只接收已经生成的结果，不追算缺失日期。"""
 
 import calendar
+import hashlib
 import json
 import math
 import threading
@@ -97,24 +98,28 @@ def capture(snapshot, version, now=None):
 
 @locked
 def capture_leads(snapshot):
-    """按「目标日 + 签发日」留一份未来各天的合计，将来接实测后按预报时效评估。docs/17 §二
-
-    同一签发日多次覆盖，日终那次为准；不同签发日各存一份，不互相覆盖。
-    """
+    """每次签发保留完整逐日曲线与来源，不覆盖早先签发结果。"""
     if snapshot.get("model") not in MODELS or snapshot.get("status") not in ("ready", "partial"):
         return
     issued = datetime.fromisoformat(snapshot["generated_at"]).astimezone(TZ)
     for d in snapshot.get("days") or []:
         if d.get("energy_kwh") is None:
             continue
-        path = root() / "leads" / snapshot["model"] / d["date"] / f"{issued.date()}.json"
-        row = {k: d.get(k) for k in ("date", "lead_days", "energy_kwh", "solar_kwh", "wind_kwh")}
+        digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()[:16]
+        path = root() / "leads" / snapshot["model"] / d["date"] / f"{issued.date()}-{digest}.json"
+        row = dict(d)
         row.update(
             model=snapshot["model"],
             generated_at=snapshot["generated_at"],
-            covered_count=snapshot.get("covered_count"),
+            basis=snapshot.get("basis"),
+            calculation_version=snapshot.get("calculation_version"),
+            input_archive_id=snapshot.get("input_archive_id"),
+            catalog_revision=snapshot.get("catalog_revision"),
+            total_capacity_kw=snapshot.get("total_capacity_kw"),
+            common_covered_count=snapshot.get("common_covered_count"),
         )
-        write(path, row)
+        if not path.exists():
+            write(path, row)
 
 
 @locked
@@ -128,7 +133,9 @@ def checkpoint(now=None):
             continue
         value = read(path)
         if value and value.get("model") in MODELS:
-            version = path.parent.name if path.parent != source else "capacity-v1"
+            version = value.get("calculation_version") or (
+                path.parent.name if path.parent != source else "capacity-v1"
+            )
             candidates.append((value, version))
     for value, version in sorted(candidates, key=lambda item: item[0].get("generated_at", "")):
         capture(value, version, now)

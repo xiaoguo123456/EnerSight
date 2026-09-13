@@ -10,6 +10,8 @@ import { thousands } from '@enersight/core/format'
 export interface ChartData {
   /** 等间隔序列：逐小时 25 点对应 00:00 – 24:00，或 15 分钟 96 点。缺测用 null，断线不补 0 */
   values: (number | null)[]
+  comparison?: (number | null)[]
+  times?: string[]
   unit: string
   /** 固定纵轴上限；null 表示按数据自适应。由服务端下发，见 docs/06 §八 */
   yMax: number | null
@@ -41,7 +43,7 @@ export interface ChartTheme {
 
 export const PAD_LEFT = 34
 export const PAD_RIGHT = 8
-const PAD_TOP = 36 // 给悬浮气泡留出空间（气泡高 30 + 指向间隙）
+const PAD_TOP = 54 // 双曲线提示需要三行空间
 const PAD_BOTTOM = 20 // 横轴标签
 const GRID_LINES = 4
 
@@ -93,6 +95,7 @@ export function draw(
 
   const n = data.values.length
   const step = data.stepMinutes ?? 60
+  const timeLabel = (i: number) => data.times?.[i]?.slice(11, 16) ?? hhmm(i * step)
   const max = niceMax(data.values, data.yMax)
   const x0 = PAD_LEFT
   const y0 = PAD_TOP
@@ -101,6 +104,15 @@ export function draw(
 
   const px = (i: number) => x0 + (i / (n - 1)) * iw
   const py = (v: number) => y0 + ih - (v / max) * ih
+
+  // 出力约束区间使用浅色底，不把缺测画成限电。
+  if (data.comparison) {
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.10)'
+    data.comparison.forEach((v, i) => {
+      const base = data.values[i]
+      if (v != null && base != null && v < base && i < n - 1) ctx.fillRect(px(i), y0, iw / Math.max(1, n - 1), ih)
+    })
+  }
 
   // ── 横向虚线网格 + 纵轴刻度（无纵向网格、无轴线）──
   ctx.setLineDash?.([3, 3])
@@ -164,6 +176,19 @@ export function draw(
   }
 
   // ── 数据点：空心圆；96 点太密，只在逐小时以下的密度画 ──
+  if (data.comparison) {
+    ctx.beginPath()
+    ctx.strokeStyle = '#15803d'
+    ctx.lineWidth = 2
+    let connected = false
+    data.comparison.forEach((v, i) => {
+      if (v == null) { connected = false; return }
+      if (connected) ctx.lineTo(px(i), py(v))
+      else ctx.moveTo(px(i), py(v))
+      connected = true
+    })
+    ctx.stroke()
+  }
   ctx.lineWidth = 1.5
   for (let i = 0; i < n; i++) {
     if (n > 40) break
@@ -185,7 +210,7 @@ export function draw(
   const every = Math.max(1, Math.round(240 / step))
   for (let i = 0; i < n; i += every) {
     ctx.textAlign = i === 0 ? 'left' : i === n - 1 ? 'right' : 'center'
-    ctx.fillText(hhmm(i * step), px(i), y0 + ih + 6)
+    ctx.fillText(timeLabel(i), px(i), y0 + ih + 6)
   }
 
   // ── 选中态：纵向虚线 + 实心点 + 悬浮气泡 ──
@@ -212,12 +237,14 @@ export function draw(
   ctx.stroke()
 
   // 气泡：两行（时刻 / 数值+单位），贴边时自动收进画布内
-  const title = hhmm(active * step)
-  const value = `${Number(av.toFixed(2))} ${data.unit}`
+  const title = timeLabel(active)
+  const value = `${data.comparison ? '可发 ' : ''}${Number(av.toFixed(2))} ${data.unit}`
+  const cv = data.comparison?.[active]
+  const compareValue = data.comparison ? `上网 ${cv == null ? '—' : Number(cv.toFixed(2))} ${data.unit}` : ''
   ctx.font = '11px sans-serif'
-  const tw = Math.max(ctx.measureText(title).width, ctx.measureText(value).width)
+  const tw = Math.max(ctx.measureText(title).width, ctx.measureText(value).width, ctx.measureText(compareValue).width)
   const bw = tw + 14
-  const bh = 30
+  const bh = compareValue ? 46 : 30
   let bx = ax - bw / 2
   bx = Math.max(2, Math.min(bx, w - bw - 2))
   // 点贴近顶部时气泡放不下，翻到点下方
@@ -242,4 +269,8 @@ export function draw(
   ctx.fillStyle = t.tipValue
   ctx.font = 'bold 11px sans-serif'
   ctx.fillText(value, bx + bw / 2, by + 16)
+  if (compareValue) {
+    ctx.fillStyle = '#15803d'
+    ctx.fillText(compareValue, bx + bw / 2, by + 31)
+  }
 }

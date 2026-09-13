@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 import httpx
 
 from app.config import settings
+from app.providers.budget import shared
 from app.providers.open_meteo import META_SLUGS
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ async def check(http: httpx.AsyncClient) -> bool:
         series: dict[str, dict] = {}
         for model in ("best_match", ASSUMED):
             try:
+                await shared.take(1)
                 res = await http.get(
                     f"{settings.open_meteo_base}/forecast",
                     params={
@@ -63,6 +65,8 @@ async def check(http: httpx.AsyncClient) -> bool:
                         "models": model,
                     },
                 )
+                if res.status_code == 429:
+                    shared.retry_after(res.headers.get("Retry-After"))
                 res.raise_for_status()
                 series[model] = res.json()["hourly"]
             except Exception:  # noqa: BLE001

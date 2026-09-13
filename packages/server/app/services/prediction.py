@@ -10,7 +10,7 @@ from app.config import settings
 from app.models import Station
 from app.schemas.prediction import DailyOutlook, GenerationPrediction, PowerPoint, StationOutlook
 from app.services import energy
-from app.services.prediction_basis import version_for_day
+from app.services.prediction_basis import calculation_version, version_for_day
 from app.services.weather import Forecast
 from app.services.weather_text import describe
 from app.weather_model import current_model
@@ -96,6 +96,7 @@ def from_hourly(
     energy_kwh = round(float(values.sum()) * hours, 2) if valid else None
     grid_energy = round(float(grid_values.sum()) * hours, 2) if grid_valid else None
     return GenerationPrediction(
+        calculation_version=calculation_version(day0.date()),
         model=model or current_model.get(),
         date=pd.Timestamp(hourly_kw.index[0]).date().isoformat(),
         timezone=fc.tz,
@@ -127,7 +128,7 @@ def compute(
     prep = energy.prepare(station, fc, day_offset=day_offset, step_minutes=step_minutes)
     hourly = energy.hourly_power(station, prep, fc.tz)
     grid = energy.grid_power(station, hourly, energy.target_day(fc, day_offset), prep.step_minutes)
-    return from_hourly(
+    result = from_hourly(
         fc,
         hourly,
         station,
@@ -137,6 +138,9 @@ def compute(
         step_minutes=prep.step_minutes,
         notes=energy.model_notes(station, fc, prep),
     )
+
+    result.estimated = prep.estimated
+    return result
 
 
 def _daytime_weather(fc: Forecast, day: pd.Timestamp) -> str | None:
@@ -174,6 +178,7 @@ def compute_days(
         blocked = getattr(station, "_prediction_blocked", None)
         out.append(
             DailyOutlook(
+                estimated=snap.estimated,
                 date=pred.date,
                 weekday=day.isoweekday(),
                 energy_kwh=pred.energy_kwh,
@@ -195,6 +200,7 @@ def compute_days(
     if blocked and blocked not in notes:
         notes.append(blocked)
     return StationOutlook(
+        calculation_version=calculation_version(energy.target_day(fc, 0)),
         station_id=station.id,
         model=model or current_model.get(),
         timezone=fc.tz,

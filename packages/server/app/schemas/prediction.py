@@ -21,6 +21,8 @@ class PowerPoint(BaseModel):
 
 
 class GenerationPrediction(BaseModel):
+    calculation_version: str | None = None
+    estimated: bool = False
     model: str
     date: str
     timezone: str = "Asia/Shanghai"
@@ -40,6 +42,7 @@ class DailyOutlook(BaseModel):
     """7 天预测里的一天。指数只反映气象，不受出力约束影响。"""
 
     date: str
+    estimated: bool = False
     weekday: int = Field(description="ISO 1–7")
     energy_kwh: float | None
     grid_energy_kwh: float | None
@@ -55,6 +58,7 @@ class DailyOutlook(BaseModel):
 
 
 class StationOutlook(BaseModel):
+    calculation_version: str | None = None
     station_id: str
     model: str
     timezone: str
@@ -78,10 +82,20 @@ class FleetDay(BaseModel):
     solar_kwh: float
     wind_kwh: float
     power_kw: list[PowerPoint]
+    covered_count: int = 0
+    covered_capacity_kw: float = 0
+    failed_count: int = 0
+    status: str = "queued"
+    common_energy_kwh: float | None = None
     regions: list[RegionPrediction] = Field(default_factory=list)
 
 
 class FleetPrediction(GenerationPrediction):
+    input_archive_id: str | None = Field(default=None, description="不可变气象与目录输入留档标识")
+    batch_stamp: str | None = None
+    catalog_revision: str | None = None
+    common_covered_count: int = 0
+    common_capacity_kw: float = 0
     status: str
     total_count: int = 0
     eligible_count: int = 0

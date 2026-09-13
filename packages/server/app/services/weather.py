@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import pandas as pd
 
-from app.cache import AsyncTTLCache, grid_key
+from app.cache import AsyncTTLCache
 from app.config import settings
 from app.providers.open_meteo import ModelMeta, OpenMeteoProvider
 from app.schemas.prediction import ForecastBasis
@@ -53,7 +53,11 @@ class Forecast:
         tz = ZoneInfo(self.tz)
         return ForecastBasis(
             model=self.model,
-            resolved_model=self.meta.slug if self.meta else resolve(self.model),
+            resolved_model=(
+                self.meta.slug
+                if self.meta
+                else (resolve(self.model) if self.model != "best_match" else None)
+            ),
             issued_at=self.meta.issued_at.astimezone(tz).isoformat() if self.meta else None,
             available_at=(
                 self.meta.available_at.astimezone(tz).isoformat()
@@ -134,13 +138,17 @@ def parse_forecast(
     )
 
 
-async def get_model_meta(http: httpx.AsyncClient, model: str) -> ModelMeta | None:
+async def get_model_meta(
+    http: httpx.AsyncClient, model: str, *, fresh: bool = False
+) -> ModelMeta | None:
     """模型元数据，全局缓存几分钟，不按站点。无法解析到具体模型时为 None。"""
     from app.services.model_resolution import resolve
 
     slug = resolve(model)
     if slug is None:
         return None
+    if fresh:
+        return await OpenMeteoProvider(http).model_meta(slug)
 
     async def _load() -> ModelMeta | object:
         meta = await OpenMeteoProvider(http).model_meta(slug)
@@ -170,7 +178,7 @@ def batch_stamp(meta: ModelMeta | None) -> str:
 async def get_forecast(
     http: httpx.AsyncClient, latitude: float, longitude: float, *, fine: bool = False
 ) -> Forecast:
-    """按 0.1° 网格 + 模型批次缓存。相邻站点、同一批次命中同一份。
+    """按精确坐标、模型批次缓存，并校验站点当地日期，避免邻站及跨日误用。
 
     fine=True 额外拉 15 分钟序列（单站 7 天预测的细粒度曲线）。它单独计费、
     单独缓存，拿不到就退回逐小时，不影响主链路。
@@ -178,17 +186,22 @@ async def get_forecast(
     model = current_model.get()
     # 先取元数据再取预报：两次调用之间若有新批次落地，元数据只会偏旧，不会冒充更新
     meta = await get_model_meta(http, model)
-    cell = grid_key(latitude, longitude)
+    cell = f"{latitude!r},{longitude!r}"
     key = f"{model}:{batch_stamp(meta)}:{cell}"
 
     async def _load() -> Forecast:
         raw = await OpenMeteoProvider(http).forecast(latitude, longitude)
         return parse_forecast(raw, model=model, meta=meta)
 
-    base: Forecast = await _cache.get_or_load(key, _load)
+    base: Forecast = await _cache.get_or_load(
+        key,
+        _load,
+        valid=lambda fc: fc.fetched_at.astimezone(ZoneInfo(fc.tz)).date() == fc.now().date(),
+    )
     if not fine or base.quarter is not None:
         return base
-    return replace(base, quarter=await _get_quarter(http, latitude, longitude, key))
+    quarter_key = f"{key}:{base.now().date()}"
+    return replace(base, quarter=await _get_quarter(http, latitude, longitude, quarter_key))
 
 
 async def _get_quarter(

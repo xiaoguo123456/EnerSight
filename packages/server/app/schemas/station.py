@@ -101,6 +101,9 @@ class StationSummary(BaseModel):
     type: StationType
     status: StationStatus
     capacity: float = Field(description="kW，基础单位裸数值，前端负责进位")
+    tilt: float | None = None
+    azimuth: float | None = None
+    hub_height: float | None = None
     latitude: float
     longitude: float
     address: str | None

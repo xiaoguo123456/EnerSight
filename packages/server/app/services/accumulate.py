@@ -13,7 +13,8 @@ AsyncSession 不能被多个任务同时用。分批查询 + 分批提交，避�
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import func, select
@@ -34,6 +35,9 @@ async def upsert_daily(
     kwh: float,
     current_kw: float | None,
     curtailed_kwh: float | None = None,
+    timezone: str = "Asia/Shanghai",
+    calculation_version: str | None = None,
+    weather_model: str | None = None,
 ) -> None:
     stmt = upsert_insert(db, DailyGeneration).values(
         station_id=station_id,
@@ -42,6 +46,9 @@ async def upsert_daily(
         current_kw=current_kw,
         curtailed_kwh=curtailed_kwh,
         source="forecast",
+        timezone=timezone,
+        calculation_version=calculation_version,
+        weather_model=weather_model,
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["station_id", "day"],
@@ -50,6 +57,10 @@ async def upsert_daily(
             "current_kw": current_kw,
             "curtailed_kwh": curtailed_kwh,
             "source": "forecast",
+            "timezone": timezone,
+            "calculation_version": calculation_version,
+            "weather_model": weather_model,
+            "updated_at": datetime.now(UTC).replace(tzinfo=None),
         },
         # 实测值不被推算覆盖
         where=DailyGeneration.source != "measured",
@@ -66,6 +77,9 @@ class Daily:
     kwh: float
     current_kw: float | None
     curtailed_kwh: float | None
+    timezone: str = "Asia/Shanghai"
+    calculation_version: str | None = None
+    weather_model: str | None = None
 
 
 async def compute_station(
@@ -82,7 +96,12 @@ async def compute_station(
     if snap.daily_kwh is None or snap.blocked:
         log.warning("accumulate skipped (%s): station=%s", snap.blocked or "缺测", station.id)
         return None
+    from app.services.prediction_basis import calculation_version
+
     return Daily(
+        timezone=fc.tz,
+        calculation_version=calculation_version(fc.now().date()),
+        weather_model=fc.model,
         station_id=station.id,
         day=fc.now().date(),
         kwh=round(snap.daily_kwh, 1),
@@ -114,7 +133,15 @@ async def accumulate_all(db: AsyncSession, http: httpx.AsyncClient) -> int:
             if row is None:
                 continue
             await upsert_daily(
-                db, row.station_id, row.day, row.kwh, row.current_kw, row.curtailed_kwh
+                db,
+                row.station_id,
+                row.day,
+                row.kwh,
+                row.current_kw,
+                row.curtailed_kwh,
+                row.timezone,
+                row.calculation_version,
+                row.weather_model,
             )
             done += 1
         await db.commit()
@@ -147,15 +174,21 @@ async def metrics_from_db(db: AsyncSession, station_ids: list[str]) -> dict[str,
     )
     totals = dict((await db.execute(totals_q)).all())
 
-    # 每站最新一天的记录（今日）
+    # 只读取全球各时区可能属于今日的日期，不把昨日最新记录冒充今日。
+    now = datetime.now(UTC)
     latest_q = (
         select(DailyGeneration)
-        .where(DailyGeneration.station_id.in_(station_ids))
+        .where(
+            DailyGeneration.station_id.in_(station_ids),
+            DailyGeneration.day >= now.date() - timedelta(days=1),
+            DailyGeneration.day <= now.date() + timedelta(days=1),
+        )
         .order_by(DailyGeneration.station_id, DailyGeneration.day.desc())
     )
     latest: dict[str, DailyGeneration] = {}
     for row in (await db.execute(latest_q)).scalars():
-        latest.setdefault(row.station_id, row)
+        if row.day == now.astimezone(ZoneInfo(row.timezone)).date():
+            latest.setdefault(row.station_id, row)
 
     out: dict[str, dict] = {}
     for sid in station_ids:
@@ -164,7 +197,9 @@ async def metrics_from_db(db: AsyncSession, station_ids: list[str]) -> dict[str,
         row = latest.get(sid)
         out[sid] = {
             "daily": row.kwh if row else None,
-            "current": row.current_kw if row else None,
+            "current": row.current_kw
+            if row and 0 <= (now - row.updated_at.replace(tzinfo=UTC)).total_seconds() <= 3600
+            else None,
             "total": float(totals[sid]),
             "grid": (
                 round(row.kwh - row.curtailed_kwh, 1)

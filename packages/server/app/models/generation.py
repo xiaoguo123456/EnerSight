@@ -26,4 +26,7 @@ class DailyGeneration(Base):
     curtailed_kwh: Mapped[float | None] = mapped_column(Float, default=None)
     # 来源：forecast 推算 / measured 实测。实测优先
     source: Mapped[str] = mapped_column(String(16), default="forecast")
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
+    calculation_version: Mapped[str | None] = mapped_column(String(128), default=None)
+    weather_model: Mapped[str | None] = mapped_column(String(32), default=None)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

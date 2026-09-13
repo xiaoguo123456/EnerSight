@@ -23,7 +23,13 @@ class Window:
     weekdays: tuple[int, ...]  # ISO 1–7，空表示每天
 
     def covers(self, ts: pd.Timestamp) -> bool:
-        if self.weekdays and ts.isoweekday() not in self.weekdays:
+        # 跨午夜的后半段归属开始日，例如周五 22–02 包含周六凌晨。
+        owner = (
+            ts - pd.Timedelta(days=1)
+            if self.start_hour > self.end_hour and ts.hour < self.end_hour
+            else ts
+        )
+        if self.weekdays and owner.isoweekday() not in self.weekdays:
             return False
         h = ts.hour
         if self.start_hour < self.end_hour:

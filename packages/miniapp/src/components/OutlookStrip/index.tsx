@@ -1,4 +1,4 @@
-import { View, Text } from '@tarojs/components'
+import { Button, View, Text } from '@tarojs/components'
 import type { IndexLevel } from '@enersight/core/types'
 import './index.scss'
 
@@ -14,7 +14,7 @@ export interface StripDay {
 }
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
-const LEVEL_COLOR: Record<IndexLevel, string> = { excellent: '#16a34a', good: '#1677ff', fair: '#f59e0b', poor: '#ef4444' }
+
 
 export function dayLabel(d: { date: string; weekday: number; lead_days: number }) {
   return d.lead_days === 0 ? '今天' : d.lead_days === 1 ? '明天' : `周${WEEKDAYS[d.weekday - 1]}`
@@ -28,38 +28,38 @@ export function energyUnit(maxKwh: number) {
 }
 
 /**
- * 未来 7 天横向条：周几 / 日期 / 说明 / 电量竖条 / 数值 / 适宜度。
- * 第 5 天起为中期预报（1 小时曲线），用浅色竖条与虚线分隔表示，不在列里写字；前 4 天为 15 分钟曲线。
+ * 七列只放日期和电量，天气及适宜度展示在选中日下方。
+ * 第 5 天起用浅色竖条与虚线分隔，并在表头注明参考属性。
  */
 export function OutlookStrip({ days, selected, onSelect }: { days: StripDay[]; selected: number; onSelect: (i: number) => void }) {
   const max = Math.max(...days.map((d) => d.energy_kwh ?? 0), 0)
   const unit = energyUnit(max)
   const decimals = max / unit.divisor < 10 ? 1 : 0
+  const hasEnergy = days.some(d => d.energy_kwh != null)
+  const active = days[selected]
+  const detail = active ? [active.caption, active.score != null ? `发电适宜度 ${Math.round(active.score)} 分` : null].filter(Boolean).join(' · ') : ''
   return (
     <View className="strip">
-      <View className="strip__unit"><Text>日电量 {unit.label}</Text></View>
+      <View className="strip__unit"><Text>{hasEnergy ? `日电量 ${unit.label}` : "未来天气与发电适宜度"}</Text><Text>后 3 天参考</Text></View>
       <View className="strip__cols">
         {days.map((d, i) => (
-          <View
+          <Button
+            ariaLabel={`${dayLabel(d)} ${d.date}，${d.energy_kwh == null ? "电量暂缺" : `${(d.energy_kwh / unit.divisor).toFixed(decimals)} ${unit.label}`}，${selected === i ? "已选中" : "点击查看"}`}
             key={d.date}
             className={`strip__col ${selected === i ? 'strip__col--active' : ''} ${d.lead_days >= 4 ? 'strip__col--mid' : ''} ${d.lead_days === 4 ? 'strip__col--mid-first' : ''}`}
             hoverClass="pressed"
             onClick={() => onSelect(i)}
           >
             <Text className="strip__day">{dayLabel(d)}</Text>
-            <Text className="strip__date">{d.date.slice(5).replace('-', '/')}</Text>
-            <Text className="strip__caption">{d.caption ?? ' '}</Text>
-            <View className="strip__bar-wrap">
+            <Text className="strip__date">{`${Number(d.date.slice(5, 7))}/${d.date.slice(8)}`}</Text>
+            {hasEnergy && <View className="strip__bar-wrap">
               <View className="strip__bar" style={{ height: `${d.energy_kwh == null || max <= 0 ? 0 : Math.max(4, d.energy_kwh / max * 100)}%` }} />
-            </View>
+            </View>}
             <Text className="strip__value">{d.energy_kwh == null ? '—' : (d.energy_kwh / unit.divisor).toFixed(decimals)}</Text>
-            <View className="strip__level">
-              {d.level && <View className="strip__dot" style={{ background: LEVEL_COLOR[d.level] }} />}
-              <Text>{d.level && d.score != null ? Math.round(d.score) : ' '}</Text>
-            </View>
-          </View>
+          </Button>
         ))}
       </View>
+      {!!detail && <Text className="strip__detail">{detail}</Text>}
     </View>
   )
 }

@@ -12,16 +12,17 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.db import SessionLocal
 from app.metrics import wind
 from app.models import CatalogPlant, Station
+from app.providers.budget import shared
 from app.render import tiles
 from app.schemas.prediction import FleetDay, FleetPrediction, PowerPoint, RegionPrediction
-from app.services import prediction, weather
-from app.services.prediction_basis import catalog_basis, version_for_day
+from app.services import energy, weather
+from app.services.prediction_basis import calculation_version, catalog_basis, version_for_day
 from app.weather_model import MODELS
 
 log = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ def days_count() -> int:
 
 def blank(model: str, day: str) -> FleetPrediction:
     return FleetPrediction(
+        calculation_version=calculation_version(day),
         model=model,
         date=day,
         generated_at=datetime.now(UTC).isoformat(),
@@ -96,14 +98,15 @@ def blank(model: str, day: str) -> FleetPrediction:
         power_kw=[],
         status="queued",
         assumptions=[
-            "区域近似：1°气象网格，按场站容量与能源类型估算",
-            f"未来 {days_count()} 天同一批气象数据；第 4–7 天为中期预报，参考为主",
+            f"区域近似：光伏 {settings.fleet_grid_step_solar:g}°、"
+            f"风电 {settings.fleet_grid_step_wind:g}°气象网格，按场站容量与能源类型估算",
+            f"未来 {days_count()} 天按逐小时计算；第 5–7 天参考为主",
             f"已区分分期交直流容量，容配比假设 {settings.pv_dc_ac_ratio:g}、"
             f"系统损耗 {settings.pv_losses:.0%}（含逆变器）并按交流容量限幅；"
             "未知容量类型不计入预测",
             "采用默认设备参数，未计入限电、检修及故障影响",
             "统一北京时间；仅汇总平台运营目录，非全国实测电量",
-            f"计算版本 {version_for_day(day)}",
+            f"计算版本 {calculation_version(day)}",
             "逐时曲线按区间起点对齐光伏与风电"
             if version_for_day(day) == "model-v4"
             else "旧版逐时标签口径",
@@ -194,15 +197,13 @@ def calculate_cell(plants, raw, model, day, lat: float, lon: float):
             st._pv_capacity = (dc_ratio, ac_ratio)
             per_day: list[np.ndarray | None] = []
             for k in range(days_count()):
-                out = prediction.compute(st, fc, model, day_offset=k)
-                per_day.append(
-                    np.array([v.value for v in out.power_kw], dtype=float)
-                    if out.energy_kwh is not None
-                    else None
-                )
+                # 聚合前不按 1 kW 曲线取三位小数，防止舍入误差被场站容量放大。
+                prep = energy.prepare(st, fc, day_offset=k)
+                curve = energy.hourly_power(st, prep, fc.tz).to_numpy(dtype=float)
+                per_day.append(curve if np.isfinite(curve).all() else None)
             curves[key] = per_day
         per_day = curves[key]
-        if per_day[0] is not None:
+        if any(c is not None for c in per_day):
             results.append((p, [c * p.capacity_kw if c is not None else None for c in per_day]))
     return results
 
@@ -210,6 +211,8 @@ def calculate_cell(plants, raw, model, day, lat: float, lon: float):
 async def build(http, model: str, day: str, plants) -> None:
     path = directory() / f"{model}-{day}.json"
     out = blank(model, day)
+    newest = max((p.updated_at for p in plants if p.updated_at is not None), default=None)
+    out.catalog_revision = f"{len(plants)}:{newest.isoformat() if newest else ''}"
     rows, dup, invalid = eligible(plants)
     out.total_count = len(plants) - dup
     verified = [p for p in rows if not catalog_basis(p)[1]]
@@ -240,16 +243,26 @@ async def build(http, model: str, day: str, plants) -> None:
     solar_kwh = np.zeros(n_days)
     wind_kwh = np.zeros(n_days)
     covered_days = np.zeros(n_days, dtype=int)
+    covered_capacity = np.zeros(n_days)
+    common_total = np.zeros(n_days)
     regions: list[dict[str, list]] = [{} for _ in range(n_days)]
     covered = set()
+    coverage_by_plant = {}
     # 起报与拉取时刻：批量请求没有逐格元数据，按模型取一次
     meta = await weather.get_model_meta(http, model)
+    stamp = weather.batch_stamp(meta)
+    out.batch_stamp = stamp
     out.basis = weather.Forecast(tz=TZ, hourly=pd.DataFrame(), model=model, meta=meta).basis()
     cache_path = directory() / f"{model}-{day}-weather.json"
     saved = load(cache_path) or {}
-    if saved.get("saved_at", 0) < datetime.now(UTC).timestamp() - 43200:
+    if (
+        saved.get("batch_stamp") != stamp
+        or saved.get("saved_at", 0) < datetime.now(UTC).timestamp() - 43200
+    ):
         saved = {}
     raw_cache = saved.get("cells", {})
+    fetched = saved.get("fetched", {})
+    saved_at = saved.get("saved_at", datetime.now(UTC).timestamp())
     stop = False
     out.status = "building"
 
@@ -275,6 +288,8 @@ async def build(http, model: str, day: str, plants) -> None:
         out.wind_kwh = float(wind_kwh[0])
         out.power_kw = points(0)
         out.regions = region_list(0)
+        if fetched:
+            out.basis.fetched_at = min(fetched.values())
         out.days = [
             FleetDay(
                 date=dates[k],
@@ -285,6 +300,19 @@ async def build(http, model: str, day: str, plants) -> None:
                 wind_kwh=float(wind_kwh[k]),
                 power_kw=points(k),
                 regions=region_list(k),
+                covered_count=int(covered_days[k]),
+                covered_capacity_kw=float(covered_capacity[k]),
+                failed_count=out.eligible_count - int(covered_days[k]),
+                status=(
+                    "building"
+                    if out.status == "building"
+                    else "ready"
+                    if covered_days[k] == out.eligible_count and out.eligible_count
+                    else "partial"
+                    if covered_days[k]
+                    else "error"
+                ),
+                common_energy_kwh=float(common_total[k]) if out.common_covered_count else None,
             )
             for k in range(n_days)
         ]
@@ -309,6 +337,7 @@ async def build(http, model: str, day: str, plants) -> None:
         if missing:
             await pacer.take(len(missing))  # 只为真正出网的坐标付时间
             try:
+                await shared.take(len(missing))
                 r = await http.get(
                     f"{settings.open_meteo_base}/forecast",
                     params={
@@ -317,12 +346,13 @@ async def build(http, model: str, day: str, plants) -> None:
                         "models": model,
                         "hourly": ",".join(FIELDS),
                         "timezone": TZ,
-                        "forecast_days": n_days,
+                        "forecast_days": n_days + 1,
                         "wind_speed_unit": "ms",
                     },
                     timeout=40,
                 )
                 if r.status_code == 429:
+                    shared.retry_after(r.headers.get("Retry-After"))
                     out.message = "气象服务限流，已保存当前覆盖结果，稍后继续"
                     stop = True
                 else:
@@ -331,10 +361,25 @@ async def build(http, model: str, day: str, plants) -> None:
                     payload = payload if isinstance(payload, list) else [payload]
                     if len(payload) != len(missing):
                         raise ValueError("批量响应数量不一致")
+                    # 上游接口不锁定批次：跨批次时停止，下一轮重新取完整新批次。
+                    latest = await weather.get_model_meta(http, model, fresh=True)
+                    if meta is not None and (
+                        latest is None or weather.batch_stamp(latest) != stamp
+                    ):
+                        out.message = "气象批次正在更新，保留已确认结果，稍后重算"
+                        stop = True
+                        break
                     for (lat, lon), raw in zip(missing, payload, strict=True):
                         raw_cache[coord_key(lat, lon)] = raw
+                        fetched[coord_key(lat, lon)] = datetime.now(ZoneInfo(TZ)).isoformat()
                     write(
-                        cache_path, {"saved_at": datetime.now(UTC).timestamp(), "cells": raw_cache}
+                        cache_path,
+                        {
+                            "saved_at": saved_at,
+                            "batch_stamp": stamp,
+                            "cells": raw_cache,
+                            "fetched": fetched,
+                        },
                     )
             except Exception:
                 log.warning("fleet weather batch failed: %s %s", model, start, exc_info=True)
@@ -355,13 +400,20 @@ async def build(http, model: str, day: str, plants) -> None:
                 if p.id in covered:
                     continue
                 covered.add(p.id)
-                out.covered_count += 1
-                out.covered_capacity_kw += p.capacity_kw
+                coverage_by_plant[p.id] = [dates[k] for k, c in enumerate(per_day) if c is not None]
+                if per_day[0] is not None:
+                    out.covered_count += 1
+                    out.covered_capacity_kw += p.capacity_kw
+                if all(c is not None for c in per_day):
+                    out.common_covered_count += 1
+                    out.common_capacity_kw += p.capacity_kw
+                    common_total += np.array([c.sum() for c in per_day])
                 for k, curve in enumerate(per_day):
                     if curve is None:
                         continue
                     total[k] += curve
                     covered_days[k] += 1
+                    covered_capacity[k] += p.capacity_kw
                     energy = float(curve.sum())
                     if p.type == "solar":
                         solar_kwh[k] += energy
@@ -379,15 +431,22 @@ async def build(http, model: str, day: str, plants) -> None:
     # 覆盖程度由 covered_count / total_count 与 covered_capacity_kw / total_capacity_kw 表达。
     out.status = (
         "ready"
-        if out.eligible_count and not out.failed_count
+        if out.eligible_count and bool((covered_days == out.eligible_count).all())
         else "partial"
-        if out.covered_count
+        if covered_days.any()
         else "error"
     )
     publish()
+    if out.status in ("ready", "partial"):
+        from app.services.prediction_archive import save_fleet_inputs
+
+        out.input_archive_id = await asyncio.to_thread(
+            save_fleet_inputs, out, verified, raw_cache, fetched, coverage_by_plant
+        )
+        publish()
     from app.services import fleet_history
 
-    fleet_history.capture(out.model_dump(), version_for_day(day))
+    fleet_history.capture(out.model_dump(), calculation_version(day))
     fleet_history.capture_leads(out.model_dump())
     # 留两天快照，清理旧天气文件，避免磁盘长期增长。
     for old in directory().glob("*.json"):
@@ -405,13 +464,32 @@ async def ensure(http, model: str) -> FleetPrediction:
     task = _jobs.get(key)
     if task and not task.done():
         return FleetPrediction.model_validate(saved) if saved else blank(model, day)
-    if saved:
+    if (
+        saved
+        and saved.get("calculation_version") == calculation_version(day)
+        and saved["status"] in ("ready", "partial", "error")
+    ):
+        meta = await weather.get_model_meta(http, model)
+        async with SessionLocal() as db:
+            count, updated = (
+                await db.execute(
+                    select(func.count(), func.max(CatalogPlant.updated_at))
+                    .select_from(CatalogPlant)
+                    .where(CatalogPlant.status == "operating")
+                )
+            ).one()
+        revision = f"{count}:{updated.isoformat() if updated else ''}"
         age = (
             datetime.now(UTC).timestamp()
             - datetime.fromisoformat(saved["generated_at"]).timestamp()
         )
-        if (saved["status"] == "ready" and age < 43200) or (
-            saved["status"] in ("partial", "error") and age < 1800
+        if (
+            saved.get("batch_stamp") == weather.batch_stamp(meta)
+            and saved.get("catalog_revision") == revision
+            and (
+                (saved["status"] == "ready" and age < 43200)
+                or (saved["status"] in ("partial", "error") and age < 1800)
+            )
         ):
             return FleetPrediction.model_validate(saved)
     initial = blank(model, day)

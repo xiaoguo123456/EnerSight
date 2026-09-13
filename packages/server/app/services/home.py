@@ -161,19 +161,27 @@ async def build_station_view(
 
 
 async def default_station(db: AsyncSession, owner_id: str) -> Station | None:
-    """默认展示容量排序第一座公开电站；空目录兼容历史个人数据。"""
-    plant = (
-        await db.execute(
-            select(CatalogPlant)
-            .where(CatalogPlant.status == "operating")
-            .order_by(CatalogPlant.capacity_kw.desc(), CatalogPlant.id)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if plant is not None:
-        return from_catalog(plant)
+    """优先展示容量口径已核验的运营电站，分批扫描避免首次打开就是空预测。"""
+    from app.db import pages
+    from app.services.prediction_basis import catalog_basis
+
+    first = None
+    query = select(CatalogPlant).where(CatalogPlant.status == "operating")
+    async for batch in pages(db, query, CatalogPlant, 200):
+        for plant in batch:
+            if first is None or plant.capacity_kw > first.capacity_kw:
+                first = plant
+            if (
+                not catalog_basis(plant)[1]
+                and math.isfinite(plant.capacity_kw)
+                and plant.capacity_kw > 0
+                and -90 < plant.latitude < 90
+                and -180 <= plant.longitude <= 180
+            ):
+                return from_catalog(plant)
     q = select(Station).where(Station.owner_id == owner_id).order_by(Station.created_at)
-    return (await db.execute(q)).scalars().first()
+    own = (await db.execute(q)).scalars().first()
+    return own or (from_catalog(first) if first is not None else None)
 
 
 async def build_home(
@@ -210,6 +218,7 @@ async def build_home(
         curtailment_note=v.snapshot.curtailment_note,
         notes=v.snapshot.notes,
     )
+    forecast_prediction.estimated = v.snapshot.estimated
     from app.services import prediction_archive
 
     await asyncio.to_thread(prediction_archive.save, station, v.forecast, forecast_prediction)

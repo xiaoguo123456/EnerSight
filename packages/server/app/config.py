@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     upstream_retries: int = 3
     upstream_backoff_seconds: float = 0.5
     upstream_max_connections: int = 32
+    upstream_units_per_minute: float = 480
 
     # 逐日累积：算并发、写串行，分批提交。见 services/accumulate
     accumulate_concurrency: int = 8

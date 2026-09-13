@@ -129,3 +129,4 @@ export function isDataStale(value: string | null | undefined, minutes = 120, now
   const timestamp = Date.parse(value)
   return !Number.isFinite(timestamp) || now - timestamp > minutes * 60_000
 }
+export { powerChartUnit } from './power-chart'

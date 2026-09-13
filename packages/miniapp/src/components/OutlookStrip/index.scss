@@ -17,3 +17,12 @@
 .strip__value { font-size: 12px; font-weight: 600; color: #192b40; font-variant-numeric: tabular-nums; }
 .strip__level { display: flex; align-items: center; gap: 3px; font-size: 10px; line-height: 14px; color: #33465e; min-height: 14px; }
 .strip__dot { width: 6px; height: 6px; border-radius: 50%; }
+
+// 七天只展示日期与电量，详细信息随选中日展示。
+.strip__unit { display: flex; justify-content: space-between; gap: var(--space-2); color: var(--color-text-sub); font-size: var(--font-caption); }
+.strip__col { margin: 0; border: 0; line-height: 1.5; background: transparent; color: var(--color-text); font-family: inherit; }
+.strip__col::after { border: 0; }
+.strip__col--active { background: #eef4fb; }
+.strip__date { font-size: var(--font-caption); }
+.strip__detail { display: block; margin-top: var(--space-2); font-size: var(--font-caption); line-height: 1.6; color: var(--color-text-sub); }
+.strip__col:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }

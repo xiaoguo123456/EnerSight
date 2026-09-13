@@ -140,9 +140,7 @@ def hub_wind_speed(
     return pd.Series(out, index=index), pd.Series(fallback, index=index)
 
 
-def power_curve(
-    v_hub: pd.Series, capacity_kw: float, turbine: Turbine | None = None
-) -> pd.Series:
+def power_curve(v_hub: pd.Series, capacity_kw: float, turbine: Turbine | None = None) -> pd.Series:
     """通用功率曲线（机组毛出力）。切入以下与切出以上出力为 0 —— 这是物理事实，
     不能被其他因素补偿，这也是环境指数不用加权求和的原因之一。
 
@@ -177,8 +175,18 @@ def plant_power(
     turbine: Turbine | None = None,
 ) -> pd.Series:
     """场站净出力：密度修正 → 功率曲线 × (1 − 尾流 / 可利用率 / 电气损耗)。"""
+    turbine = turbine or Turbine()
+    v_in, _, v_out = TURBINE_CLASSES.get(
+        turbine.cls, (settings.wind_v_in, settings.wind_v_rated, settings.wind_v_out)
+    )
+    if turbine.curve:
+        v_in, v_out = turbine.curve[0][0], turbine.curve[-1][0]
     v = density_corrected_speed(v_hub, rho) if rho is not None else v_hub
-    return power_curve(v, capacity_kw, turbine) * (1 - settings.wind_losses)
+    # 密度只修正气动出力，不能移动真实风速的运行边界。
+    # 高密度时等效风速可能越过切出点，运行区间内仍按曲线末端求出力。
+    power = power_curve(v.clip(upper=v_out), capacity_kw, turbine)
+    power = power.where((v_hub >= v_in) & (v_hub <= v_out), 0.0)
+    return power.where(np.isfinite(v_hub), np.nan) * (1 - settings.wind_losses)
 
 
 def capacity_factor(daily_kwh: float, capacity_kw: float) -> float:

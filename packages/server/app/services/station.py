@@ -46,6 +46,9 @@ def to_summary(s: Station, coord: Coord) -> StationSummary:
         type=s.type,  # type: ignore[arg-type]
         status=s.status,  # type: ignore[arg-type]
         capacity=s.capacity_kw,
+        tilt=s.tilt,
+        azimuth=s.azimuth,
+        hub_height=s.hub_height,
         latitude=lat,
         longitude=lng,
         address=s.address,
@@ -259,9 +262,7 @@ async def _check_limit(db: AsyncSession, owner_id: str) -> None:
         )
     ).scalar_one()
     if count >= settings.max_stations_per_user:
-        raise ApiError(
-            "STATION_LIMIT", f"最多添加 {settings.max_stations_per_user} 座场站", 400
-        )
+        raise ApiError("STATION_LIMIT", f"最多添加 {settings.max_stations_per_user} 座场站", 400)
 
 
 async def create_station(
@@ -344,6 +345,19 @@ async def update_station(
     if s.owner_id == "__catalog__":
         raise ApiError("CATALOG_READ_ONLY", "公开电站由平台维护，不支持个人修改或删除", 403)
     data = req.model_dump(exclude_unset=True, exclude={"coord"})
+    for field in ("name", "type", "status", "latitude", "longitude", "capacity"):
+        if field in data and data[field] is None:
+            raise ApiError("INVALID_PARAM", f"{field} 不可清空", 400)
+    if "name" in data:
+        data["name"] = data["name"].strip()
+        if not data["name"]:
+            raise ApiError("INVALID_PARAM", "名称不能为空", 400)
+    if req.coord == Coord.GCJ02 and (("latitude" in data) != ("longitude" in data)):
+        raise ApiError("INVALID_PARAM", "GCJ-02 经纬度需同时提交", 400)
+    turbine = data.get("turbine_class", s.turbine_class)
+    curve = data.get("power_curve", s.power_curve)
+    if turbine == "custom" and not curve:
+        raise ApiError("INVALID_PARAM", "自定义机型需要功率曲线", 400)
     # 出力约束：传 null 清除，不传保持；已经被 model_dump 展开成 dict
     if "curtailment" in data:
         s.curtailment = data.pop("curtailment")

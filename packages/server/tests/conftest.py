@@ -46,6 +46,7 @@ def _debug_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "debug", True)
     monkeypatch.setattr(settings, "wx_appid", "")
     monkeypatch.setattr(settings, "enable_scheduler", False)
+    monkeypatch.setattr(settings, "upstream_units_per_minute", 0)
 
 
 @pytest.fixture(autouse=True)

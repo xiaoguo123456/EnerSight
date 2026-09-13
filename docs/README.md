@@ -22,6 +22,7 @@
 | [09 小程序合规清单 · Compliance](./09-miniapp-compliance.md) | 主体类目、备案、隐私协议、位置权限、生成式 AI、内容安全、上线检查清单 |
 | [10-deployment.md](./10-deployment.md) | 部署 | 镜像、Compose、环境变量、升级回滚 SOP、上线清单 |
 | [17 自建场站、7 天预测与限电](./17-user-stations-and-outlook.md) | 自建场站与登录前提、7 天预测与起报时间、全目录口径、限电三层（本轮只做第一层） |
+| [18 UI、算法与数据一致性修复](./18-review-fixes.md) | 审查问题修复、接口与数据库迁移、回归测试及浏览器验收 |
 
 ## 设计稿
 

@@ -100,6 +100,9 @@ async def station_outlook(
     out = await asyncio.to_thread(
         prediction.compute_days, station, fc, min(days, settings.forecast_outlook_days)
     )
+    from app.services.prediction_archive import save_outlook
+
+    await asyncio.to_thread(save_outlook, station, fc, out)
     return envelope(out, coord)
 
 
