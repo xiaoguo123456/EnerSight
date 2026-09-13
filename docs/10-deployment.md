@@ -215,3 +215,12 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 - 测试服务器 Nginx 已生效，花花狗仓库 main 已同步同一配置（提交 `7f65c4e`），配置 SHA256 与线上一致。该次同步跳过花花狗自动部署；之后 main 发版会保留 `/enersight/` 路由，独立的 `enersight-test` 容器和数据目录不受花花狗 Compose 更新影响。
 
 本次只将部署配置与必要测试修复合入 main，没有合入当前开发分支其余 7 个提交。
+
+### 七天预测及审查修复测试发布（2026-09-13）
+
+- 修复提交 `f90c418`；集成提交 `ee096266eda45cbb8d990246ac487f8f0aa337cc` 已推送至 `main` 和 `feat/user-stations-7d-forecast`。合并主分支部署基线无冲突，集成提交与修复提交代码树一致。
+- [测试部署 34737949011](https://github.com/xiaoguo123456/EnerSight/actions/runs/34737949011) 与 [CI 34737949116](https://github.com/xiaoguo123456/EnerSight/actions/runs/34737949116) 均成功。云端 `make check` 通过（后端 387 项、前端 40 项）；PostgreSQL 16 迁移到 `a713d91e2001`、`alembic check` 及写入检查通过。
+- 已发布镜像标签 `ee096266eda4`，摘要 `sha256:75ce0b52a23b7d9a6a470427186764256c01082308e8fcd580113c71855e099c`。测试服务就绪检查通过，公网 OpenAPI 已包含 `hub_height`、`common_energy_kwh` 和 `input_archive_id` 等本次新字段。
+- `pnpm build:test` 与 `pnpm --filter @enersight/miniapp build:h5:test` 均成功。两套产物已核验使用 `https://test-www.qhzhiyin.com/enersight`，不包含生产 API 或临时本机 API 地址；“我的”人像图标已进入小程序包。
+- 微信开发者工具已载入测试包，但控制台明确报告测试域名不在 request 合法域名列表。用户选择自行在微信后台添加 `https://test-www.qhzhiyin.com` 的 request / downloadFile 白名单，完成后再刷新项目配置及重新编译验收。未关闭域名校验，未将测试包改连生产。
+- 本次只发布测试后端；未触发生产工作流，H5 仅完成测试地址构建，没有发布 H5 站点。
