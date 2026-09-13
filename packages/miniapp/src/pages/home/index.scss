@@ -77,6 +77,7 @@
 .forecast-model { flex: 1; min-width: 0; > text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } }
 .forecast-subtitle { font-size: 14px; font-weight: 600; color: #233146; }
 .forecast-unit { font-size: 12px; color: #617084; }
+.forecast-series { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; }
 .forecast-label { display: block; font-size: 12px; font-weight: 400; color: #617084; margin-bottom: 4px; }
 .forecast-split--tight { padding: 12px 0; font-size: 16px; border-bottom: 1px solid #eef2f6; }
 .forecast-caption { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; color: #617084; }

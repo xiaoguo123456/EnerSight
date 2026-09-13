@@ -1,16 +1,15 @@
 import { View, Text } from '@tarojs/components'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Taro, { usePullDownRefresh } from '@tarojs/taro'
 import type { AlertLevel } from '@enersight/core/types'
 import { alertsApi } from '@/api/alerts'
 import {
   AlertCard, AlertRecordList, CloudMotionStats, EmptyState, ErrorState, PageTitleBar,
-  SectionHeader, SegmentedTabs, Skeleton,
+  SectionHeader, SegmentedTabs, Skeleton, Icon,
 } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
-import { DataFreshness } from '@/components/DataFreshness'
-import { formatBeijingTime } from '@enersight/core/format'
+import { formatBeijingTime, isDataStale } from '@enersight/core/format'
 import './index.scss'
 import { SatelliteTimeline } from '@/components/SatelliteTimeline'
 
@@ -23,6 +22,8 @@ type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
 export default function AlertCenter() {
   const currentId = useStationStore((s) => s.currentId)
   const [filter, setFilter] = useState<Filter>('all')
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
 
   const cur = useRequest(() => alertsApi.current(currentId ?? undefined), [currentId])
   // cleared 只在「全部」里出现，等级筛选由服务端做。docs/06 §9.1
@@ -30,6 +31,10 @@ export default function AlertCenter() {
 
   usePullDownRefresh(async () => { await Promise.all([cur.reload(), list.reload()]); Taro.stopPullDownRefresh() })
   const noStation = cur.status === 'error' && cur.error.status === 404
+  const refreshing = cur.refreshing || list.refreshing
+  const refresh = () => { if (!refreshing) { void cur.reload(); void list.reload() } }
+  const checkStale = cur.status === 'success' && isDataStale(cur.data.checked_at, 15, now)
+  const refreshFailed = !!cur.refreshError || !!list.refreshError
   return (
     <View className="alerts">
       <PageTitleBar
@@ -38,11 +43,15 @@ export default function AlertCenter() {
       />
 
       <View className="alerts__body">
-        {cur.status === 'success' && cur.data.station && <View className="alerts__context" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>
-          <Text className="alerts__station">{cur.data.station.name}</Text>
-          <Text className="alerts__checked">切换电站 · {formatBeijingTime(cur.data.checked_at)} 检查（北京时间）</Text>
+        {cur.status === 'success' && <View className="alerts__context">
+          <View className="alerts__station" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>
+            <Text>{cur.data.station?.name ?? '选择电站'}</Text><Icon name="chevronDown" size={14} />
+          </View>
+          <View className="alerts__tools">
+            <View className="alerts__refresh" onClick={refresh}><Text>{refreshing ? '刷新中' : '刷新'}</Text></View>
+          </View>
         </View>}
-        {cur.status === 'success' && <DataFreshness label="规则检查 · 自动模型" time={cur.data.checked_at} staleMinutes={15} refreshing={cur.refreshing || list.refreshing} failed={!!cur.refreshError || !!list.refreshError} onRefresh={() => { void cur.reload(); void list.reload() }} />}
+        {(refreshFailed || checkStale) && <View className="alerts__status" onClick={refresh}><Text>{refreshFailed ? '刷新失败 · 点击重试' : '检查已过期 · 点击刷新'}</Text></View>}
         {cur.status === 'loading' && <Skeleton height={120} lines={3} />}
 
         {noStation && (
@@ -53,12 +62,11 @@ export default function AlertCenter() {
         {cur.status === 'success' && (
           cur.data.alert ? (
             <View className="alerts__group">
-              <DataFreshness label="预警发布" time={cur.data.alert.published_at} staleMinutes={30} />
               <AlertCard
                 level={cur.data.alert.level}
                 title={cur.data.alert.title}
                 description={cur.data.alert.description}
-                publishedAt={`${formatBeijingTime(cur.data.alert.published_at)}（北京时间）`}
+                publishedAt={formatBeijingTime(cur.data.alert.published_at)}
               />
               {cur.data.cloud_motion && (
                 <CloudMotionStats
@@ -75,7 +83,6 @@ export default function AlertCenter() {
           ) : (
             <View className="alerts__calm">
               <Text className="alerts__calm-title">当前未触发预警</Text>
-              <Text className="alerts__calm-note">本次检查未命中监测规则，不代表发电条件良好。请结合气象趋势判断。</Text>
             </View>
           )
         )}
@@ -97,7 +104,7 @@ export default function AlertCenter() {
             {list.status === 'loading' && <Skeleton height={80} lines={2} />}
             {list.status === 'error' && <ErrorState error={list.error} onRetry={list.reload} />}
             {list.status === 'success' && list.data.alerts.length === 0 && (
-              <Text className="alerts__calm-note">暂无匹配记录，触发预警后将在这里展示。</Text>
+              <Text className="alerts__calm-note">暂无预警记录</Text>
             )}
             {list.status === 'success' && list.data.alerts.length > 0 && (
               <AlertRecordList

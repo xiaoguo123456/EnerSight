@@ -18,9 +18,11 @@ export function InfoTip({ title, content, size = 14, color = '#64748b' }: Props)
   return (
     <View
       className="info-tip"
+      role="button"
+      aria-label={title}
       onClick={(e) => { e.stopPropagation(); void Taro.showModal({ title, content, showCancel: false, confirmText: '知道了' }) }}
     >
-      <Icon name="helpCircle" size={size} color={color} strokeWidth={1.75} />
+      <Icon name="info" size={size} color={color} strokeWidth={1.75} />
     </View>
   )
 }

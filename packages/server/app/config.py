@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     db_max_overflow: int = 1
     # 定时任务开关。多实例部署时只在一个实例上开
     enable_scheduler: bool = True
+    # 地图预处理可独立开启；未设置时沿用总开关，兼容既有部署。
+    enable_map_scheduler: bool | None = None
+
+    @property
+    def map_scheduler_enabled(self) -> bool:
+        return (
+            self.enable_scheduler
+            if self.enable_map_scheduler is None
+            else self.enable_map_scheduler
+        )
 
     # 数据库。本地 SQLite 零依赖起步，线上换 PostgreSQL：
     #   postgresql+asyncpg://user:pass@host/enersight

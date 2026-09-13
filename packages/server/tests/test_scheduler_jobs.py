@@ -8,6 +8,7 @@ import asyncio
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -18,6 +19,32 @@ from app.db import Base, id_pages, pages
 from app.jobs import scheduler
 from app.main import app
 from app.models import Alert, CatalogPlant, Station
+
+
+@pytest.mark.parametrize(
+    ("general", "maps", "expected"),
+    [
+        (False, None, "disabled"),
+        (False, True, "map_only"),
+        (True, None, "all"),
+        (True, False, "general_only"),
+    ],
+)
+def test_地图调度可独立开启且默认兼容总开关(monkeypatch, general, maps, expected):
+    monkeypatch.setattr(scheduler.settings, "enable_scheduler", general)
+    monkeypatch.setattr(scheduler.settings, "enable_map_scheduler", maps)
+    # 只验证注册任务，不启动真实计时器或出网预处理。
+    monkeypatch.setattr(scheduler.AsyncIOScheduler, "start", lambda self: None)
+    sched = scheduler.start(FastAPI())
+    if expected == "disabled":
+        assert sched is None
+        return
+    jobs = {job.id for job in sched.get_jobs()}
+    if expected == "map_only":
+        assert jobs == {"map_prepare"}
+    else:
+        assert "accumulate_generation" in jobs and "scan_alerts" in jobs
+        assert ("map_prepare" in jobs) == (expected == "all")
 
 
 @pytest.fixture

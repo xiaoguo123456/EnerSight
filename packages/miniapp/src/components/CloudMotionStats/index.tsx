@@ -44,7 +44,6 @@ export function CloudMotionStats({
             <Text className="cloud-motion__num">{c.value}</Text>
             {c.unit && <Text className="cloud-motion__unit">{c.unit}</Text>}
           </View>
-          <Text className="cloud-motion__sub">{c.sub}</Text>
         </View>
       ))}
     </View>

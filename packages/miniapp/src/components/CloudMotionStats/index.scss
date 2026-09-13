@@ -16,7 +16,7 @@
     display: flex; align-items: center; justify-content: center;
     margin-bottom: 2px;
   }
-  &__label { font-size: 11px; color: var(--color-text-sub); @include ellipsis; }
+  &__label { display: flex; align-items: center; gap: 2px; min-height: 24px; font-size: 12px; color: var(--color-text-sub); }
   &__value { display: flex; align-items: baseline; }
   &__num { @include metric-value(20px); }
   // 第三格「预计影响时间」是决策依据，用主色标出

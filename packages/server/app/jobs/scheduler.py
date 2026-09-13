@@ -279,8 +279,29 @@ def _make_backfill_address(app: FastAPI):
     return job
 
 
-def start(app: FastAPI) -> AsyncIOScheduler:
+def start(app: FastAPI) -> AsyncIOScheduler | None:
+    if not settings.enable_scheduler and not settings.map_scheduler_enabled:
+        return None
     sched = AsyncIOScheduler(timezone="UTC")
+    if settings.map_scheduler_enabled:
+        from app.jobs import map_prepare
+
+        async def prepare_map():
+            await map_prepare.refresh(app.state.http)
+
+        sched.add_job(
+            prepare_map,
+            "interval",
+            minutes=10,
+            id="map_prepare",
+            next_run_time=datetime.now(UTC) + timedelta(seconds=10),
+            max_instances=1,
+            coalesce=True,
+        )
+    if not settings.enable_scheduler:
+        sched.start()
+        log.info("scheduler started: %s", [j.id for j in sched.get_jobs()])
+        return sched
     # 每小时第 10 分钟：错开整点的气象数据更新，也错开 scan_alerts 的 5/20/35/50
     # ——两者都遍历全部站点，叠在同一分钟只会把 CPU 峰值堆起来（气象数据本就共享缓存）
     sched.add_job(
@@ -361,20 +382,6 @@ def start(app: FastAPI) -> AsyncIOScheduler:
         CronTrigger(hour=1, minute=0),
         id="model_resolution",
         next_run_time=datetime.now(UTC) + timedelta(seconds=30),
-        max_instances=1,
-        coalesce=True,
-    )
-    from app.jobs import map_prepare
-
-    async def prepare_map():
-        await map_prepare.refresh(app.state.http)
-
-    sched.add_job(
-        prepare_map,
-        "interval",
-        minutes=10,
-        id="map_prepare",
-        next_run_time=datetime.now(UTC) + timedelta(seconds=10),
         max_instances=1,
         coalesce=True,
     )

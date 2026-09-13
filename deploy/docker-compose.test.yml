@@ -18,11 +18,15 @@ services:
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
       GDAL_NUM_THREADS: "1"
+      # 地图独立更新，仍关闭全目录采集、报告等常规定时任务。
+      ENERSIGHT_ENABLE_MAP_SCHEDULER: "true"
     env_file:
       - .env
     ports:
       - "127.0.0.1:8002:8000"
-    mem_limit: 640m
+    # API 与两个单进程栅格工作池共用预算；测试主机保持有限内存和交换区上限。
+    mem_limit: 1024m
+    memswap_limit: 1536m
     cpus: 0.75
     pids_limit: 256
     volumes:

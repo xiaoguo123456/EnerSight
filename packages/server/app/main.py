@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             max_keepalive_connections=settings.upstream_max_connections // 2,
         ),
     )
-    sched = scheduler.start(app) if settings.enable_scheduler else None
+    sched = scheduler.start(app)
     try:
         yield
     finally:
