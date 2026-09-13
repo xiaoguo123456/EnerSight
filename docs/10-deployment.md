@@ -224,3 +224,13 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 - `pnpm build:test` 与 `pnpm --filter @enersight/miniapp build:h5:test` 均成功。两套产物已核验使用 `https://test-www.qhzhiyin.com/enersight`，不包含生产 API 或临时本机 API 地址；“我的”人像图标已进入小程序包。
 - 微信开发者工具已载入测试包，但控制台明确报告测试域名不在 request 合法域名列表。用户选择自行在微信后台添加 `https://test-www.qhzhiyin.com` 的 request / downloadFile 白名单，完成后再刷新项目配置及重新编译验收。未关闭域名校验，未将测试包改连生产。
 - 本次只发布测试后端；未触发生产工作流，H5 仅完成测试地址构建，没有发布 H5 站点。
+
+### 公开目录同步及小程序导航验收（2026-09-13）
+
+- 用户已配置测试域名；刷新微信项目配置后，request / downloadFile 列表均包含 `https://test-www.qhzhiyin.com`，域名与证书校验保持开启。
+- 按用户要求，将生产 `enersight_prod.catalog_plants` 的公开目录同步至 `enersight_test.catalog_plants`：共 18,764 座，其中光伏 13,472 座、风电 5,292 座。未复制生产账号、私人电站或其发电记录。
+- 导出使用只读、可重复读事务；导入强制校验数据库名称，仅允许空测试目录或与快照完全一致的目录，单事务分批写入并在提交前全量回读。重复执行验证通过，没有新增重复记录。
+- 按 ID 排序、字段名排序及 ISO 时间格式规范化后的全量内容 SHA256：`6e8a8b4ab6514f10b615e27db8c20471d49060c40b866c45ad9aee0d85f8b45e`，生产快照与测试回读完全一致。
+- 底部图标排查：10 张 PNG 和 `app.json` 引用均正确，开发者工具代码依赖分析确认 `assets/tabbar` 已打包；清除文件缓存后，原 `packages/miniapp` 工程仍只显示文字。将**同一份产物直接从 `packages/miniapp/dist/weapp` 导入**后，首页、地图、预警、站点、我的五个图标全部恢复，选中状态可切换。“我的”使用人像图标。
+- 当前工具版本为 Stable `2.02.2608060`。测试预览统一采用：仓库根目录执行 `pnpm build:test`，微信开发者工具导入 `packages/miniapp/dist/weapp`（工程名“EnerSight 测试预览”）。该目录内生成的 `project.config.json` 已设置 `miniprogramRoot: "./"`，避免本次嵌套工程目录的模拟器图片解析异常。每次重新构建后，在该预览工程点击编译即可；不要手改生成的图标路径或改连生产。
+- 模拟器验收：公开目录显示 18,764 座；首页已加载公开光伏站、当天功率曲线和未来七天电量；“我的”显示微信登录成功。首次旧令牌的 401 已由重新登录恢复，清空控制台后切换“我的”未新增错误。本次未完成手机真机验收，也未预热测试环境的全量地图栅格。
