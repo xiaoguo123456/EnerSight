@@ -1,4 +1,4 @@
-"""合成的 Open-Meteo 预报响应，形状与真实返回一致（192 点，昨日 00:00 起）。"""
+"""合成的 Open-Meteo 响应：默认昨日加八天，小时 216 点、15 分钟 864 点。"""
 
 import math
 from datetime import datetime, timedelta
@@ -26,7 +26,7 @@ def make_forecast(
     elevation: float = 5.0,
     minutely: bool = True,
 ) -> dict:
-    """start_date 是「昨日 00:00」（naive，当地时间）。默认 昨日 + 7 天 = 192 点，与线上一致。
+    """start_date 是「昨日 00:00」（naive，当地时间），默认覆盖线上请求的九个自然日。
 
     minutely=True 时另给 15 分钟序列（线上由上游插值，这里线性插值），elevation 决定气压。"""
     # 辐射按区间末标记的晴空小时均值合成，避免固定正弦整点曲线在早晚制造虚假 kt 下降。
@@ -125,6 +125,15 @@ def make_forecast(
             },
             "weather_code": [code[min(n - 1, i // 4)] for i in range(n * 4)],
         }
+        # 风速与云量参数定义为每日常量，跨午夜不提前混入次日设定值。
+        for column in (
+            "wind_speed_10m",
+            "wind_speed_80m",
+            "wind_speed_100m",
+            "wind_speed_120m",
+            "cloud_cover",
+        ):
+            out["minutely_15"][column] = [v for v in hourly[column] for _ in range(4)]
         # 15 分钟辐射必须按相同区间的晴空均值合成，不能把小时均值直接线性拉密。
         qlabels = pd.date_range(start_date, periods=n * 4, freq="15min", tz=TZ)
         qclear = clearsky_interval_mean(31.3, 120.62, TZ, qlabels, 15)["ghi"]

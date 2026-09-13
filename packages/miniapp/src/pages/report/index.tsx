@@ -1,5 +1,6 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text } from '@tarojs/components'
-import Taro, { useRouter, usePullDownRefresh, useShareAppMessage } from '@tarojs/taro'
+import Taro, { useRouter, usePullDownRefresh } from '@tarojs/taro'
 import {
   formatBeijingTime, formatCo2, formatCurrency, formatEnergy, formatHours,
 } from '@enersight/core/format'
@@ -17,6 +18,7 @@ import { DataFreshness } from '@/components/DataFreshness'
 import './index.scss'
 
 export default function Report() {
+  useAppShare()
   const { params } = useRouter()
   const currentId = useStationStore((st) => st.currentId)
   const routeId = decodeRouteParam(params.id) || currentId || ''
@@ -29,7 +31,6 @@ export default function Report() {
   }, [routeId])
 
   usePullDownRefresh(async () => { await req.reload(); Taro.stopPullDownRefresh() })
-  useShareAppMessage(() => ({ title: `${req.data?.station.name || '晴川观象'} · 气象分析`, path: `/pages/report/index?id=${encodeURIComponent(req.data?.station.id || routeId)}` }))
   const setCurrent = useStationStore((s) => s.setCurrent)
   if (req.status === 'loading') {
     return (

@@ -22,6 +22,7 @@ from app.providers.budget import shared
 from app.render import tiles
 from app.schemas.prediction import FleetDay, FleetPrediction, PowerPoint, RegionPrediction
 from app.services import energy, weather
+from app.services.curve_cache import CurveCache
 from app.services.prediction_basis import calculation_version, catalog_basis, version_for_day
 from app.weather_model import MODELS
 
@@ -171,7 +172,9 @@ def coord_key(lat: float, lon: float) -> str:
     return f"{lat},{lon}"
 
 
-def calculate_cell(plants, raw, model, day, lat: float, lon: float):
+def calculate_cell(
+    plants, raw, model, day, lat: float, lon: float, cache=None, weather_digest=None
+):
     """一个网格内全部场站的未来 N 天单位容量曲线。返回 [(plant, [day0, day1, …])]，
     某天不可算时该位为 None；今日不可算的场站不计入覆盖。"""
     fc = weather.parse_forecast(raw, model=model, require_quarter=True)
@@ -186,6 +189,23 @@ def calculate_cell(plants, raw, model, day, lat: float, lon: float):
             continue
         dc_ratio, ac_ratio = (v / p.capacity_kw for v in basis)
         key = (p.type, hub, round(dc_ratio, 6), round(ac_ratio, 6))
+        if key not in curves:
+            cache_key = (
+                cache.key(
+                    weather_digest=weather_digest,
+                    model=model,
+                    day=day,
+                    latitude=lat,
+                    longitude=lon,
+                    parameters=key,
+                    days=days_count(),
+                )
+                if cache is not None and weather_digest is not None
+                else None
+            )
+            cached = cache.get(cache_key, days_count()) if cache_key else None
+            if cached is not None:
+                curves[key] = cached
         if key not in curves:
             st = Station(
                 type=p.type,
@@ -204,6 +224,11 @@ def calculate_cell(plants, raw, model, day, lat: float, lon: float):
                 curve = energy.hourly_power(st, prep, fc.tz).to_numpy(dtype=float)
                 per_day.append(curve if np.isfinite(curve).all() else None)
             curves[key] = per_day
+            if cache_key:
+                try:
+                    cache.put(cache_key, per_day)
+                except OSError:
+                    log.warning("网格曲线缓存写入失败，仍使用本次计算结果", exc_info=True)
         per_day = curves[key]
         if any(c is not None for c in per_day):
             results.append((p, [c * p.capacity_kw if c is not None else None for c in per_day]))
@@ -263,11 +288,12 @@ async def build(http, model: str, day: str, plants) -> None:
         or saved.get("saved_at", 0) < datetime.now(UTC).timestamp() - 43200
     ):
         saved = {}
-    from app.services.weather_cells import WeatherCells
+    from app.services.weather_cells import WeatherCells, prune_dated_cache
 
     raw_cache = WeatherCells(
         directory().parent.parent / "fleet-weather-cells" / model / day, saved.get("cell_files")
     )
+    curve_cache = CurveCache(directory().parent.parent / "fleet-curve-cache" / model / day)
     fetched = saved.get("fetched", {})
     saved_at = saved.get("saved_at", datetime.now(UTC).timestamp())
     stop = False
@@ -325,6 +351,13 @@ async def build(http, model: str, day: str, plants) -> None:
             for k in range(n_days)
         ]
         write(path, out.model_dump())
+        log.info(
+            "fleet curve cache %s: hits=%d misses=%d covered=%d",
+            model,
+            curve_cache.hits,
+            curve_cache.misses,
+            out.covered_count,
+        )
 
     publish()
     per_request = settings.fleet_coords_per_request
@@ -400,7 +433,15 @@ async def build(http, model: str, day: str, plants) -> None:
                 continue
             try:
                 results = await asyncio.to_thread(
-                    calculate_cell, groups[key], raw, model, day, lat, lon
+                    calculate_cell,
+                    groups[key],
+                    raw,
+                    model,
+                    day,
+                    lat,
+                    lon,
+                    curve_cache,
+                    raw_cache.references[coord_key(lat, lon)],
                 )
             except Exception:
                 log.warning("fleet cell failed: %s %s", model, key, exc_info=True)
@@ -458,6 +499,11 @@ async def build(http, model: str, day: str, plants) -> None:
     fleet_history.capture(out.model_dump(), calculation_version(day))
     fleet_history.capture_leads(out.model_dump())
     await asyncio.to_thread(raw_cache.prune_before, date.fromisoformat(day) - timedelta(days=2))
+    await asyncio.to_thread(
+        prune_dated_cache,
+        curve_cache.folder,
+        date.fromisoformat(day) - timedelta(days=2),
+    )
     # 留两天快照，清理旧天气文件，避免磁盘长期增长。
     for old in directory().glob("*.json"):
         if old.stat().st_mtime < datetime.now(UTC).timestamp() - 172800:

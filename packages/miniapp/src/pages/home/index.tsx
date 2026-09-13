@@ -1,3 +1,4 @@
+import { useHomeShare } from '@/hooks/useAppShare'
 import { Button, Picker, View, Text } from '@tarojs/components'
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
@@ -165,6 +166,7 @@ function FleetSummary({ data, onClick }: { data: FleetPrediction | null; onClick
 }
 
 export default function Home() {
+  useHomeShare()
   const { model, setModel } = useWeatherModel()
   const [scope, setScope] = useState('station')
   const [visible, setVisible] = useState(true)

@@ -8,6 +8,19 @@ from datetime import date
 from pathlib import Path
 
 
+def prune_dated_cache(current: Path, cutoff: date):
+    """只清理同一模型下的过期日期目录，不触碰当前目录和留档。"""
+    for folder in current.parent.iterdir():
+        if folder == current or folder.is_symlink() or not folder.is_dir():
+            continue
+        try:
+            day = date.fromisoformat(folder.name)
+        except ValueError:
+            continue
+        if day < cutoff:
+            shutil.rmtree(folder)
+
+
 class WeatherCells:
     def __init__(self, folder: Path, references: dict | None = None):
         self.folder = folder
@@ -73,12 +86,4 @@ class WeatherCells:
 
     def prune_before(self, cutoff: date):
         """按模型清理过期日期缓存，保留当前缓存和不可变预测留档。"""
-        for folder in self.folder.parent.iterdir():
-            if folder == self.folder or folder.is_symlink() or not folder.is_dir():
-                continue
-            try:
-                day = date.fromisoformat(folder.name)
-            except ValueError:
-                continue
-            if day < cutoff:
-                shutil.rmtree(folder)
+        prune_dated_cache(self.folder, cutoff)

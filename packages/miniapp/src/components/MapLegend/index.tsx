@@ -15,10 +15,11 @@ export interface LegendSpec {
  * docs/06 §7.2
  */
 export function MapLegend({ spec }: { spec: LegendSpec }) {
+  const unit = spec.title.match(/[（(]([^）)]+)[）)]/)?.[1]
   const ticks = spec.stops ?? spec.labels ?? ['低', '高']
   return (
-    <View className="map-legend">
-      <Text className="map-legend__title">{spec.title}</Text>
+    <View className="map-legend" aria-label={spec.title}>
+      {unit && <Text className="map-legend__title">{unit}</Text>}
       <View
         className="map-legend__bar"
         style={{ background: `linear-gradient(90deg, ${spec.colors.join(', ')})` }}

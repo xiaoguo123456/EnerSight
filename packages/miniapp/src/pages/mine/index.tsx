@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text, Button } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useState } from 'react'
@@ -11,6 +12,7 @@ import './index.scss'
  * 小程序登录是静默的（wx.login → code2session），没有登录页；这里只显示登录态。
  */
 export default function Mine() {
+  useAppShare()
   const { recent, favorites, clearRecent } = useStationStore()
   const [mineCount, setMineCount] = useState<number | null>(null)
   const [loggedIn, setLoggedIn] = useState(false)

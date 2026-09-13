@@ -182,10 +182,10 @@ async def test_有场站算不出时状态为partial(tmp_path, monkeypatch):
     plants = [plant("a"), plant("c", lat=40.3)]
     real = fleet.calculate_cell
 
-    def flaky(cell_plants, raw_, model, day, lat, lon):
+    def flaky(cell_plants, raw_, model, day, lat, lon, *cache_args):
         if cell_plants[0].id == "c":
             raise RuntimeError("气象缺口")
-        return real(cell_plants, raw_, model, day, lat, lon)
+        return real(cell_plants, raw_, model, day, lat, lon, *cache_args)
 
     monkeypatch.setattr(fleet, "calculate_cell", flaky)
     with respx.mock:

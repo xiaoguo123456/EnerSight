@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text, Input, Picker, ScrollView, Button } from '@tarojs/components'
 import Taro, { useReachBottom, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -36,6 +37,7 @@ function ownMetric(s: StationSummary) {
 }
 
 export default function Stations() {
+  useAppShare()
   const [scope, setScope] = useState<Scope>('catalog')
   const [keyword, setKeyword] = useState('')
   const [query, setQuery] = useState<Filter>(INITIAL)

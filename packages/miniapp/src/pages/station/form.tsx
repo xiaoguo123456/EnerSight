@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text, Input, Picker, Map, Switch, Textarea } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -123,6 +124,7 @@ function toRule(f: Form): CurtailmentRule | null {
 }
 
 export default function StationForm() {
+  useAppShare()
   const { params } = useRouter()
   const id = decodeRouteParam(params.id)
   const editing = !!id

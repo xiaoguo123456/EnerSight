@@ -93,7 +93,10 @@ class TestHomeSolar:
         factors = {a["factor"] for a in idx["attribution"]}
         assert {"radiation", "temperature"} <= factors
 
-    async def test_环比对昨日同期(self, client: AsyncClient, open_meteo):
+    async def test_环比对昨日同期(self, client: AsyncClient, open_meteo, monkeypatch):
+        # 固定在跨日插值最容易影响昨日样本的最后一个 15 分钟时段。
+        now = datetime.now(ZoneInfo(TZ)).replace(hour=23, minute=45, second=0, microsecond=0)
+        monkeypatch.setattr(weather.Forecast, "now", lambda self: now)
         sid = await _create(client, SUZHOU)
         d = (await client.get("/v1/home", params={"station_id": sid})).json()["data"]
         w = d["weather"]

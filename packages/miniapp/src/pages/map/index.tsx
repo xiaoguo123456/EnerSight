@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { Map, View, Text, Input, Image } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -16,7 +17,7 @@ import { useMapViewport } from '@/hooks/useMapViewport'
 import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
 import { useMapStore, useStationStore } from '@/store'
-import { useWeatherModel, weatherModelLabel } from '@/store/weatherModel'
+import { useWeatherModel } from '@/store/weatherModel'
 import './index.scss'
 import { WindParticles } from '@/components/WindParticles'
 
@@ -32,6 +33,7 @@ const PLACE_ICON: Record<GeoPlace['type'], 'mapPin' | 'navigation' | 'sun' | 'la
 }
 
 export default function MapPage() {
+  useAppShare()
   const model = useWeatherModel(s => s.model)
   const activeLayer = useMapStore((s) => s.activeLayer)
   const saveLayer = useMapStore((s) => s.setActiveLayer)
@@ -198,7 +200,7 @@ export default function MapPage() {
         </View>}
 
         {!layerPanelOpen && overlay.samples.map((p, i) => <View key={i} className="map-page__sample" style={{ left: p.left, top: p.top, transform: parseFloat(p.left) > 75 ? 'translate(-100%, -50%)' : 'translate(-50%, -50%)' }}><Text>{p.text}</Text></View>)}
-        {overlay.wind && !layerPanelOpen && <WindParticles layoutVersion={sheetHeight} vectors={overlay.wind.vectors} region={overlay.wind.region} />}
+        {pageVisible && overlay.wind && !layerPanelOpen && <WindParticles layoutVersion={sheetHeight} vectors={overlay.wind.vectors} region={overlay.wind.region} />}
 
         {/* 搜索框浮在地图顶部，拉满宽度；结果合并了城市、坐标、站点与公开电站 */}
         <View className="map-page__search">
@@ -255,7 +257,6 @@ export default function MapPage() {
           </View>
         )}
 
-        {!dataLayer && <Text className="map-page__coverage">地图按视野展示，放大可查看更多电站</Text>}
         <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
         {dataLayer && <View className="map-page__data-state" onClick={() => {
           if (overlay.error) { overlay.refresh(); return }
@@ -269,7 +270,7 @@ export default function MapPage() {
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
             <MapLegend
               spec={{
-                title: `${overlay.legend.title} · ${layer === 'cloud' && overlay.legend.title !== '云量预报' ? '卫星观测' : overlay.modelName || weatherModelLabel(model)}`,
+                title: overlay.legend.title,
                 colors: overlay.legend.colors,
                 stops: overlay.legend.stops ?? undefined,
                 labels: overlay.legend.labels ? [overlay.legend.labels[0]!, overlay.legend.labels[1]!] : undefined,

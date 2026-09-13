@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text, Button } from '@tarojs/components'
 import Taro, { useRouter, usePullDownRefresh } from '@tarojs/taro'
 import { useEffect } from 'react'
@@ -30,6 +31,7 @@ function constraintSummary(rule: NonNullable<StationDetailResponse['station']['c
 }
 
 export default function StationDetail() {
+  useAppShare()
   const { params } = useRouter()
   const routeId = decodeRouteParam(params.id)
   // 没带 id（含开发期直接作为启动页）时退回默认站点，与首页一致

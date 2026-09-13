@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import Taro, { usePullDownRefresh } from '@tarojs/taro'
@@ -20,6 +21,7 @@ type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
  * 当前预警 + 外推数据编成一组放最上面，云图退到第二组，记录最后。
  */
 export default function AlertCenter() {
+  useAppShare()
   const currentId = useStationStore((s) => s.currentId)
   const [filter, setFilter] = useState<Filter>('all')
   const [now, setNow] = useState(Date.now())

@@ -30,6 +30,7 @@ export default {
   // 按文件拷进产物，代码里用 /assets/markers/xxx.png 绝对路径引用
   copy: {
     patterns: [
+      { from: 'src/assets/share/', to: `dist/${process.env.TARO_ENV}/assets/share/` },
       { from: 'src/assets/markers/', to: `dist/${process.env.TARO_ENV}/assets/markers/` },
     ],
     options: {},

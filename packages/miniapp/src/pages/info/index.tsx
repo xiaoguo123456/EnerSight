@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { PageHeader } from '@/components'
@@ -36,6 +37,7 @@ const CONTENT: Record<string, { title: string; sections: [string, string][] }> =
 }
 
 export default function Info() {
+  useAppShare()
   const { params } = useRouter()
   const data = CONTENT[params.kind ?? 'about'] ?? CONTENT.about!
   const sources = [
