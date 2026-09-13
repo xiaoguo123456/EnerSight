@@ -12,7 +12,6 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.models import CatalogPlant, Station
 from app.schemas.common import Coord, EnergyIndex, IndexLevel, MetricWithDelta
 from app.schemas.home import (
@@ -91,14 +90,18 @@ def build_current_weather(fc: weather.Forecast) -> CurrentWeather | None:
 def build_trend(
     fc: weather.Forecast, metric: TrendMetric, range_: TrendRange = TrendRange.H24
 ) -> TrendSeries:
-    """24h 逐小时 25 点；7d 逐 3 小时 56 点（粒度待产品确认，docs/06 §十五）。"""
+    """按输入步长返回趋势；15 分钟预报的 24h 为 97 点、7d 为 672 点。"""
     col, unit, y_max = _TREND_SPEC[metric]
-    if range_ == TrendRange.D7:
-        df = fc.next_days(7, settings.trend_7d_step_hours)
-    else:
-        df = fc.today_with_midnight()
+    df = fc.next_days(7) if range_ == TrendRange.D7 else fc.today_with_midnight()
     points = [TrendPoint(time=ts.isoformat(), value=_num(v)) for ts, v in df[col].items()]
-    return TrendSeries(metric=metric, unit=unit, range=range_, y_max=y_max, points=points)
+    return TrendSeries(
+        metric=metric,
+        unit=unit,
+        range=range_,
+        y_max=y_max,
+        points=points,
+        resolution_minutes=fc.step_minutes,
+    )
 
 
 def build_index(snap: energy.EnergySnapshot, station_type: str) -> EnergyIndex:
@@ -214,6 +217,7 @@ async def build_home(
         v.forecast,
         v.snapshot.hourly_kw,
         station,
+        step_minutes=v.snapshot.step_minutes,
         grid_kw=v.snapshot.grid_hourly_kw,
         curtailment_note=v.snapshot.curtailment_note,
         notes=v.snapshot.notes,

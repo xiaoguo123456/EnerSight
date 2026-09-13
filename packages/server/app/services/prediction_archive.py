@@ -2,6 +2,9 @@
 
 import hashlib
 import json
+import os
+import tempfile
+from contextlib import suppress
 from datetime import UTC, datetime
 
 from app.render import tiles
@@ -28,10 +31,8 @@ def save(station, forecast, result):
         "capacity_kw": station.capacity_kw,
         "capacity_basis": getattr(station, "_pv_capacity", None),
         "prediction": result.model_dump(),
-        "weather_input": json.loads(forecast.hourly.to_json(orient="split", date_format="iso")),
-        "quarter_input": json.loads(forecast.quarter.to_json(orient="split", date_format="iso"))
-        if forecast.quarter is not None
-        else None,
+        "weather_input": json.loads(forecast.data.to_json(orient="split", date_format="iso")),
+        "weather_resolution_minutes": forecast.step_minutes,
     }
     key = hashlib.sha256(f"{station.id}:{result.model}".encode()).hexdigest()[:24]
     folder = tiles.tile_dir().parent / "prediction-archive" / datetime.now(UTC).strftime("%Y-%m-%d")
@@ -74,10 +75,8 @@ def save_outlook(station, forecast, outlook):
         "calculation_parameters": calculation_parameters(),
         "elevation": forecast.elevation,
         "prediction": outlook.model_dump(),
-        "weather_input": json.loads(forecast.hourly.to_json(orient="split", date_format="iso")),
-        "quarter_input": json.loads(forecast.quarter.to_json(orient="split", date_format="iso"))
-        if forecast.quarter is not None
-        else None,
+        "weather_input": json.loads(forecast.data.to_json(orient="split", date_format="iso")),
+        "weather_resolution_minutes": forecast.step_minutes,
     }
     try:
         with (folder / f"{digest}.json").open("x") as f:
@@ -113,13 +112,42 @@ def save_fleet_inputs(snapshot, plants, cells, fetched, coverage) -> str:
         "weather_cells": cells,
         "fetched_at_by_cell": fetched,
     }
-    serialized = json.dumps(content, ensure_ascii=False, sort_keys=True, allow_nan=False)
-    digest = hashlib.sha256(serialized.encode()).hexdigest()[:24]
+    # 网格逐个写入并同步算指纹，避免把完整 15 分钟天气复制成巨大的 JSON 字符串。
     folder = tiles.tile_dir().parent / "prediction-fleet-inputs" / snapshot.date
     folder.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, allow_nan=False)
+    fd, temporary = tempfile.mkstemp(prefix=".input-", suffix=".tmp", dir=folder)
     try:
-        with (folder / f"{digest}.json").open("x") as f:
-            f.write(serialized)
-    except FileExistsError:
-        pass
-    return f"{snapshot.date}/{digest}"
+        with os.fdopen(fd, "w") as f:
+
+            def emit(value):
+                digest.update(value.encode())
+                f.write(value)
+
+            emit("{")
+            for i, key in enumerate(sorted(content)):
+                if i:
+                    emit(",")
+                emit(json.dumps(key) + ":")
+                if key == "weather_cells":
+                    emit("{")
+                    for j, cell_key in enumerate(sorted(cells)):
+                        if j:
+                            emit(",")
+                        emit(json.dumps(cell_key) + ":")
+                        for chunk in encoder.iterencode(cells[cell_key]):
+                            emit(chunk)
+                    emit("}")
+                else:
+                    for chunk in encoder.iterencode(content[key]):
+                        emit(chunk)
+            emit("}")
+        identity = digest.hexdigest()[:24]
+        path = folder / f"{identity}.json"
+        # 硬链接独占发布，已有同指纹输入不覆盖；临时文件始终清理。
+        with suppress(FileExistsError):
+            os.link(temporary, path)
+        return f"{snapshot.date}/{identity}"
+    finally:
+        os.unlink(temporary)

@@ -50,9 +50,15 @@ def _current_hour_index(times: list[str], layer: str = "") -> int:
     网格包含次日数据；日末读取次日首格，缺测不以相邻时刻替代。
     """
     now = datetime.now(UTC)
-    label = now.replace(minute=0, second=0, microsecond=0)
+    step = (
+        (datetime.fromisoformat(times[1]) - datetime.fromisoformat(times[0]))
+        if len(times) > 1
+        else timedelta(minutes=15)
+    )
+    minutes = max(1, int(step.total_seconds() / 60))
+    label = now.replace(minute=now.minute // minutes * minutes, second=0, microsecond=0)
     if layer in _INTERVAL_MEAN_LAYERS and now > label:
-        label += timedelta(hours=1)
+        label += step
     try:
         return times.index(label.strftime("%Y-%m-%dT%H:%M"))
     except ValueError as exc:
@@ -68,7 +74,7 @@ async def _ensure_tile(
     data = await g.fetch_block(http, block)
     hi = _current_hour_index(data.times, layer)
     time_key = data.times[hi].replace(":", "")
-    path = tiles.tile_path(layer, f"{current_model.get()}_{block.key}", time_key)
+    path = tiles.tile_path(layer, f"{current_model.get()}_15m_{block.key}", time_key)
     if not path.exists():
         loop = asyncio.get_running_loop()
         png = await loop.run_in_executor(None, tiles.render_png, data, layer, hi)

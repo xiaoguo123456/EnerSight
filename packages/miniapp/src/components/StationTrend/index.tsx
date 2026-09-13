@@ -7,7 +7,7 @@ import { ErrorState, SectionHeader, SegmentedTabs, Skeleton, TrendChart, fromTre
 const OPTIONS = [{ value: 'radiation', label: '辐射' }, { value: 'wind_speed', label: '10米风速' }, { value: 'cloud_cover', label: '云量' }]
 const INFO = {
   title: '24 小时气象趋势',
-  content: '时间轴为电站当地时间，00:00 到次日 00:00 逐小时。风速为离地 10 米预报风速；发电预测优先采用各高度层风速换算到风机轮毂高度，仅有 10 米风速时外推估算，不能直接用本图风速判断是否发电。辐射为前一小时平均值，标在区间末。',
+  content: '时间轴为电站当地时间，00:00 到次日 00:00，每 15 分钟一点。风速为离地 10 米预报风速；发电预测优先采用各高度层风速换算到风机轮毂高度，仅有 10 米风速时外推估算，不能直接用本图风速判断是否发电。辐射为前 15 分钟平均值，标在区间末。',
 }
 /** 父级以站点 ID 为 key；每次指标变化独立请求，旧结果不能充当新指标。 */
 export function StationTrend({ stationId, type, initial, version = 0 }: { stationId: string; type: string; initial: TrendSeries | null; version?: number }) {

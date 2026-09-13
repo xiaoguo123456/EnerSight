@@ -73,7 +73,8 @@ def day_key() -> str:
 
 def write(path: Path, data: dict) -> None:
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, allow_nan=False))
+    with tmp.open("w") as f:
+        json.dump(data, f, ensure_ascii=False, allow_nan=False)
     tmp.replace(path)
 
 
@@ -97,10 +98,11 @@ def blank(model: str, day: str) -> FleetPrediction:
         energy_kwh=None,
         power_kw=[],
         status="queued",
+        resolution_minutes=15,
         assumptions=[
             f"区域近似：光伏 {settings.fleet_grid_step_solar:g}°、"
             f"风电 {settings.fleet_grid_step_wind:g}°气象网格，按场站容量与能源类型估算",
-            f"未来 {days_count()} 天按逐小时计算；第 5–7 天参考为主",
+            f"未来 {days_count()} 天按 15 分钟计算；第 5–7 天参考为主",
             f"已区分分期交直流容量，容配比假设 {settings.pv_dc_ac_ratio:g}、"
             f"系统损耗 {settings.pv_losses:.0%}（含逆变器）并按交流容量限幅；"
             "未知容量类型不计入预测",
@@ -172,7 +174,7 @@ def coord_key(lat: float, lon: float) -> str:
 def calculate_cell(plants, raw, model, day, lat: float, lon: float):
     """一个网格内全部场站的未来 N 天单位容量曲线。返回 [(plant, [day0, day1, …])]，
     某天不可算时该位为 None；今日不可算的场站不计入覆盖。"""
-    fc = weather.parse_forecast(raw, model=model)
+    fc = weather.parse_forecast(raw, model=model, require_quarter=True)
     if fc.current_hour().date().isoformat() != day:
         raise ValueError("统计日期已变化")
     curves: dict[tuple, list[np.ndarray | None]] = {}
@@ -239,7 +241,7 @@ async def build(http, model: str, day: str, plants) -> None:
     keys = sorted(groups, key=lambda k: sum(p.capacity_kw for p in groups[k]), reverse=True)
     n_days = days_count()
     dates = [(date.fromisoformat(day) + timedelta(days=k)).isoformat() for k in range(n_days)]
-    total = np.zeros((n_days, 24))
+    total = np.zeros((n_days, 96))
     solar_kwh = np.zeros(n_days)
     wind_kwh = np.zeros(n_days)
     covered_days = np.zeros(n_days, dtype=int)
@@ -253,14 +255,19 @@ async def build(http, model: str, day: str, plants) -> None:
     stamp = weather.batch_stamp(meta)
     out.batch_stamp = stamp
     out.basis = weather.Forecast(tz=TZ, hourly=pd.DataFrame(), model=model, meta=meta).basis()
-    cache_path = directory() / f"{model}-{day}-weather.json"
+    cache_path = directory() / f"{model}-{day}-weather-15m.json"
     saved = load(cache_path) or {}
     if (
-        saved.get("batch_stamp") != stamp
+        saved.get("resolution_minutes") != 15
+        or saved.get("batch_stamp") != stamp
         or saved.get("saved_at", 0) < datetime.now(UTC).timestamp() - 43200
     ):
         saved = {}
-    raw_cache = saved.get("cells", {})
+    from app.services.weather_cells import WeatherCells
+
+    raw_cache = WeatherCells(
+        directory().parent.parent / "fleet-weather-cells" / model / day, saved.get("cell_files")
+    )
     fetched = saved.get("fetched", {})
     saved_at = saved.get("saved_at", datetime.now(UTC).timestamp())
     stop = False
@@ -276,14 +283,14 @@ async def build(http, model: str, day: str, plants) -> None:
         if not covered_days[k]:
             return []
         return [
-            PowerPoint(time=f"{dates[k]}T{h:02d}:00:00+08:00", value=float(v))
+            PowerPoint(time=f"{dates[k]}T{h // 4:02d}:{h % 4 * 15:02d}:00+08:00", value=float(v))
             for h, v in enumerate(total[k])
         ]
 
     def publish():
         out.generated_at = datetime.now(UTC).isoformat()
         # 顶层字段始终是今日，与历史留档兼容；未来各天在 days 里。docs/17 §二
-        out.energy_kwh = float(total[0].sum()) if out.covered_count else None
+        out.energy_kwh = float(total[0].sum()) * 0.25 if out.covered_count else None
         out.solar_kwh = float(solar_kwh[0])
         out.wind_kwh = float(wind_kwh[0])
         out.power_kw = points(0)
@@ -292,10 +299,11 @@ async def build(http, model: str, day: str, plants) -> None:
             out.basis.fetched_at = min(fetched.values())
         out.days = [
             FleetDay(
+                resolution_minutes=15,
                 date=dates[k],
                 weekday=date.fromisoformat(dates[k]).isoweekday(),
                 lead_days=k,
-                energy_kwh=float(total[k].sum()) if covered_days[k] else None,
+                energy_kwh=float(total[k].sum()) * 0.25 if covered_days[k] else None,
                 solar_kwh=float(solar_kwh[k]),
                 wind_kwh=float(wind_kwh[k]),
                 power_kw=points(k),
@@ -344,7 +352,7 @@ async def build(http, model: str, day: str, plants) -> None:
                         "latitude": ",".join(str(a) for a, _ in missing),
                         "longitude": ",".join(str(b) for _, b in missing),
                         "models": model,
-                        "hourly": ",".join(FIELDS),
+                        "minutely_15": ",".join(FIELDS),
                         "timezone": TZ,
                         "forecast_days": n_days + 1,
                         "wind_speed_unit": "ms",
@@ -377,7 +385,8 @@ async def build(http, model: str, day: str, plants) -> None:
                         {
                             "saved_at": saved_at,
                             "batch_stamp": stamp,
-                            "cells": raw_cache,
+                            "resolution_minutes": 15,
+                            "cell_files": raw_cache.references,
                             "fetched": fetched,
                         },
                     )
@@ -407,14 +416,14 @@ async def build(http, model: str, day: str, plants) -> None:
                 if all(c is not None for c in per_day):
                     out.common_covered_count += 1
                     out.common_capacity_kw += p.capacity_kw
-                    common_total += np.array([c.sum() for c in per_day])
+                    common_total += np.array([c.sum() * 0.25 for c in per_day])
                 for k, curve in enumerate(per_day):
                     if curve is None:
                         continue
                     total[k] += curve
                     covered_days[k] += 1
                     covered_capacity[k] += p.capacity_kw
-                    energy = float(curve.sum())
+                    energy = float(curve.sum()) * 0.25
                     if p.type == "solar":
                         solar_kwh[k] += energy
                     else:

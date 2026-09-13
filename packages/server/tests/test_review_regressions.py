@@ -191,7 +191,7 @@ async def test_每天独立覆盖且共同样本只包含七天完整站(tmp_pat
 
     def curves(plants, *_args):
         return [
-            (p, [np.full(24, 1.0) if p.id == "a" or k > 0 else None for k in range(7)])
+            (p, [np.full(96, 1.0) if p.id == "a" or k > 0 else None for k in range(7)])
             for p in plants
         ]
 
@@ -214,10 +214,10 @@ async def test_每天独立覆盖且共同样本只包含七天完整站(tmp_pat
 def test_单格今日缺测仍计算未来日():
     raw = forecast()
     day = fleet.day_key()
-    for i, t in enumerate(raw["hourly"]["time"]):
+    for i, t in enumerate(raw["minutely_15"]["time"]):
         if t.startswith(day):
             for col in ("wind_speed_10m", "wind_speed_80m", "wind_speed_100m", "wind_speed_120m"):
-                raw["hourly"][col][i] = None
+                raw["minutely_15"][col][i] = None
     result = fleet.calculate_cell([plant("a")], raw, "gfs_global", day, 31.3, 120.6)
     assert len(result) == 1
     assert result[0][1][0] is None and result[0][1][1] is not None
@@ -278,7 +278,8 @@ def test_七天留档保存设备与高频输入且不覆盖(tmp_path):
     assert len(files) == 1
     content = json.loads(files[0].read_text())
     assert len(content["prediction"]["days"]) == 7
-    assert content["quarter_input"] is not None
+    assert content["weather_resolution_minutes"] == 15
+    assert len(content["weather_input"]["index"]) == len(fc.data)
     assert content["calculation_parameters"]["pv_losses"] == settings.pv_losses
     assert content["station_parameters"]["hub_height"] == 100
     st.hub_height = 120

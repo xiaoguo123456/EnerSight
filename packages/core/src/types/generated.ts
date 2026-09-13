@@ -724,7 +724,7 @@ export interface components {
             lead_days: number;
             /**
              * Resolution Minutes
-             * @description 15：96 点，对应两个细则短期口径；60：24 点
+             * @description 当前点预报统一 15 分钟；历史小时资料保留 60 分钟
              */
             resolution_minutes: number;
         };
@@ -847,6 +847,12 @@ export interface components {
         };
         /** FleetDay */
         FleetDay: {
+            /**
+             * Resolution Minutes
+             * @description 曲线间隔分钟数，兼容旧留档
+             * @default 60
+             */
+            resolution_minutes: number;
             /** Date */
             date: string;
             /** Weekday */
@@ -1637,6 +1643,12 @@ export interface components {
         TrendRange: "24h" | "7d";
         /** TrendSeries */
         TrendSeries: {
+            /**
+             * Resolution Minutes
+             * @description 点间隔分钟数
+             * @default 60
+             */
+            resolution_minutes: number;
             metric: components["schemas"]["TrendMetric"];
             /** Unit */
             unit: string;

@@ -16,8 +16,7 @@ from app.services.weather_text import describe
 from app.weather_model import current_model
 
 OUTLOOK_NOTES = [
-    "当日与随后 3 天按 15 分钟 96 点，对应两个细则的短期（日前）口径；"
-    "第 5–7 天按 1 小时，中期参考为主",
+    "七天点预报统一按 15 分钟计算，每个自然日 96 点",
     "15 分钟序列由上游按晴空指数从逐小时插值，不含新的气象信息；"
     "超短期滚动修正需实测与卫星，尚未提供",
     "起报时间以首日为准，后段可能由更早或更粗的批次补齐",
@@ -44,7 +43,7 @@ def assumptions(
         ),
         *notes,
         f"计算版本 {version}",
-        "逐时曲线标注区间起点；风电按整点样本代表该小时作积分近似"
+        "曲线标注区间起点；风电按对应时刻样本代表该区间作积分近似"
         if version == "model-v4"
         else "旧版逐时标签口径",
     ]
@@ -122,7 +121,7 @@ def compute(
     model: str | None = None,
     *,
     day_offset: int = 0,
-    step_minutes: int = 60,
+    step_minutes: int | None = None,
 ) -> GenerationPrediction:
     """不算指数的轻量路径：全目录汇总与明日留档用。"""
     prep = energy.prepare(station, fc, day_offset=day_offset, step_minutes=step_minutes)
@@ -145,10 +144,10 @@ def compute(
 
 def _daytime_weather(fc: Forecast, day: pd.Timestamp) -> str | None:
     """日间（06–18 整点瞬时值）众数天气。"""
-    if "weather_code" not in fc.hourly:
+    if "weather_code" not in fc.data:
         return None
     start = day.tz_localize(fc.tz) + pd.Timedelta(hours=6)
-    seg = fc.hourly.loc[start : start + pd.Timedelta(hours=12)]["weather_code"].dropna()
+    seg = fc.data.loc[start : start + pd.Timedelta(hours=12)]["weather_code"].dropna()
     if seg.empty:
         return None
     return describe(int(seg.mode().iloc[0]))
@@ -159,9 +158,8 @@ def compute_days(
 ) -> StationOutlook:
     """未来 days 天，每天走 energy.compute 同一条链路，指数与电量一起给。docs/17 §二"""
     out: list[DailyOutlook] = []
-    fine = settings.outlook_fine_step_minutes if fc.quarter is not None else 60
     for k in range(days):
-        step = fine if k < settings.outlook_fine_days else 60
+        step = fc.step_minutes
         snap = energy.compute(station, fc, day_offset=k, step_minutes=step)
         pred = from_hourly(
             fc,

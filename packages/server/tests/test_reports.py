@@ -265,7 +265,7 @@ class TestReportInput:
 
         fc = _fc()
         for col in ("weather_code", "shortwave_radiation", "cloud_cover"):
-            fc.hourly[col] = float("nan")
+            fc.data[col] = float("nan")
         inp = build_input(_station_model(), fc, _index(), 1000.0, None)
         assert [p["weather"] for p in inp.periods] == ["—"] * 3
         assert all(p["avg_radiation"] is None and p["avg_cloud"] is None for p in inp.periods)
@@ -277,7 +277,7 @@ class TestReportInput:
 
         fc = _fc()
         for col in ("weather_code", "shortwave_radiation", "cloud_cover"):
-            fc.hourly[col] = float("nan")
+            fc.data[col] = float("nan")
         report = render(build_input(_station_model(), fc, _index(), 1000.0, None))
         assert len(report.periods) == 3
 
@@ -291,14 +291,14 @@ class TestReportInput:
         fc = _fc()
         inp = build_input(_station_model(), fc, _index(), 1000.0, None)
         day = fc.current_hour().normalize()
-        rad = fc.hourly["shortwave_radiation"]
+        rad = fc.data["shortwave_radiation"]
 
         def mean(h0, h1):
             return float(
                 rad.loc[day + pd.Timedelta(hours=h0) : day + pd.Timedelta(hours=h1)].mean()
             )
 
-        assert inp.periods[0]["avg_radiation"] == pytest.approx(mean(7, 12))
+        assert inp.periods[0]["avg_radiation"] == pytest.approx(mean(6.25, 12))
         assert inp.periods[0]["avg_radiation"] != pytest.approx(mean(6, 11))
 
     def test_云量仍按瞬时整点(self):
@@ -312,11 +312,11 @@ class TestReportInput:
             .current_hour()
             .normalize()
         )
-        fc.hourly["cloud_cover"] = range(len(fc.hourly))
+        fc.data["cloud_cover"] = range(len(fc.data))
         inp = build_input(_station_model(), fc, _index(), 1000.0, None)
         expect = float(
-            fc.hourly["cloud_cover"]
-            .loc[day + pd.Timedelta(hours=6) : day + pd.Timedelta(hours=11)]
+            fc.data["cloud_cover"]
+            .loc[day + pd.Timedelta(hours=6) : day + pd.Timedelta(hours=11, minutes=45)]
             .mean()
         )
         assert inp.periods[0]["avg_cloud"] == pytest.approx(expect)

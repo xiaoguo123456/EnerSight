@@ -52,10 +52,10 @@ def plant(id, lat=31.3, capacity=1000, kind="wind", name=None):
 def test_日总量等于逐时功率积分():
     result = prediction.compute(station(), weather.parse_forecast(forecast()), "gfs_global")
     assert result.model == "gfs_global"
-    assert len(result.power_kw) == 24
+    assert len(result.power_kw) == 96
     # 15 m/s 在 100 m 已超额定：满发 × 24 h × (1 − 场站损耗)
     assert result.energy_kwh == pytest.approx(24000 * (1 - settings.wind_losses))
-    assert sum(p.value for p in result.power_kw) == pytest.approx(result.energy_kwh)
+    assert sum(p.value for p in result.power_kw) * 0.25 == pytest.approx(result.energy_kwh)
 
 
 def test_缺测不当零且负容量不计算():
@@ -64,7 +64,7 @@ def test_缺测不当零且负容量不计算():
     today = slice(day, day + pd.Timedelta(hours=23))
     # 全天各层风速都缺：不可算，给 null 而不是 0
     for col in ("wind_speed_10m", "wind_speed_80m", "wind_speed_100m", "wind_speed_120m"):
-        fc.hourly.loc[today, col] = np.nan
+        fc.data.loc[today, col] = np.nan
     out = prediction.compute(station(), fc)
     assert out.energy_kwh is None
     assert all(p.value is None for p in out.power_kw)
@@ -76,7 +76,7 @@ def test_缺测不当零且负容量不计算():
 def test_单小时缺测按前后插值而非归零():
     fc = weather.parse_forecast(forecast())
     for col in ("wind_speed_10m", "wind_speed_80m", "wind_speed_100m", "wind_speed_120m"):
-        fc.hourly.loc[fc.current_hour(), col] = np.nan
+        fc.data.loc[fc.current_hour(), col] = np.nan
     full = prediction.compute(station(), weather.parse_forecast(forecast()))
     out = prediction.compute(station(), fc)
     assert out.energy_kwh == pytest.approx(full.energy_kwh)
@@ -85,7 +85,7 @@ def test_单小时缺测按前后插值而非归零():
 def test_只有10m风速时按幂律降级():
     fc = weather.parse_forecast(forecast())
     for col in ("wind_speed_80m", "wind_speed_100m", "wind_speed_120m"):
-        fc.hourly[col] = np.nan
+        fc.data[col] = np.nan
     out = prediction.compute(station(), fc)
     assert out.energy_kwh == pytest.approx(24000 * (1 - settings.wind_losses))
 
@@ -94,7 +94,9 @@ def test_光伏夜间零值与缺测不同():
     result = prediction.compute(station("solar"), weather.parse_forecast(forecast()))
     assert result.energy_kwh > 0
     assert result.power_kw[0].value == 0
-    assert result.energy_kwh == pytest.approx(sum(p.value for p in result.power_kw), abs=0.03)
+    assert result.energy_kwh == pytest.approx(
+        sum(p.value for p in result.power_kw) * 0.25, abs=0.03
+    )
 
 
 def batched(raw: dict):
@@ -133,7 +135,7 @@ async def test_汇总去重覆盖与贡献相加(tmp_path, monkeypatch):
     assert out["covered_count"] == 2 and out["total_count"] == 3
     assert out["covered_capacity_kw"] == 3000 and out["total_capacity_kw"] == 3500
     assert out["energy_kwh"] == pytest.approx(out["solar_kwh"] + out["wind_kwh"])
-    assert out["energy_kwh"] == pytest.approx(sum(p["value"] for p in out["power_kw"]))
+    assert out["energy_kwh"] == pytest.approx(sum(p["value"] for p in out["power_kw"]) * 0.25)
     assert route.call_count == 1
     assert route.calls[0].request.url.params["models"] == "gfs_global"
 

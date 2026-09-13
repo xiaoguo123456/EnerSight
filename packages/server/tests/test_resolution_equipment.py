@@ -56,15 +56,17 @@ def _station(kind="wind", **extra) -> Station:
 # ────────────────────────────── 15 分钟 ──────────────────────────────
 
 
-def test_当日与短期三天按15分钟96点_其余24点():
+def test_七天均为15分钟96点():
     fc = weather.parse_forecast(_forecast(wind_today=8))
-    assert fc.quarter is not None and len(fc.quarter) == 8 * 96
+    assert fc.quarter is not None and len(fc.quarter) == 9 * 96
     out = prediction.compute_days(_station(), fc, 7)
-    assert [d.resolution_minutes for d in out.days] == [15, 15, 15, 15, 60, 60, 60]
-    assert [len(d.power_kw) for d in out.days] == [96, 96, 96, 96, 24, 24, 24]
+    assert [d.resolution_minutes for d in out.days] == [15] * 7
+    assert [len(d.power_kw) for d in out.days] == [96] * 7
     # 恒定风速：15 分钟积分与逐小时积分相同
     # 风速恒定、气温日变化让密度略变：15 分钟积分与逐小时积分只差插值误差
-    hourly = prediction.compute(_station(), fc, day_offset=1).energy_kwh
+    hourly = prediction.compute(
+        _station(), weather.parse_forecast(_forecast(wind_today=8, minutely=False)), day_offset=1
+    ).energy_kwh
     assert out.days[1].energy_kwh == pytest.approx(hourly, rel=1e-3)
     again = prediction.compute_days(_station(), fc, 2).days[1].index_score
     assert out.days[1].index_score == pytest.approx(again)
@@ -73,7 +75,9 @@ def test_当日与短期三天按15分钟96点_其余24点():
 def test_光伏15分钟曲线与逐小时电量接近_标签从00点15起():
     fc = weather.parse_forecast(_forecast())
     fine = prediction.compute(_station("solar"), fc, day_offset=1, step_minutes=15)
-    coarse = prediction.compute(_station("solar"), fc, day_offset=1)
+    coarse = prediction.compute(
+        _station("solar"), weather.parse_forecast(_forecast(minutely=False)), day_offset=1
+    )
     assert fine.resolution_minutes == 15 and len(fine.power_kw) == 96
     assert fine.energy_kwh == pytest.approx(coarse.energy_kwh, rel=0.08)
     # 响应统一为区间起点标注：首点 00:00，末点 23:45
@@ -82,7 +86,7 @@ def test_光伏15分钟曲线与逐小时电量接近_标签从00点15起():
     assert fine.energy_kwh == pytest.approx(sum(p.value for p in fine.power_kw) / 4, abs=0.05)
 
 
-def test_没有15分钟序列时退回逐小时():
+def test_历史小时资料保持真实分辨率():
     fc = weather.parse_forecast(_forecast(minutely=False))
     out = prediction.compute_days(_station(), fc, 7)
     assert all(d.resolution_minutes == 60 and len(d.power_kw) == 24 for d in out.days)
@@ -214,5 +218,5 @@ class TestEquipmentApi:
         out = (
             await client.get("/v1/predictions/station", params={"station_id": s["id"], "days": 5})
         ).json()["data"]
-        assert [x["resolution_minutes"] for x in out["days"]] == [15, 15, 15, 15, 60]
-        assert len(out["days"][0]["power_kw"]) == 96 and len(out["days"][4]["power_kw"]) == 24
+        assert [x["resolution_minutes"] for x in out["days"]] == [15] * 5
+        assert len(out["days"][0]["power_kw"]) == 96 and len(out["days"][4]["power_kw"]) == 96

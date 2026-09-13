@@ -203,7 +203,7 @@ def test_有规则时给上网口径_无规则一律null():
     assert limited.energy_kwh == pytest.approx(plain.energy_kwh)  # 可发电量不变
     assert limited.grid_energy_kwh == pytest.approx(plain.energy_kwh * 0.75, rel=1e-6)
     assert limited.curtailed_kwh == pytest.approx(plain.energy_kwh * 0.25, rel=1e-4)
-    assert len(limited.grid_power_kw) == 24
+    assert len(limited.grid_power_kw) == 96
     assert "25%" in limited.assumptions[0]
 
 
@@ -219,7 +219,7 @@ def test_未来7天逐日预测_指数不受限电影响():
     assert out.days[0].index_score == out.days[3].index_score
     assert out.days[0].weekday == date.fromisoformat(out.days[0].date).isoweekday()
     assert out.basis is not None and out.basis.issued_at is None  # 无元数据：不猜
-    assert any("中期参考" in a for a in out.assumptions)
+    assert any("七天点预报统一按 15 分钟" in a for a in out.assumptions)
 
 
 async def test_单站7天接口(client: AsyncClient, open_meteo):
@@ -298,7 +298,7 @@ async def test_自动选择复核不一致时退回无法确认(monkeypatch):
     def answer(request: httpx.Request) -> Response:
         delta = bump.get(request.url.params["models"], 0.0)
         hourly = {f: [1.0 + delta, 2.0] for f in model_resolution.CHECK_FIELDS}
-        return Response(200, json={"hourly": hourly})
+        return Response(200, json={"minutely_15": hourly})
 
     try:
         with respx.mock(assert_all_called=False) as mock:
@@ -358,7 +358,7 @@ async def test_全目录未来7天_顶层字段等于首日(tmp_path, monkeypatc
     assert first["date"] == out["date"] and first["energy_kwh"] == pytest.approx(out["energy_kwh"])
     assert first["solar_kwh"] == pytest.approx(out["solar_kwh"])
     assert first["regions"] == out["regions"]
-    assert all(d["energy_kwh"] is not None and len(d["power_kw"]) == 24 for d in out["days"])
+    assert all(d["energy_kwh"] is not None and len(d["power_kw"]) == 96 for d in out["days"])
     assert out["basis"]["resolved_model"] == "ncep_gfs013" and out["basis"]["issued_at"]
     # 按目标日 + 签发日留档，供日后按预报时效评估
     leads = list((tmp_path / "fleet-history" / "leads" / "gfs_global").rglob("*.json"))

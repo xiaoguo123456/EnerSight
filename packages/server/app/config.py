@@ -97,9 +97,6 @@ class Settings(BaseSettings):
     max_stations_per_user: int = 10
     # 单站与全目录预测天数：四个模型的公共上限是 7 天（ICON 全球 7.5 天）。docs/17 §二
     forecast_outlook_days: int = 7
-    # 当日 + 短期 3 天按 15 分钟 96 点（两个细则短期口径），其余按 1 小时。docs/07 §2.7
-    outlook_fine_days: int = 4
-    outlook_fine_step_minutes: int = 15
     ttl_hourly_forecast: int = 3600  # 图层网格块
 
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码
@@ -145,7 +142,6 @@ class Settings(BaseSettings):
     # 限流：每个 token / IP 每分钟请求数，0 关闭。小程序一页最多十几个请求
     rate_limit_per_minute: int = 120
     trust_forwarded_for: bool = False  # 仅在 ALB/反代前置且直连已被安全组挡住时开启
-    trend_7d_step_hours: int = 3  # 7 天趋势采样粒度，逐日还是逐 3 小时待产品确认
     index_excellent: float = 85.0
     index_good: float = 70.0
     index_fair: float = 55.0

@@ -116,16 +116,16 @@ class TestHomeSolar:
             d = (await client.get("/v1/home", params={"station_id": sid})).json()["data"]
         assert d["weather"]["radiation"]["delta_percent"] is None
 
-    async def test_趋势25点固定纵轴(self, client: AsyncClient, open_meteo):
+    async def test_趋势97点固定纵轴(self, client: AsyncClient, open_meteo):
         sid = await _create(client, SUZHOU)
         t = (await client.get("/v1/home", params={"station_id": sid})).json()["data"]["trends"]
         assert t["metric"] == "radiation" and t["unit"] == "W/m²" and t["y_max"] == 1000.0
-        assert len(t["points"]) == 25
+        assert len(t["points"]) == 97
         assert t["points"][0]["time"].endswith("T00:00:00+08:00")
         assert t["points"][-1]["time"].endswith("T00:00:00+08:00")
         # 夜间 0，正午最高
         vals = [p["value"] for p in t["points"]]
-        assert vals[0] == 0.0 and max(vals) == vals[12]
+        assert vals[0] == 0.0 and max(vals) == 800.0
 
     async def test_天气文案转换(self, client: AsyncClient, open_meteo):
         sid = await _create(client, SUZHOU)
@@ -163,17 +163,17 @@ class TestCache:
         await client.get("/v1/trends", params={"station_id": sid, "metric": "cloud_cover"})
         assert open_meteo.call_count == 1
 
-    async def test_7天趋势逐3小时(self, client: AsyncClient, open_meteo):
+    async def test_7天趋势逐15分钟(self, client: AsyncClient, open_meteo):
         sid = await _create(client, SUZHOU)
         r = await client.get(
             "/v1/trends", params={"station_id": sid, "metric": "wind_speed", "range": "7d"}
         )
         t = r.json()["data"]
         assert t["range"] == "7d" and t["unit"] == "m/s" and t["y_max"] is None
-        assert len(t["points"]) == 7 * 8  # 今日 00:00 起 7 天，每 3 小时一点
+        assert len(t["points"]) == 7 * 96  # 今日 00:00 起七天，每 15 分钟一点
         assert t["points"][0]["time"].endswith("T00:00:00+08:00")
-        assert t["points"][1]["time"].endswith("T03:00:00+08:00")
-        assert t["points"][-1]["time"].endswith("T21:00:00+08:00")
+        assert t["points"][1]["time"].endswith("T00:15:00+08:00")
+        assert t["points"][-1]["time"].endswith("T23:45:00+08:00")
 
     async def test_上游故障返回502(self, client: AsyncClient):
         sid = await _create(client, SUZHOU)
@@ -209,7 +209,7 @@ class TestDetailAndMap:
         assert d["station"]["id"] == sid
         assert d["index"]["score"] is not None
         assert d["updated_at"].endswith("+08:00")
-        assert len(d["trends"]["points"]) == 25
+        assert len(d["trends"]["points"]) == 97
 
     async def test_地图概览含提示语(self, client: AsyncClient, open_meteo):
         sid = await _create(client, SUZHOU)
@@ -268,9 +268,9 @@ class TestHomeMissingData:
     def _raw(self, missing: list[str], hours: slice) -> dict:
         raw = make_forecast(start_date=_yesterday_midnight())
         for k in missing:
-            col = raw["hourly"][k]
-            for i in range(*hours.indices(len(col))):
-                col[i] = None
+            col = raw["minutely_15"][k]
+            for i in range(*hours.indices(len(raw["hourly"][k]))):
+                col[i * 4 : i * 4 + 4] = [None] * 4
         return raw
 
     async def test_今日辐射整段缺失时指数与发电为null(self, client: AsyncClient):

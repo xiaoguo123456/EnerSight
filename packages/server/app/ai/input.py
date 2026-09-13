@@ -118,9 +118,15 @@ def build_input(
     periods = []
     for key, label, h0, h1 in PERIODS:
         # 瞬时量（weather_code、云量）标注时刻即观测时刻：[h0, h1) 取整点 h0 … h1-1
-        inst = fc.hourly.loc[day + pd.Timedelta(hours=h0) : day + pd.Timedelta(hours=h1 - 1)]
+        inst = fc.data.loc[
+            day + pd.Timedelta(hours=h0) : day
+            + pd.Timedelta(hours=h1)
+            - pd.Timedelta(minutes=fc.step_minutes)
+        ]
         # 区间均值量（辐射）标在区间末：同一段墙钟时间对应标签 h0+1 … h1
-        mean_seg = fc.hourly.loc[day + pd.Timedelta(hours=h0 + 1) : day + pd.Timedelta(hours=h1)]
+        mean_seg = fc.data.loc[
+            day + pd.Timedelta(hours=h0, minutes=fc.step_minutes) : day + pd.Timedelta(hours=h1)
+        ]
         code = _mode(inst["weather_code"]) if "weather_code" in inst else None
         periods.append(
             {

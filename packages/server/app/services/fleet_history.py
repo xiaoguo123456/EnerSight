@@ -129,7 +129,7 @@ def checkpoint(now=None):
     source = tiles.tile_dir().parent / "fleet-predictions"
     candidates = []
     for path in source.rglob("*.json"):
-        if path.name.endswith("-weather.json"):
+        if path.name.endswith(("-weather.json", "-weather-15m.json")):
             continue
         value = read(path)
         if value and value.get("model") in MODELS:

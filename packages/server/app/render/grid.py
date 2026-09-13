@@ -96,7 +96,7 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
 
         path = (
             tiles.tile_dir().parent
-            / "grid-cache-v4"
+            / "grid-cache-v5-15m"
             / f"{current_model.get()}_{block.key}_{datetime.now(UTC):%Y%m%d}.npz"
         )
         cached = None
@@ -127,7 +127,7 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
         params = {
             "latitude": ",".join(str(p[0]) for p in pts),
             "longitude": ",".join(str(p[1]) for p in pts),
-            "hourly": ",".join(sorted(set(FIELD.values()) | {"wind_direction_10m"})),
+            "minutely_15": ",".join(sorted(set(FIELD.values()) | {"wind_direction_10m"})),
             "forecast_days": 2,
             "models": current_model.get(),
             "timezone": "UTC",
@@ -157,13 +157,13 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
         if not isinstance(arr, list) or len(arr) != N * N:
             raise UpstreamUnavailable("网格数据不完整")
 
-        times = arr[0]["hourly"]["time"]
+        times = arr[0]["minutely_15"]["time"]
         fields: dict[str, np.ndarray] = {}
         for layer, field in {**FIELD, "wind_direction": "wind_direction_10m"}.items():
             cube = np.full((len(times), N, N), np.nan, dtype=float)
             for idx, item in enumerate(arr):
                 i, j = divmod(idx, N)
-                vals = item["hourly"].get(field) or []
+                vals = item["minutely_15"].get(field) or []
                 cube[: len(vals), i, j] = [v if v is not None else np.nan for v in vals]
             fields[layer] = cube
         path.parent.mkdir(parents=True, exist_ok=True)

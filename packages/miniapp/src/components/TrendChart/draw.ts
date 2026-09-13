@@ -21,11 +21,12 @@ export interface ChartData {
 
 /** 接口的 TrendSeries → 图表输入 */
 export function fromTrendSeries(t: {
-  points: { value: number | null }[]
+  points: { time?: string; value: number | null }[]
   unit: string
   y_max: number | null
+  resolution_minutes?: number
 }): ChartData {
-  return { values: t.points.map((p) => p.value), unit: t.unit, yMax: t.y_max }
+  return { values: t.points.map((p) => p.value), times: t.points.every(p => p.time) ? t.points.map(p => p.time!) : undefined, unit: t.unit, yMax: t.y_max, stepMinutes: t.resolution_minutes ?? 60 }
 }
 
 export interface ChartTheme {

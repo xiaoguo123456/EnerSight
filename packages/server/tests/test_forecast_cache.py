@@ -92,7 +92,8 @@ class TestBatchCache:
                 # 元数据缓存到期也不该触发重拉：起报时刻没变，数据就没变
                 weather._meta_cache.clear()
                 await _get(http)
-        assert upstream.hourly_calls == 1
+        assert upstream.quarter_calls == 1
+        assert upstream.hourly_calls == 0
         assert upstream.meta_calls == 5
 
     async def test_新批次落地立刻刷新(self, upstream: _Upstream):
@@ -101,7 +102,8 @@ class TestBatchCache:
             upstream.issued = BATCH_B
             weather._meta_cache.clear()  # 模拟元数据 TTL 到期，看到新批次
             fc = await _get(http)
-        assert upstream.hourly_calls == 2
+        assert upstream.quarter_calls == 2
+        assert upstream.hourly_calls == 0
         assert fc.meta is not None
         assert fc.meta.issued_at == BATCH_B
 
@@ -123,52 +125,34 @@ class TestBatchCache:
         async with httpx.AsyncClient() as http:
             fc = await _get(http)
             await _get(http)
-        assert upstream.hourly_calls == 1  # 同一时间片内仍然命中
+        assert upstream.quarter_calls == 1
+        assert upstream.hourly_calls == 0  # 同一时间片内仍然命中
         assert fc.basis().issued_at is None  # 不拿拉取时间冒充起报
 
 
-class TestLazyQuarter:
-    async def test_默认不拉15分钟序列(self, upstream: _Upstream):
+class TestUnifiedQuarter:
+    async def test_所有消费者共用一次15分钟请求(self, upstream):
         async with httpx.AsyncClient() as http:
-            fc = await _get(http)
-        assert upstream.quarter_calls == 0
-        assert fc.quarter is None
+            first = await _get(http)
+            second = await _get(http)
+        assert first is second
+        assert first.step_minutes == 15 and not first.data.empty
+        assert upstream.hourly_calls == 0 and upstream.quarter_calls == 1
+        assert upstream.quarter_days == 8
 
-    async def test_fine才拉且与逐小时分开计费(self, upstream: _Upstream):
-        async with httpx.AsyncClient() as http:
-            fc = await _get(http, fine=True)
-        assert upstream.hourly_calls == 1
-        assert upstream.quarter_calls == 1
-        assert fc.quarter is not None
-
-    async def test_fine的结果不污染普通缓存(self, upstream: _Upstream):
-        async with httpx.AsyncClient() as http:
-            await _get(http, fine=True)
-            plain = await _get(http)
-        assert plain.quarter is None  # 后台任务不该因为别人拉过而多带一份
-        assert upstream.hourly_calls == 1
-
-    async def test_15分钟序列同批次内只拉一次(self, upstream: _Upstream):
-        async with httpx.AsyncClient() as http:
-            await _get(http, fine=True)
-            await _get(http, fine=True)
-        assert upstream.quarter_calls == 1
-
-    async def test_15分钟序列天数覆盖到最后一个细粒度日的末标签(self, upstream: _Upstream):
-        """细粒度最后一天的区间末标签落在次日 00:00，天数少一天那一天会整天变 null。"""
+    async def test_15分钟失败不偷偷请求小时数据且下次可重试(self, upstream, monkeypatch):
         from app.config import settings
 
-        async with httpx.AsyncClient() as http:
-            await _get(http, fine=True)
-        assert upstream.quarter_days is not None
-        assert upstream.quarter_days > settings.outlook_fine_days
-
-    async def test_15分钟序列失败时退回逐小时(self, upstream: _Upstream):
+        monkeypatch.setattr(settings, "upstream_backoff_seconds", 0)
         upstream.quarter_status = 500
         async with httpx.AsyncClient() as http:
-            fc = await _get(http, fine=True)
-        assert fc.quarter is None  # 降级，不是抛错
-        assert not fc.hourly.empty  # 主链路不受影响
+            with pytest.raises(UpstreamUnavailable):
+                await _get(http)
+            upstream.quarter_status = 200
+            fc = await _get(http)
+        assert fc.step_minutes == 15
+        assert upstream.hourly_calls == 0
+        assert upstream.quarter_calls == settings.upstream_retries + 1
 
 
 class TestUpstreamErrors:
@@ -256,7 +240,8 @@ class TestFieldBudget:
         from app.providers.open_meteo import HOURLY_FIELDS, MINUTELY_FIELDS
 
         assert len(HOURLY_FIELDS) <= 15
-        assert len(MINUTELY_FIELDS) <= 10
+        assert len(MINUTELY_FIELDS) == 14
+        assert set(MINUTELY_FIELDS) == set(HOURLY_FIELDS)
         assert len(set(HOURLY_FIELDS)) == len(HOURLY_FIELDS)
 
     async def test_出力模型必需字段一个都不少(self):

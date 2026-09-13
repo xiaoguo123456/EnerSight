@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from app.metrics.solar import clearsky_hourly_mean
+from app.metrics.solar import clearsky_hourly_mean, clearsky_interval_mean
 
 TZ = "Asia/Shanghai"
 
@@ -22,7 +22,7 @@ def make_forecast(
     temp_today: float = 28.0,
     code_now: int = 0,
     code_later: int = 2,
-    days: int = 8,
+    days: int = 9,
     elevation: float = 5.0,
     minutely: bool = True,
 ) -> dict:
@@ -117,10 +117,28 @@ def make_forecast(
                     "diffuse_radiation",
                     "direct_normal_irradiance",
                     "surface_pressure",
+                    "cloud_cover",
+                    "apparent_temperature",
+                    "relative_humidity_2m",
+                    "wind_direction_10m",
                 )
             },
             "weather_code": [code[min(n - 1, i // 4)] for i in range(n * 4)],
         }
+        # 15 分钟辐射必须按相同区间的晴空均值合成，不能把小时均值直接线性拉密。
+        qlabels = pd.date_range(start_date, periods=n * 4, freq="15min", tz=TZ)
+        qclear = clearsky_interval_mean(31.3, 120.62, TZ, qlabels, 15)["ghi"]
+        qnorm = qclear / qclear.groupby(qlabels.date).transform("max").clip(lower=1)
+        radiation = [
+            round(float(v) * (peak_yesterday if i < 96 else peak_today), 3)
+            for i, v in enumerate(qnorm)
+        ]
+        for field, factor in (
+            ("shortwave_radiation", 1),
+            ("diffuse_radiation", 0.3),
+            ("direct_normal_irradiance", 0.9),
+        ):
+            out["minutely_15"][field] = [round(v * factor, 3) for v in radiation]
     return out
 
 

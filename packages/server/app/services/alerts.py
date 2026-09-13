@@ -56,12 +56,14 @@ def detect_cloud_drop(fc: Forecast, latitude: float, longitude: float) -> Detect
     # 用整点会拿已经过去的一小时当「当前」，日出后一小时的 kt_now 系统性偏低。
     now_ts = fc.current_interval()
     end = now_ts + pd.Timedelta(hours=LOOKAHEAD_HOURS)
-    window = fc.hourly.loc[now_ts:end]
+    window = fc.data.loc[now_ts:end]
     if len(window) < 2:
         return None
 
     # 预报辐射是前一小时均值，晴空分母取同口径的小时均值；用整点瞬时值会让早晨的 kt 系统性偏低
-    cs = solar.clearsky_hourly_mean(latitude, longitude, fc.tz, pd.DatetimeIndex(window.index))
+    cs = solar.clearsky_interval_mean(
+        latitude, longitude, fc.tz, pd.DatetimeIndex(window.index), step_minutes=fc.step_minutes
+    )
     ghi = window["shortwave_radiation"].astype(float)
     clear = cs["ghi"].astype(float)
 
@@ -116,7 +118,7 @@ def _alert_wind_speed(window: pd.DataFrame, station: Station | None) -> tuple[pd
 def detect_weather(fc: Forecast, station: Station | None = None) -> list[Detected]:
     """天气异常：未来 24 小时。docs/07 §5.2"""
     now_ts = fc.current_hour()
-    window = fc.hourly.loc[now_ts : now_ts + pd.Timedelta(hours=24)]
+    window = fc.data.loc[now_ts : now_ts + pd.Timedelta(hours=24)]
     out: list[Detected] = []
 
     ws, height = _alert_wind_speed(window, station)

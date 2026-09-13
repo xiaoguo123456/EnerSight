@@ -83,17 +83,15 @@ def _hours_for(
 
 
 def _source(fc: Forecast, step_minutes: int) -> pd.DataFrame:
-    """按步长取原始序列：15 分钟用上游插值的 quarter，没有就退回逐小时。"""
-    if step_minutes != 60 and fc.quarter is not None:
-        return fc.quarter
-    return fc.hourly
+    """使用输入的真实分辨率；不将 15 分钟均值直接当成小时均值。"""
+    return fc.data
 
 
 def current_label(fc: Forecast, station_type: str) -> pd.Timestamp:
     """当前出力对应的逐时标签。
 
     光伏出力由小时均值辐射算出，取包含当前时刻的区间末标签；
-    风电出力由瞬时风速算出，取当前整点。两者口径不同，不能统一。
+    风电出力由瞬时风速算出，取当前时间格的起点。两者口径不同，不能统一。
     """
     return fc.current_interval() if station_type == "solar" else fc.current_hour()
 
@@ -152,14 +150,16 @@ def prepare(
     day: date | None = None,
     version: str | None = None,
     hours: pd.DatetimeIndex | None = None,
-    step_minutes: int = 60,
+    step_minutes: int | None = None,
 ) -> Prepared:
     """day_offset=1 为明日（留档用）；day 直接指定日期，供历史校准复用同一套缺测处理。
 
-    step_minutes=15 走上游 15 分钟序列（当日与短期 3 天的 96 点曲线）；没有该序列退回逐小时。
+    步长必须与输入一致；线上为 15 分钟，历史小时输入保留原分辨率。
     """
-    if step_minutes != 60 and fc.quarter is None:
-        step_minutes = 60
+    if step_minutes is None:
+        step_minutes = fc.step_minutes
+    if step_minutes != fc.step_minutes:
+        raise ValueError("计算步长必须与气象输入分辨率一致")
     target = day or (fc.current_hour() + pd.Timedelta(days=day_offset)).date()
     version = version or version_for_day(target)
     if hours is None:
@@ -332,9 +332,9 @@ def curtailment_note(station: Station) -> str | None:
 
 
 def compute(
-    station: Station, fc: Forecast, *, day_offset: int = 0, step_minutes: int = 60
+    station: Station, fc: Forecast, *, day_offset: int = 0, step_minutes: int | None = None
 ) -> EnergySnapshot:
-    """同步、CPU 密集。day_offset 为 0 且逐小时时给当前功率，其余只有日曲线与指数。"""
+    """同步、CPU 密集。day_offset 为 0 时按输入步长计算当前功率，其余只有日曲线与指数。"""
     prep = prepare(station, fc, day_offset=day_offset, step_minutes=step_minutes)
     step = prep.step_minutes
     day = target_day(fc, day_offset)
@@ -365,15 +365,15 @@ def compute(
     grid_hourly = grid_power(station, hourly_kw, day, step)
 
     current = grid_current = None
-    if day_offset == 0 and step == 60:
+    if day_offset == 0:
         label = current_label(fc, station.type)
         series_now, grid_now = hourly_kw, grid_hourly
         if label not in hourly_kw.index:
             # 单独读取真实目标区间，仍经过统一的缺测预处理。
-            current_prep = prepare(station, fc, hours=pd.DatetimeIndex([label]))
+            current_prep = prepare(station, fc, hours=pd.DatetimeIndex([label]), step_minutes=step)
             if current_prep.complete:
                 series_now = _hourly(station, current_prep, fc.tz)
-                grid_now = grid_power(station, series_now, day)
+                grid_now = grid_power(station, series_now, day, step)
         current = _at_label(series_now, label)
         grid_current = _at_label(grid_now, label) if grid_now is not None else None
     return EnergySnapshot(

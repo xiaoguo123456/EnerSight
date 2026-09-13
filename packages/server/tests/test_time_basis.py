@@ -23,7 +23,7 @@ def _forecast(**kw) -> weather.Forecast:
     yesterday = (datetime.now(ZoneInfo(TZ)) - timedelta(days=1)).replace(
         hour=0, minute=0, second=0, microsecond=0, tzinfo=None
     )
-    return weather.parse_forecast(make_forecast(start_date=yesterday, **kw))
+    return weather.parse_forecast(make_forecast(start_date=yesterday, minutely=False, **kw))
 
 
 def _at(monkeypatch, hhmm: str) -> None:

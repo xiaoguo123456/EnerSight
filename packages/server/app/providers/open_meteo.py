@@ -33,20 +33,8 @@ HOURLY_FIELDS = [
     "wind_direction_10m",  # 首页风向
 ]
 
-# 15 分钟字段：境内没有 15 分钟原生模式，是上游按晴空指数插值的，只用于当日与短期 3 天的
-# 96 点曲线（docs/07 §2.7）。辐射同样是「前 15 分钟均值标在区间末」。
-MINUTELY_FIELDS = [
-    "temperature_2m",
-    "wind_speed_10m",
-    "wind_speed_80m",
-    "wind_speed_100m",
-    "wind_speed_120m",
-    "shortwave_radiation",
-    "diffuse_radiation",
-    "direct_normal_irradiance",
-    "surface_pressure",
-    "weather_code",
-]
+# 点预报统一取 15 分钟，字段与历史小时资料一致；国内数据由上游插值生成。
+MINUTELY_FIELDS = HOURLY_FIELDS.copy()
 
 
 # 请求模型 → 元数据 slug。gfs_global 由 0.13° 与 0.25° 两套拼成，起报不同，以 0.13° 为准。
@@ -104,43 +92,17 @@ class OpenMeteoProvider:
         forecast_days: int = 8,
         past_days: int = 1,
     ) -> dict:
-        """逐小时预报，默认 昨日 + 未来 7 天 共 192 点。
-
-        past_days=1 拿昨日数据，用于环比计算 —— 环比不能只靠实时数据
-        推出来，见 docs/04「昨日同期对比数据」。
-        forecast_days=7 供 7 天趋势；24 小时趋势要到「明日 00:00」这一点也包含在内。
-
-        **不带 minutely_15**：15 分钟序列只有单站 7 天预测一个消费方，
-        混在这里会让每次后台扫描都为它付计费权重。要它走 `quarter()`。
-
-        wind_speed_unit=ms 必须传：Open-Meteo 默认 km/h，漏了风速会错 3.6 倍。
-        """
-        params = {
-            "latitude": latitude,
-            "longitude": longitude,
-            "hourly": ",".join(HOURLY_FIELDS),
-            "timezone": "auto",
-            "forecast_days": forecast_days,
-            "past_days": past_days,
-            "wind_speed_unit": "ms",
-        }
-        params["models"] = current_model.get()
-        return await self._get(f"{settings.open_meteo_base}/forecast", params)
-
-    async def quarter(self, latitude: float, longitude: float, *, forecast_days: int) -> dict:
-        """15 分钟序列，只含 minutely_15。单站 7 天预测的细粒度曲线用，按需拉取。
-
-        没有 past_days —— 细粒度曲线只画今日起的几天，昨日由逐小时序列负责。
-        """
+        """统一点预报：昨日同期、七天预测及第七天末区间所需的边界数据。"""
         params = {
             "latitude": latitude,
             "longitude": longitude,
             "minutely_15": ",".join(MINUTELY_FIELDS),
             "timezone": "auto",
             "forecast_days": forecast_days,
+            "past_days": past_days,
             "wind_speed_unit": "ms",
-            "models": current_model.get(),
         }
+        params["models"] = current_model.get()
         return await self._get(f"{settings.open_meteo_base}/forecast", params)
 
     async def model_meta(self, slug: str) -> ModelMeta | None:

@@ -93,10 +93,7 @@ async def station_outlook(
     from app.services import prediction
 
     station = await get_station(db, user.id, station_id)
-    # 唯一需要 15 分钟序列的接口；其余路径不拉，省计费权重
-    fc = await weather.get_forecast(
-        request.app.state.http, station.latitude, station.longitude, fine=True
-    )
+    fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
     out = await asyncio.to_thread(
         prediction.compute_days, station, fc, min(days, settings.forecast_outlook_days)
     )

@@ -32,7 +32,7 @@ def calculation_version(day: date | str) -> str:
     """时间口径与算法修订分开；参数变化必须使缓存和留档指纹变化。"""
     parameters = calculation_parameters()
     digest = hashlib.sha256(json.dumps(parameters, sort_keys=True).encode()).hexdigest()[:12]
-    return f"{version_for_day(day)}-修订1-{digest}"
+    return f"{version_for_day(day)}-修订2-{digest}"
 
 
 def station_parameters(station) -> dict:

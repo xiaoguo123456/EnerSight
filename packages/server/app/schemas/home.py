@@ -29,6 +29,7 @@ class TrendPoint(BaseModel):
 
 
 class TrendSeries(BaseModel):
+    resolution_minutes: int = Field(default=60, description="点间隔分钟数")
     metric: TrendMetric
     unit: str
     range: TrendRange

@@ -351,11 +351,11 @@ def _kinds(fc, kind):
 def test_高温低温取严格不等号():
     """docs/07 §5.2 写的是 > 38℃ / < −10℃，恰好等于阈值不触发"""
     fc = parse_forecast(make_forecast(start_date=_yesterday_midnight()))
-    fc.hourly["temperature_2m"] = 38.0
+    fc.data["temperature_2m"] = 38.0
     assert not _kinds(fc, "heat")
-    fc.hourly["temperature_2m"] = 38.5
+    fc.data["temperature_2m"] = 38.5
     assert _kinds(fc, "heat")
-    fc.hourly["temperature_2m"] = -10.0
+    fc.data["temperature_2m"] = -10.0
     assert not _kinds(fc, "cold")
-    fc.hourly["temperature_2m"] = -10.5
+    fc.data["temperature_2m"] = -10.5
     assert _kinds(fc, "cold")

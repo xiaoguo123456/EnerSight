@@ -91,7 +91,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
     content: [
       ...(req.data?.assumptions ?? p?.assumptions ?? []),
       station.type === 'wind' ? '风电按轮毂高度风速与通用功率曲线估算，低于切入或高于切出风速时功率为零，不代表实测停机。' : '光伏按倾斜面辐射与 PVWatts 估算，夜间功率为零。',
-      '当日与随后 3 天为 15 分钟 96 点曲线，对应两个细则的短期（日前）口径；第 5–7 天为 1 小时曲线，中期参考为主。曲线按电站当地时间。',
+      '七天功率曲线均按 15 分钟计算，采用电站当地时间。',
       basisDetail(req.data?.basis ?? p?.basis),
       DISCLAIMER,
     ].join('\n'),
@@ -149,7 +149,7 @@ function FleetForecast({ f, selected, onSelect, version, onReload, refreshError 
       <Text className="forecast-caption">{common ? `固定 ${thousands(f.common_covered_count ?? 0)} 座电站比较天气变化` : '各日电站覆盖可能不同，电量变化不全由天气引起'}</Text>
     </>}
     {days.length > 0 && <OutlookStrip days={days.map(d => ({ ...d, energy_kwh: common ? d.common_energy_kwh ?? null : d.energy_kwh, caption: common ? `共同覆盖 ${thousands(f.common_covered_count ?? 0)} 座` : `已覆盖 ${thousands(d.covered_count ?? 0)} 座${d.energy_kwh ? ` · 光伏占比 ${Math.round(d.solar_kwh / d.energy_kwh * 100)}%` : ''}` }))} selected={selected} onSelect={onSelect} />}
-    {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title={`${label} 预测功率合计`} />}
+    {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title={`${label} 预测功率合计`} step={day?.resolution_minutes ?? f.resolution_minutes ?? 60} />}
     {value == null && days.length > 0 && <Text className="forecast-state">该日尚无覆盖电站结果</Text>}
     <View className="forecast-foot"><Text>预测计算于 {formatBeijingTime(f.generated_at)}</Text><Text className="forecast-link" onClick={onReload}>刷新</Text></View>
   </View>
@@ -216,7 +216,7 @@ export default function Home() {
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : d?.has_station === false ? <View className="home__card"><Text>选择或添加一座电站，开始查看预测</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择电站</Button></View> : !d || !station ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
           <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} />
           {d.alert && <AlertBanner title={d.alert.title} description={d.alert.description} onMore={() => Taro.switchTab({ url: '/pages/alert/index' })} />}
-          {weather && <View className="home__card"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前整点的预报值：气温、10 米风速、云量为瞬时值，辐射为包含当前时刻那一小时的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
+          {weather && <View className="home__card"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前 15 分钟时段的预报值：气温、10 米风速、云量为瞬时值，辐射为对应区间的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
             <MetricCard icon="cloudSun" label="天气" metric={formatTemperature(weather.temperature.value)} caption={weather.weather_text ?? undefined} />
             <MetricCard icon="sun" label="辐射" metric={formatRadiation(weather.radiation.value)} />
             <MetricCard icon="wind" iconFill={false} label="10米风速" metric={formatWindSpeed(weather.wind_speed.value)} />

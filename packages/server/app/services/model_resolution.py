@@ -58,7 +58,7 @@ async def check(http: httpx.AsyncClient) -> bool:
                     params={
                         "latitude": lat,
                         "longitude": lon,
-                        "hourly": ",".join(CHECK_FIELDS),
+                        "minutely_15": ",".join(CHECK_FIELDS),
                         "timezone": "UTC",
                         "forecast_days": 2,
                         "wind_speed_unit": "ms",
@@ -68,7 +68,7 @@ async def check(http: httpx.AsyncClient) -> bool:
                 if res.status_code == 429:
                     shared.retry_after(res.headers.get("Retry-After"))
                 res.raise_for_status()
-                series[model] = res.json()["hourly"]
+                series[model] = res.json()["minutely_15"]
             except Exception:  # noqa: BLE001
                 log.warning("model_resolution: 复核请求失败 %s %s", model, (lat, lon))
                 return isinstance(_state["resolved"], str)  # 拿不到就维持现状

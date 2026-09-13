@@ -11,7 +11,7 @@ from app.render.colormap import SCALES
 def _grid_response(n_points: int) -> list[dict]:
     """合成 Open-Meteo 多点响应：每点 24 小时"""
     day = datetime.now(UTC).strftime("%Y-%m-%d")
-    times = [f"{day}T{h:02d}:00" for h in range(24)]
+    times = [f"{day}T{h // 4:02d}:{h % 4 * 15:02d}" for h in range(96)]
     out = []
     for i in range(n_points):
         out.append(
@@ -19,7 +19,7 @@ def _grid_response(n_points: int) -> list[dict]:
                 "latitude": 0,
                 "longitude": 0,
                 "timezone": "UTC",
-                "hourly": {
+                "minutely_15": {
                     "time": times,
                     "shortwave_radiation": [float(i % 7) * 100 for _ in times],
                     "temperature_2m": [20.0 + i % 5 for _ in times],

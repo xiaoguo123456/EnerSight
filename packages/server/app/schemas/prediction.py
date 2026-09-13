@@ -54,7 +54,7 @@ class DailyOutlook(BaseModel):
     power_kw: list[PowerPoint]
     grid_power_kw: list[PowerPoint] | None
     lead_days: int = Field(description="距今天数，0 为今日；1–3 为短期（日前）；≥4 为中期")
-    resolution_minutes: int = Field(description="15：96 点，对应两个细则短期口径；60：24 点")
+    resolution_minutes: int = Field(description="当前点预报统一 15 分钟；历史小时资料保留 60 分钟")
 
 
 class StationOutlook(BaseModel):
@@ -75,6 +75,7 @@ class RegionPrediction(BaseModel):
 
 
 class FleetDay(BaseModel):
+    resolution_minutes: int = Field(default=60, description="曲线间隔分钟数，兼容旧留档")
     date: str
     weekday: int
     lead_days: int
