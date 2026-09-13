@@ -12,6 +12,7 @@ import { geoApi } from '@/api/geo'
 import { homeApi } from '@/api/home'
 import { useCatalogMarkers } from '@/hooks/useCatalogMarkers'
 import { useMapLayer } from '@/hooks/useMapLayer'
+import { useMapViewport } from '@/hooks/useMapViewport'
 import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
 import { useMapStore, useStationStore } from '@/store'
@@ -26,8 +27,6 @@ const LEVEL_TEXT: Record<string, string> = {
   excellent: '优秀', good: '良好', fair: '一般', poor: '较差',
 }
 
-// 地图未加载到站点前的默认中心：华东
-const FALLBACK_CENTER = { latitude: 31.3, longitude: 120.62 }
 const PLACE_ICON: Record<GeoPlace['type'], 'mapPin' | 'navigation' | 'sun' | 'layers'> = {
   city: 'mapPin', poi: 'mapPin', coordinate: 'navigation', station: 'sun', plant: 'layers',
 }
@@ -45,9 +44,6 @@ export default function MapPage() {
   useEffect(() => setLayer(activeLayer), [activeLayer])
   // 卫星影像底图。docs/01 §四：全球地图 / 行政地图 / 卫星影像底图
   const [satellite, setSatellite] = useState(false)
-  const [scale, setScale] = useState(9)
-  // 地图中心：跟随站点；搜索选中后改为选中点
-  const [focus, setFocus] = useState<{ latitude: number; longitude: number } | null>(null)
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState<GeoPlace[] | null>(null)
   // 选中的公开电站（搜索结果或点 marker），底部提供直接查看入口
@@ -59,12 +55,14 @@ export default function MapPage() {
   const currentId = useStationStore((s) => s.currentId)
   const req = useRequest(() => homeApi.mapOverview(currentId ?? undefined), [currentId])
 
-  useEffect(() => { setFocus(null); setPicked(null) }, [currentId])
-  useDidShow(() => { setPageVisible(true); setFocus(null); setPicked(null) })
+  useEffect(() => { setPicked(null) }, [currentId])
+  useDidShow(() => { setPageVisible(true); setPicked(null) })
   const station = req.data?.station
   const index = req.data?.index
   const weather = req.data?.weather
-  const center = focus ?? station ?? FALLBACK_CENTER
+  const viewport = useMapViewport('main-map', station, currentId)
+  const center = viewport.camera
+  const scale = center.scale
 
   // 「站点」图层只显示 marker，不贴图
   const dataLayer = layer === 'station' ? null : layer
@@ -92,7 +90,7 @@ export default function MapPage() {
   const choose = (r: GeoPlace) => {
     setResults(null)
     setKeyword('')
-    setFocus({ latitude: r.latitude, longitude: r.longitude })
+    viewport.moveTo(r)
     setPicked(r.type === 'plant' ? r : null)
     setTimeout(() => { void overlay.refresh(); void catalog.refresh() }, 400)
   }
@@ -101,8 +99,7 @@ export default function MapPage() {
     const id = Number(e?.detail?.markerId ?? e?.markerId)
     const cluster = catalog.clusterByMarkerId(id)
     if (cluster) {
-      setFocus({ latitude: cluster.latitude, longitude: cluster.longitude })
-      setScale((v) => Math.min(18, v + 2))
+      viewport.moveTo(cluster, Math.min(18, scale + 2))
       setTimeout(() => { void catalog.refresh() }, 400)
       return
     }
@@ -119,15 +116,11 @@ export default function MapPage() {
 
   const locate = () => {
     if (!station) return
-    setFocus(null)
-    Taro.createMapContext('main-map').moveToLocation({ latitude: station.latitude, longitude: station.longitude })
+    viewport.moveTo(station)
   }
   const zoom = (delta: number) => {
     if (overlay.isPreview) overlay.invalidate()
-    Taro.createMapContext('main-map').getScale({
-      success: (r) => setScale(Math.min(18, Math.max(3, r.scale + delta))),
-      fail: () => setScale((v) => Math.min(18, Math.max(3, v + delta))),
-    })
+    void viewport.zoom(delta)
   }
 
   return (
@@ -183,6 +176,7 @@ export default function MapPage() {
           onMarkerTap={onMarkerTap}
           onError={(e) => console.error('[map] 加载失败', e)}
           onRegionChange={(e: any) => {
+            void viewport.regionChanged(e)
             const kind = mapRegionPhase(e)
             const cause = e?.detail?.causedBy ?? e?.causedBy
             // 模拟器图片不随原生地图运动，手势开始即撤下旧图，结束按新视野装载。
@@ -287,6 +281,7 @@ export default function MapPage() {
         <View className="map-page__tools" style={{ bottom: `${sheetHeight + 12}px` }}>
           <View
             className={`map-page__tool ${satellite ? 'map-page__tool--on' : ''}`}
+            role="button" aria-label={satellite ? '切换普通底图' : '切换卫星底图'}
             onClick={() => setSatellite((v) => !v)}
           >
             <Icon
@@ -296,13 +291,13 @@ export default function MapPage() {
               fill={satellite ? 'rgba(255,255,255,0.3)' : false}
             />
           </View>
-          <View className="map-page__tool" aria-label="回到当前电站" hoverClass="pressed" onClick={locate}>
+          <View className="map-page__tool" role="button" aria-label="回到当前电站" hoverClass="pressed" onClick={locate}>
             <Icon name="crosshair" size={17} color="#1f2937" />
           </View>
-          <View className="map-page__tool" hoverClass="pressed" onClick={() => zoom(1)}>
+          <View className="map-page__tool" role="button" aria-label="放大地图" hoverClass="pressed" onClick={() => zoom(1)}>
             <Icon name="plus" size={17} color="#1f2937" />
           </View>
-          <View className="map-page__tool" hoverClass="pressed" onClick={() => zoom(-1)}>
+          <View className="map-page__tool" role="button" aria-label="缩小地图" hoverClass="pressed" onClick={() => zoom(-1)}>
             <Icon name="minus" size={17} color="#1f2937" />
           </View>
         </View>
