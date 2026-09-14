@@ -1,3 +1,4 @@
+import { useAppShare } from '@/hooks/useAppShare'
 import { View, Text, Button } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useState } from 'react'
@@ -11,6 +12,7 @@ import './index.scss'
  * 协议默认不勾选，未勾选点登录先请用户确认；可暂不登录返回。不采集手机号、头像与昵称。
  */
 export default function Login() {
+  useAppShare()
   const login = useAuthStore((s) => s.login)
   const [agreed, setAgreed] = useState(false)
   const [busy, setBusy] = useState(false)
