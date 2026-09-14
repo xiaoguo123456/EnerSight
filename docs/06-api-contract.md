@@ -224,7 +224,8 @@ Authorization: Bearer <token>
 ```
 
 token 过期返回 `401` + `code: "TOKEN_EXPIRED"`，
-`core/api` 拦截后自动重新登录并重试一次。
+`core/api` 拦截后自动重新登录并重试一次。本地没有 token 时先登录再发请求，不先发一次必然 401 的请求；
+并发请求共用同一次登录。
 
 
 ---
@@ -875,7 +876,7 @@ export function createClient(adapter: HttpAdapter, opts: ClientOptions): ApiClie
 | 职责 | 说明 |
 | --- | --- |
 | 注入 token | 从 adapter 提供的存储读取 |
-| 401 自动重登 | 重登后重试一次，失败才抛错 |
+| 401 自动重登 | 重登后重试一次，失败才抛错；无 token 时先登录，并发请求共用一次登录 |
 | 坐标系参数 | 按端注入固定的 `coord`，页面不传 |
 | 错误归一 | 网络错误与业务错误统一为 `ApiError` |
 | 超时与重试 | 默认 10s；仅对 `502` 与网络错误重试，最多 2 次 |
