@@ -1,0 +1,16 @@
+{
+  "name": "enersight-weather-test",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-13",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {"ALLOWED_IPS": "47.93.60.25"},
+  "routes": [{"pattern": "weather-test.weishenai.cn", "custom_domain": true}],
+  "env": {
+    "production": {
+      "name": "enersight-weather-prod",
+      "vars": {"ALLOWED_IPS": "39.105.228.11"},
+      "routes": [{"pattern": "weather.weishenai.cn", "custom_domain": true}]
+    }
+  }
+}

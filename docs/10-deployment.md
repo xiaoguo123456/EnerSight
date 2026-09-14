@@ -54,6 +54,27 @@ AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志�
 
 服务器须事先登录 ACR 内网仓库。现有部署凭据的复用必须得到用户对新仓库 GitHub Secrets 的明确授权；不能从 GitHub 读出其他仓库 Secrets。
 
+## 气象转发
+
+公司网络要求业务服务器不直接以 IP 访问外部服务。后端的 Open-Meteo 点预报、历史小时资料和模型元数据统一经 `app/providers/weather_transport.weather_get` 出网：`.env` 未配置转发地址时直连，配置后经 Cloudflare Worker 转发。Worker 代码、白名单与建立步骤见 [deploy/weather-relay](../deploy/weather-relay/README.md)。
+
+| 环境 | Worker | 转发地址 |
+| --- | --- | --- |
+| 测试 | `enersight-weather-test` | `https://weather-test.weishenai.cn` |
+| 生产 | `enersight-weather-prod`（未建立） | `https://weather.weishenai.cn` |
+
+```dotenv
+ENERSIGHT_WEATHER_RELAY_BASE=https://weather-test.weishenai.cn
+ENERSIGHT_WEATHER_RELAY_TOKEN=<与该环境 Worker 的 RELAY_SECRET 相同>
+```
+
+- 地址必须是不带路径、参数和凭据的 HTTPS 域名；填了地址而密钥不足 32 字符时服务启动失败。
+- 密钥用 `openssl rand -hex 32` 在目标服务器上生成，只存在服务器 `.env`（600）与 Worker 机密中。测试与生产各自生成，不进 Git、聊天或日志。
+- Worker 自身拒绝（来源 IP、密钥、参数白名单）时后端报上游不可用，不重试，也不自动退回直连。上游 429 / 400 由 Worker 原样透传，沿用原有预算、冷却与降级。
+- 先在服务器上带密钥访问 `/health` 返回 `{"status":"ok"}`，再修改 `.env` 或发布含转发代码的镜像。密钥不一致会让全部气象请求失败。
+- `.env` 由 Compose 在创建容器时读入，修改后需重建：`set -a && . ./.release.env && set +a && docker compose up -d --no-deps api`。回滚时清空转发地址，同样重建。
+- 原生地图栅格（`openmeteo.s3.amazonaws.com`）下载不经转发。
+
 ## GitHub Secrets 与发布
 
 仓库设置中配置下列 Secrets，均不进入代码：
@@ -276,3 +297,11 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 
 - 修复提交 `1ad4ad60c1bda303b9a28fff3d99e6ff34d66fb3` 已部署测试，[测试部署 34770389311](https://github.com/xiaoguo123456/EnerSight/actions/runs/34770389311) 成功；镜像摘要 `sha256:71f153f11c99ce39d9884910601f7285f06c2ef12f7d54dd5ce57c1bc438e67f`。
 - 发布后验收：容器 healthy，公网 `/ready` 返回 200；微信模拟器公开目录恢复 18,764 座，地图目录查询返回 200。本站和预警明确提示气象配额错误，地图概览返回 503；全目录有效快照仍返回 200。数据库仅有一个正常 idle 连接，无 idle in transaction，未再出现连接池耗尽。气象源当天配额仍未恢复，不能宣称气象数据全部恢复。
+
+### 气象转发 Worker（2026-09-14）
+
+- 用户在 Cloudflare 控制台建立测试 Worker `enersight-weather-test`，代码为 `deploy/weather-relay/worker.mjs`，绑定 `weather-test.weishenai.cn`，`ALLOWED_IPS=47.93.60.25`。测试机 `.env` 已写入转发地址与 64 位密钥，权限 600；测试机实际出口 IP 与白名单一致。
+- 从测试机验收：域名解析到 Cloudflare；无密钥与错误密钥均 401，正确密钥 `/health` 200，白名单外路径 400，POST 405。全程未请求 Open-Meteo。非白名单来源 403 由 Worker 单元测试覆盖，本机经代理无法实测。
+- 旧探测 Worker `enersight-weather-probe` 已到期，所有请求返回 410，不再使用。
+- 后端区分 Worker 拒绝与上游响应：透传响应带 `X-Weather-Relay: cloudflare`，无此头的 4xx 与任何 3xx 判为转发异常且不重试，避免白名单拒绝被误当成坐标越界。
+- 转发代码在开发分支，尚未合入 main；当前测试镜像 `1ad4ad60c1bd` 不读取转发配置，合入并自动部署后生效。生产 Worker 尚未建立，建立前先在生产机确认实际出口 IP。

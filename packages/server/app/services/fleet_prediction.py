@@ -19,6 +19,7 @@ from app.db import SessionLocal
 from app.metrics import wind
 from app.models import CatalogPlant, Station
 from app.providers.budget import shared
+from app.providers.weather_transport import weather_get
 from app.render import tiles
 from app.schemas.prediction import FleetDay, FleetPrediction, PowerPoint, RegionPrediction
 from app.services import energy, weather
@@ -393,7 +394,8 @@ async def build(http, model: str, day: str, plants) -> None:
             await pacer.take(len(missing))  # 只为真正出网的坐标付时间
             try:
                 await shared.take(len(missing))
-                r = await http.get(
+                r = await weather_get(
+                    http,
                     f"{settings.open_meteo_base}/forecast",
                     params={
                         "latitude": ",".join(str(a) for a, _ in missing),

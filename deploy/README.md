@@ -32,6 +32,10 @@ API 通过已有 Docker 网络 `weishen-test_default` 中的唯一别名被 Ngin
 因此健康检查通过不代表后台地图数据已预热；专项测试采集和地图前应重新评估内存。
 数据卷为 `/opt/enersight-test/data`，不复用生产数据，也不自动复制生产用户数据。
 
+气象请求经测试 Worker `weather-test.weishenai.cn` 转发，`.env` 需配置
+`ENERSIGHT_WEATHER_RELAY_BASE` 与 `ENERSIGHT_WEATHER_RELAY_TOKEN`，
+见 [部署说明「气象转发」](../docs/10-deployment.md#气象转发) 与 `weather-relay/`。
+
 ```sh
 # 仓库根目录：构建小程序，产物在 packages/miniapp/dist/weapp
 pnpm build:test

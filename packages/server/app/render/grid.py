@@ -19,6 +19,7 @@ import numpy as np
 from app.cache import AsyncTTLCache
 from app.config import settings
 from app.errors import ApiError, UpstreamUnavailable
+from app.providers.weather_transport import weather_get
 from app.render.colormap import FIELD
 from app.weather_model import current_model
 
@@ -139,7 +140,8 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
                     if cached is not None:
                         return cached
                     raise limited()
-                res = await http.get(
+                res = await weather_get(
+                    http,
                     f"{settings.open_meteo_base}/forecast", params=params, timeout=25
                 )
                 if res.status_code == 429:

@@ -8,6 +8,7 @@ import httpx
 from app.config import settings
 from app.errors import DataUnavailable, UpstreamRateLimited, UpstreamUnavailable
 from app.providers.budget import request_cost, shared
+from app.providers.weather_transport import weather_get
 from app.weather_model import current_model
 
 # 逐小时字段。新增字段前先更新 docs/04
@@ -109,7 +110,9 @@ class OpenMeteoProvider:
         """模型元数据。拿不到返回 None，不阻塞预报；调用方按「无法确认起报」处理。"""
         try:
             await shared.take(1)
-            res = await self._client.get(f"{settings.open_meteo_meta_base}/{slug}/static/meta.json")
+            res = await weather_get(
+                self._client, f"{settings.open_meteo_meta_base}/{slug}/static/meta.json"
+            )
             if res.status_code == 429:
                 shared.retry_after(res.headers.get("Retry-After"))
             if res.status_code != 200:
@@ -144,7 +147,7 @@ class OpenMeteoProvider:
                 await asyncio.sleep(settings.upstream_backoff_seconds * attempt)
             try:
                 await shared.take(request_cost(params))
-                res = await self._client.get(url, params=params)
+                res = await weather_get(self._client, url, params=params)
             except httpx.HTTPError as exc:
                 last = exc
                 continue

@@ -13,6 +13,7 @@ import httpx
 from app.config import settings
 from app.providers.budget import shared
 from app.providers.open_meteo import META_SLUGS
+from app.providers.weather_transport import weather_get
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +54,8 @@ async def check(http: httpx.AsyncClient) -> bool:
         for model in ("best_match", ASSUMED):
             try:
                 await shared.take(1)
-                res = await http.get(
+                res = await weather_get(
+                    http,
                     f"{settings.open_meteo_base}/forecast",
                     params={
                         "latitude": lat,

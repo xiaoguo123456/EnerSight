@@ -1,7 +1,9 @@
 """服务配置。密钥一律走环境变量，不进代码。"""
 
 from datetime import date
+from urllib.parse import urlsplit
 
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,6 +62,28 @@ class Settings(BaseSettings):
     open_meteo_archive_base: str = "https://archive-api.open-meteo.com/v1"
     # 各模型元数据（起报时刻、可用时刻）：{meta_base}/{slug}/static/meta.json。docs/17 §二
     open_meteo_meta_base: str = "https://api.open-meteo.com/data"
+    # 空地址走直连；配置后统一经独立 Worker 获取 JSON API 与模型元数据。
+    weather_relay_base: str = ""
+    weather_relay_token: SecretStr = SecretStr("")
+
+    @model_validator(mode="after")
+    def validate_weather_relay(self):
+        if self.weather_relay_base:
+            parsed = urlsplit(self.weather_relay_base)
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+                or parsed.path not in ("", "/")
+            ):
+                raise ValueError("气象转发地址必须是无路径、参数和凭据的 HTTPS 域名")
+            if len(self.weather_relay_token.get_secret_value()) < 32:
+                raise ValueError("启用气象转发时必须配置至少 32 字符的独立密钥")
+        return self
+
     ttl_model_meta: int = 300
 
     # 缓存 TTL（秒），见 docs/05 §五

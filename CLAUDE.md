@@ -166,6 +166,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 以为多坐标请求能省 Open-Meteo 额度 —— 限流按**坐标数**计（实测 429 精确落在
   第 600 个坐标），批次大小只省 HTTP 往返。要控的是坐标速率
   （`fleet_coords_per_minute`），且限额按 IP 与其他调用共享
+- ❌ 直接 `http.get` Open-Meteo —— 统一走 `providers/weather_transport.weather_get`，否则配置了
+  转发的环境会漏出直连。新增接口、参数或模型要同步 Worker 白名单（`deploy/weather-relay`），见 10「气象转发」
 - ❌ 把 `minutely_15` 混进主请求 —— 只有单站 7 天预测要它，混进去等于让每次后台扫描
   都为它付权重。走 `get_forecast(..., fine=True)`
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）
