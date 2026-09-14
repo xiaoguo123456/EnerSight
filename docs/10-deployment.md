@@ -61,7 +61,7 @@ AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志�
 | 环境 | Worker | 转发地址 |
 | --- | --- | --- |
 | 测试 | `enersight-weather-test` | `https://weather-test.weishenai.cn` |
-| 生产 | `enersight-weather-prod`（未建立） | `https://weather.weishenai.cn` |
+| 生产 | `enersight-weather-prod` | `https://weather.weishenai.cn` |
 
 ```dotenv
 ENERSIGHT_WEATHER_RELAY_BASE=https://weather-test.weishenai.cn
@@ -323,3 +323,17 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 - 气象转发：测试 `.env` 的 `weather-test.weishenai.cn` 转发配置已被新代码加载，单点每天回源 4 次、全目录 08:00 起拉取的默认配置生效；部署后 30 分钟内无转发拒绝、429 或预渲染失败日志。
 - 小程序已按测试环境构建（`--mode test`），登录页、我的电站登录引导、MW 表单、预警页并行加载与紧凑布局待开发者工具与真机验收，`wx.login` 真实登录需真机验证。
 - 尚未完成：生产 Worker 未建立（建立前确认生产机出口 IP）；小程序后台隐私保护指引按 09 §4.4 填写；《用户服务协议》草稿待法务审核；生产未发布。
+
+### 生产气象转发 Worker 验收（2026-09-14）
+
+- 用户建立生产 Worker `enersight-weather-prod`，绑定 `weather.weishenai.cn`，`ALLOWED_IPS` 为生产机实测出口 `39.105.228.11`；生产 `.env` 已写入转发地址与 64 位密钥。
+- 从生产机验收：无密钥 `/health` 连续 3 次 401，带密钥 200；带密钥请求一次单点预报返回 200 且带 `X-Weather-Relay: cloudflare`。从测试机访问返回 403，来源 IP 限制生效。
+- 域名解析：建立初期阿里云内网解析偶发 NXDOMAIN（新记录的否定缓存）。复查时生产机 `getaddrinfo` 50/50 成功，两台内网解析器 A 与 AAAA 各 50/50 成功，已稳定。
+- 生产镜像仍为不读取转发配置的旧版本，发布含转发代码的镜像后生效。
+
+### 气象趋势跟随预测日期与轮毂高度风速导出测试发布（2026-09-14）
+
+- 提交 `f8eef0b`：`/v1/trends` 新增 `day_offset`（0–6），首页 24 小时气象趋势默认展开并跟随七天预测所选日期；预警页近 3 小时云图取消折叠。提交 `8e1e226`：新增 `hub_wind_speed` 指标，风电站导出气象 CSV 多一列「轮毂 N 米风速」，与发电预测同一换算；光伏站仍只导出 10 米风速。
+- 本机 `make check` 通过：后端 473 项、core 52 项、小程序脚本 18 项。[CI 34829432491](https://github.com/xiaoguo123456/EnerSight/actions/runs/34829432491) 与 [测试部署 34829432525](https://github.com/xiaoguo123456/EnerSight/actions/runs/34829432525) 均成功，镜像 `enersight-backend:8e1e2260e8c4`，容器 healthy。本次无数据库迁移。
+- 测试机回环验收（怀来风电场与怀来光伏站）：10 米风速 `day_offset=0` 与 `2` 各 97 点，分别覆盖当日与后天 00:00–次日 00:00；轮毂风速 `day_offset=2` 返回 97 点、`hub_height=100`、单位 m/s，日均 2.84 m/s（同日 10 米 1.74 m/s）；光伏站请求轮毂风速 400；`day_offset=7` 400。部署后无错误日志。
+- 小程序已按测试环境重新构建，待开发者工具与真机验收。

@@ -5,7 +5,7 @@
 | 环境 | Worker | 域名 | `ALLOWED_IPS` | 状态 |
 | --- | --- | --- | --- | --- |
 | 测试 | `enersight-weather-test` | `weather-test.weishenai.cn` | `47.93.60.25` | 2026-09-14 已建立并验收 |
-| 生产 | `enersight-weather-prod` | `weather.weishenai.cn` | 生产机实际出口 IP | 未建立 |
+| 生产 | `enersight-weather-prod` | `weather.weishenai.cn` | `39.105.228.11` | 2026-09-14 已建立并验收 |
 
 ## 建立
 
