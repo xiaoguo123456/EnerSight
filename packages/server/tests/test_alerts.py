@@ -30,21 +30,31 @@ def _fresh():
     weather.clear_cache()
 
 
-def _with_cloud_drop(raw: dict, hours_ahead: int, factor: float) -> dict:
-    """从当前时刻起 hours_ahead 小时后，把辐射乘以 factor（模拟云来了）"""
-    now = datetime.now(ZoneInfo(TZ)).replace(minute=0, second=0, microsecond=0)
-    t0 = now.replace(tzinfo=None) + timedelta(hours=hours_ahead)
-    h = raw["hourly"]
-    for i, ts in enumerate(h["time"]):
-        if datetime.fromisoformat(ts) >= t0:
-            for k in (
-                "shortwave_radiation",
-                "direct_radiation",
-                "diffuse_radiation",
-                "direct_normal_irradiance",
-            ):
-                h[k][i] = round(h[k][i] * factor, 1)
-            h["cloud_cover"][i] = 90.0
+def _freeze(monkeypatch, now: datetime) -> datetime:
+    """固定 Forecast 的当前时刻，返回对应的「昨日 00:00」（naive，当地时间）。"""
+    monkeypatch.setattr(weather.Forecast, "now", lambda self: now)
+    return (now - timedelta(days=1)).replace(hour=0, minute=0, tzinfo=None)
+
+
+def _with_cloud_drop(raw: dict, now: datetime, hours_ahead: int, factor: float) -> dict:
+    """从 now 起 hours_ahead 小时后，把辐射乘以 factor（模拟云来了）。
+
+    预警读 15 分钟序列，小时序列只为兼容旧留档，两份都要改。
+    """
+    t0 = now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    t0 += timedelta(hours=hours_ahead)
+    for series in (raw["hourly"], raw.get("minutely_15") or {}):
+        for i, ts in enumerate(series.get("time", [])):
+            if datetime.fromisoformat(ts) >= t0:
+                for k in (
+                    "shortwave_radiation",
+                    "direct_radiation",
+                    "diffuse_radiation",
+                    "direct_normal_irradiance",
+                ):
+                    if k in series:
+                        series[k][i] = round(series[k][i] * factor, 1)
+                series["cloud_cover"][i] = 90.0
     return raw
 
 
@@ -64,13 +74,12 @@ class TestRules:
             capacity_kw=500,
         )
 
-    def test_晴天无云层预警(self):
-        fc = parse_forecast(make_forecast(start_date=_yesterday_midnight(), peak_today=900))
-        now_h = datetime.now(ZoneInfo(TZ)).hour
-        found = alerts.detect_all(fc, self._station())
-        kinds = {d.kind for d in found}
-        if 8 <= now_h <= 14:  # 白天且未来 6h 仍有日照才有意义
-            assert "cloud" not in kinds
+    @pytest.mark.parametrize("hour", [8, 11, 14])  # 白天且未来 6h 仍有日照
+    def test_晴天无云层预警(self, monkeypatch, hour):
+        now = datetime(2026, 9, 10, hour, 30, tzinfo=ZoneInfo(TZ))
+        raw = make_forecast(start_date=_freeze(monkeypatch, now), peak_today=900)
+        found = alerts.detect_all(parse_forecast(raw), self._station())
+        assert "cloud" not in {d.kind for d in found}
 
     @pytest.mark.parametrize("day", [datetime(2026, 6, 21), datetime(2026, 9, 10)])
     @pytest.mark.parametrize("hour", [8, 10, 14])
@@ -80,15 +89,14 @@ class TestRules:
         fc = parse_forecast(make_forecast(start_date=day - timedelta(days=1), peak_today=900))
         assert alerts.detect_cloud_drop(fc, 31.3, 120.62) is None
 
-    def test_辐射骤降触发云层预警并按降幅分级(self):
-        now_h = datetime.now(ZoneInfo(TZ)).hour
-        if not (7 <= now_h <= 13):
-            pytest.skip("规则只在白天且未来 6h 有日照时可测")
-        raw = _with_cloud_drop(
-            make_forecast(start_date=_yesterday_midnight(), peak_today=900), 2, 0.5
-        )
+    @pytest.mark.parametrize("hour", [7, 10, 13])  # 规则只在白天且未来 6h 有日照时生效
+    def test_辐射骤降触发云层预警并按降幅分级(self, monkeypatch, hour):
+        now = datetime(2026, 9, 10, hour, 30, tzinfo=ZoneInfo(TZ))
+        raw = make_forecast(start_date=_freeze(monkeypatch, now), peak_today=900)
+        raw = _with_cloud_drop(raw, now, 2, 0.5)
         found = alerts.detect_all(parse_forecast(raw), self._station())
-        cloud = next(d for d in found if d.kind == "cloud")
+        cloud = next((d for d in found if d.kind == "cloud"), None)
+        assert cloud is not None
         assert cloud.level in ("moderate", "severe")
         assert "云量增加" in cloud.title and "%" in cloud.title
 
