@@ -18,10 +18,9 @@ from app.providers.open_meteo import ModelMeta, OpenMeteoProvider
 from app.schemas.prediction import ForecastBasis
 from app.weather_model import current_model
 
-# 缓存键带批次指纹，所以 TTL 按「一批数据的寿命」设，不是按新鲜度设：
-# 同一批数据重复拉没有任何意义，新批次一落地键就换了。maxsize 是内存上限，
-# 被 LRU 挤掉的条目下次访问重拉即可。
-_cache = AsyncTTLCache(maxsize=512, ttl_seconds=settings.ttl_forecast_batch)
+# 每个坐标、模型一条缓存，新鲜度由 get_forecast 按回源时段与起报批次判断，
+# TTL 只是一天的内存兜底。maxsize 是内存上限，被 LRU 挤掉的条目下次访问重拉即可。
+_cache = AsyncTTLCache(maxsize=512, ttl_seconds=86400)
 _meta_cache = AsyncTTLCache(maxsize=16, ttl_seconds=settings.ttl_model_meta)
 
 
@@ -193,13 +192,24 @@ def batch_stamp(meta: ModelMeta | None) -> str:
     return f"unknown-{int(time.time()) // settings.ttl_current_weather}"
 
 
+def refresh_slot(moment: datetime, tz: str) -> tuple[str, int]:
+    """当地日期与当天第几个回源时段；一天按 forecast_refreshes_per_day 等分。"""
+    local = moment.astimezone(ZoneInfo(tz))
+    return local.date().isoformat(), local.hour * settings.forecast_refreshes_per_day // 24
+
+
 async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: float) -> Forecast:
-    """所有消费者共享同一份 15 分钟缓存，按坐标、模型批次及当地日期隔离。"""
+    """所有消费者共享同一份 15 分钟缓存，按坐标与模型隔离。docs/04 §二
+
+    每个坐标每天最多回源 forecast_refreshes_per_day 次（默认 4，按当地时段均分）：
+    同一时段内一律命中，不追新批次；进入新时段但起报批次没变仍命中；跨当地日必定刷新，
+    第七天末边界与昨日同期都依赖当天的请求。元数据拿不到时无法比对批次，每个时段回源一次。
+    """
     model = current_model.get()
     # 先取元数据再取预报：两次调用之间若有新批次落地，元数据只会偏旧，不会冒充更新
     meta = await get_model_meta(http, model)
-    cell = f"{latitude!r},{longitude!r}"
-    key = f"15m:{model}:{batch_stamp(meta)}:{cell}"
+    stamp = batch_stamp(meta) if meta is not None else None
+    key = f"15m:{model}:{latitude!r},{longitude!r}"
 
     async def _load() -> Forecast:
         raw = await OpenMeteoProvider(http).forecast(
@@ -207,11 +217,16 @@ async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: floa
         )
         return parse_forecast(raw, model=model, meta=meta, require_quarter=True)
 
-    return await _cache.get_or_load(
-        key,
-        _load,
-        valid=lambda fc: fc.fetched_at.astimezone(ZoneInfo(fc.tz)).date() == fc.now().date(),
-    )
+    def fresh(fc: Forecast) -> bool:
+        fetched_day, fetched_slot = refresh_slot(fc.fetched_at, fc.tz)
+        day, slot = refresh_slot(fc.now(), fc.tz)
+        if fetched_day != day:
+            return False
+        if fetched_slot == slot:
+            return True
+        return stamp is not None and fc.meta is not None and batch_stamp(fc.meta) == stamp
+
+    return await _cache.get_or_load(key, _load, valid=fresh)
 
 
 def clear_cache() -> None:

@@ -21,7 +21,13 @@ from app.models import CatalogPlant, Station
 from app.providers.budget import shared
 from app.providers.weather_transport import weather_get
 from app.render import tiles
-from app.schemas.prediction import FleetDay, FleetPrediction, PowerPoint, RegionPrediction
+from app.schemas.prediction import (
+    FleetDay,
+    FleetPrediction,
+    ForecastBasis,
+    PowerPoint,
+    RegionPrediction,
+)
 from app.services import energy, weather
 from app.services.curve_cache import CurveCache
 from app.services.prediction_basis import calculation_version, catalog_basis, version_for_day
@@ -70,8 +76,12 @@ def directory() -> Path:
     return path
 
 
+def beijing_now() -> datetime:
+    return datetime.now(ZoneInfo(TZ))
+
+
 def day_key() -> str:
-    return datetime.now(ZoneInfo(TZ)).date().isoformat()
+    return beijing_now().date().isoformat()
 
 
 def write(path: Path, data: dict) -> None:
@@ -277,19 +287,23 @@ async def build(http, model: str, day: str, plants) -> None:
     regions: list[dict[str, list]] = [{} for _ in range(n_days)]
     covered = set()
     coverage_by_plant = {}
-    # 起报与拉取时刻：批量请求没有逐格元数据，按模型取一次
-    meta = await weather.get_model_meta(http, model)
-    stamp = weather.batch_stamp(meta)
-    out.batch_stamp = stamp
-    out.basis = weather.Forecast(tz=TZ, hourly=pd.DataFrame(), model=model, meta=meta).basis()
     cache_path = directory() / f"{model}-{day}-weather-15m.json"
     saved = load(cache_path) or {}
+    # 每个模型每个北京日只拉一次气象：同日新批次、元数据缺失、快照重算都复用当天已取得的
+    # 坐标，起报以当天首轮为准；只有分辨率或预报天数变化才作废。docs/04 §二
     if (
         saved.get("resolution_minutes") != 15
-        or saved.get("batch_stamp") != stamp
-        or saved.get("saved_at", 0) < datetime.now(UTC).timestamp() - 43200
+        or saved.get("forecast_days", n_days + 1) != n_days + 1
     ):
         saved = {}
+    if saved.get("basis"):
+        out.basis = ForecastBasis.model_validate(saved["basis"])
+        out.batch_stamp = saved.get("batch_stamp") or weather.batch_stamp(None)
+    else:
+        # 批量请求没有逐格元数据，当天首轮按模型取一次
+        meta = await weather.get_model_meta(http, model)
+        out.basis = weather.Forecast(tz=TZ, hourly=pd.DataFrame(), model=model, meta=meta).basis()
+        out.batch_stamp = saved.get("batch_stamp") or weather.batch_stamp(meta)
     from app.services.weather_cells import WeatherCells, prune_dated_cache
 
     raw_cache = WeatherCells(
@@ -298,7 +312,26 @@ async def build(http, model: str, day: str, plants) -> None:
     curve_cache = CurveCache(directory().parent.parent / "fleet-curve-cache" / model / day)
     fetched = saved.get("fetched", {})
     saved_at = saved.get("saved_at", datetime.now(UTC).timestamp())
+    # 缺失坐标可以续拉，但每天的拉取轮数有上限，持续失败的坐标不会整天反复计费。
+    rounds = int(saved.get("fetch_rounds", 0))
+    can_fetch = rounds < settings.fleet_fetch_rounds_per_day
+    counted = False
     stop = False
+
+    def save_index() -> None:
+        write(
+            cache_path,
+            {
+                "saved_at": saved_at,
+                "batch_stamp": out.batch_stamp,
+                "basis": out.basis.model_dump(),
+                "resolution_minutes": 15,
+                "forecast_days": n_days + 1,
+                "cell_files": raw_cache.references,
+                "fetched": fetched,
+                "fetch_rounds": rounds,
+            },
+        )
     out.status = "building"
 
     def region_list(k: int) -> list[RegionPrediction]:
@@ -390,7 +423,13 @@ async def build(http, model: str, day: str, plants) -> None:
             if ck not in raw_cache and ck not in pending:
                 pending.add(ck)
                 missing.append((lat, lon))
-        if missing:
+        if missing and not can_fetch:
+            out.message = "今日气象拉取轮数已用完，显示已覆盖范围"
+        elif missing:
+            if not counted:
+                rounds += 1
+                counted = True
+                save_index()
             await pacer.take(len(missing))  # 只为真正出网的坐标付时间
             try:
                 await shared.take(len(missing))
@@ -418,27 +457,10 @@ async def build(http, model: str, day: str, plants) -> None:
                     payload = payload if isinstance(payload, list) else [payload]
                     if len(payload) != len(missing):
                         raise ValueError("批量响应数量不一致")
-                    # 上游接口不锁定批次：跨批次时停止，下一轮重新取完整新批次。
-                    latest = await weather.get_model_meta(http, model, fresh=True)
-                    if meta is not None and (
-                        latest is None or weather.batch_stamp(latest) != stamp
-                    ):
-                        out.message = "气象批次正在更新，保留已确认结果，稍后重算"
-                        stop = True
-                        break
                     for (lat, lon), raw in zip(missing, payload, strict=True):
                         raw_cache[coord_key(lat, lon)] = raw
                         fetched[coord_key(lat, lon)] = datetime.now(ZoneInfo(TZ)).isoformat()
-                    write(
-                        cache_path,
-                        {
-                            "saved_at": saved_at,
-                            "batch_stamp": stamp,
-                            "resolution_minutes": 15,
-                            "cell_files": raw_cache.references,
-                            "fetched": fetched,
-                        },
-                    )
+                    save_index()
             except Exception:
                 log.warning("fleet weather batch failed: %s %s", model, start, exc_info=True)
                 out.message = "部分区域气象数据暂不可用，显示已覆盖范围"
@@ -583,6 +605,24 @@ def carry_previous(model: str, day: str) -> dict | None:
     return {**result.model_dump(), "_carried": True}
 
 
+async def catalog_revision() -> str:
+    async with SessionLocal() as db:
+        count, updated = (
+            await db.execute(
+                select(func.count(), func.max(CatalogPlant.updated_at))
+                .select_from(CatalogPlant)
+                .where(CatalogPlant.status == "operating")
+            )
+        ).one()
+    return f"{count}:{updated.isoformat() if updated else ''}"
+
+
+async def operating_plants() -> list[CatalogPlant]:
+    async with SessionLocal() as db:
+        rows = await db.execute(select(CatalogPlant).where(CatalogPlant.status == "operating"))
+        return list(rows.scalars().all())
+
+
 async def ensure(http, model: str) -> FleetPrediction:
     if model not in MODELS:
         raise ValueError("不支持的模型")
@@ -605,6 +645,10 @@ async def ensure(http, model: str) -> FleetPrediction:
         )
         else blank(model, day)
     )
+    if saved and saved.get("_carried") and beijing_now().hour < settings.fleet_refresh_hour:
+        # Open-Meteo 日额度在 UTC 零点（北京 08:00）重置；此前沿用上一日快照里对应日期的
+        # 预测，不开当天这一轮整目录拉取。docs/04 §二
+        return initial
     if saved and saved.get("_retry_at", 0) > time.time():
         return initial
     task = _jobs.get(key)
@@ -618,37 +662,19 @@ async def ensure(http, model: str) -> FleetPrediction:
     async def run():
         async with _gate:
             try:
-                # 数据库与上游批次检查也在后台进行，读快照的请求无需等待连接池。
-                meta = await weather.get_model_meta(http, model)
-                async with SessionLocal() as db:
-                    count, updated = (
-                        await db.execute(
-                            select(func.count(), func.max(CatalogPlant.updated_at))
-                            .select_from(CatalogPlant)
-                            .where(CatalogPlant.status == "operating")
-                        )
-                    ).one()
-                revision = f"{count}:{updated.isoformat() if updated else ''}"
+                # 数据库检查也在后台进行，读快照的请求无需等待连接池。
+                revision = await catalog_revision()
                 if saved and not saved.get("_carried"):
                     age = time.time() - datetime.fromisoformat(saved["generated_at"]).timestamp()
+                    # 当天已完成就不再重算，新批次也不触发；部分覆盖每半小时续算，
+                    # 气象只补拉缺失坐标。
                     if (
                         usable(saved, day)
-                        and saved.get("batch_stamp") == weather.batch_stamp(meta)
                         and saved.get("catalog_revision") == revision
-                        and age < (43200 if saved["status"] == "ready" else 1800)
+                        and (saved["status"] == "ready" or age < 1800)
                     ):
                         return
-                async with SessionLocal() as db:
-                    plants = (
-                        (
-                            await db.execute(
-                                select(CatalogPlant).where(CatalogPlant.status == "operating")
-                            )
-                        )
-                        .scalars()
-                        .all()
-                    )
-                await build(http, model, day, plants)
+                await build(http, model, day, await operating_plants())
             except Exception:
                 log.exception("fleet prediction failed: %s", key)
                 failed = load(path) or initial.model_dump()

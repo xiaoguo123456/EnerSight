@@ -1,7 +1,7 @@
 """计算完成后再发布，刷新和跨日不能清空已可用的预测。"""
 
 import asyncio
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import httpx
@@ -80,9 +80,7 @@ async def test_更新失败保留数据和时间并退避(tmp_path, monkeypatch)
     path = tmp_path / f"gfs_global-{fleet.day_key()}.json"
     saved = snapshot()
     fleet.write(path, saved)
-    monkeypatch.setattr(
-        fleet.weather, "get_model_meta", AsyncMock(side_effect=RuntimeError("连接超时"))
-    )
+    monkeypatch.setattr(fleet, "catalog_revision", AsyncMock(side_effect=RuntimeError("连接超时")))
     await fleet.ensure(None, "gfs_global")
     await fleet._jobs[f"gfs_global-{fleet.day_key()}"]
     result = await fleet.ensure(None, "gfs_global")
@@ -150,3 +148,84 @@ async def test_等气象之前归还场站查询的数据库连接(monkeypatch):
     monkeypatch.setattr(home.weather, "get_forecast", blocked)
     with pytest.raises(RuntimeError, match="测试停在"):
         await home.build_station_view(None, station(), Coord.WGS84, db)
+
+
+# ───────────────────── 每天只拉一次：批次、时效与跨日 ─────────────────────
+
+
+@pytest.fixture
+def isolated(tmp_path, monkeypatch):
+    """独立的任务表与快照目录；目录查询与重算替换为桩，只看是否开新一轮。"""
+    monkeypatch.setattr(fleet, "directory", lambda: tmp_path)
+    monkeypatch.setattr(fleet, "_jobs", {})
+    monkeypatch.setattr(fleet, "_checked", {})
+    monkeypatch.setattr(fleet, "catalog_revision", AsyncMock(return_value="1:"))
+    monkeypatch.setattr(fleet, "operating_plants", AsyncMock(return_value=[]))
+    build = AsyncMock()
+    monkeypatch.setattr(fleet, "build", build)
+    return build
+
+
+@pytest.mark.parametrize(
+    "status,minutes,rebuilt",
+    [
+        ("ready", 13 * 60, False),  # 旧规则 12 小时后整轮重拉
+        ("partial", 10, False),
+        ("partial", 31, True),  # 部分覆盖半小时后续算，只补拉缺失坐标
+    ],
+)
+async def test_当天快照完成后不再重算_部分覆盖才续算(
+    tmp_path, isolated, status, minutes, rebuilt
+):
+    saved = snapshot()
+    saved.update(
+        status=status,
+        catalog_revision="1:",
+        generated_at=(datetime.now(UTC) - timedelta(minutes=minutes)).isoformat(),
+    )
+    fleet.write(tmp_path / f"gfs_global-{fleet.day_key()}.json", saved)
+    await fleet.ensure(None, "gfs_global")
+    await fleet._jobs[f"gfs_global-{fleet.day_key()}"]
+    assert isolated.await_count == (1 if rebuilt else 0)
+
+
+@pytest.mark.parametrize("hour,started", [(7, False), (8, True)])
+async def test_跨日在额度重置前沿用上一日预测(tmp_path, monkeypatch, isolated, hour, started):
+    now = datetime.now(fleet.ZoneInfo(fleet.TZ)).replace(hour=hour, minute=30)
+    monkeypatch.setattr(fleet, "beijing_now", lambda: now)
+    yesterday = (now.date() - timedelta(days=1)).isoformat()
+    fleet.write(tmp_path / f"gfs_global-{yesterday}.json", snapshot(yesterday))
+    result = await fleet.ensure(None, "gfs_global")
+    key = f"gfs_global-{now.date().isoformat()}"
+    assert result.date == now.date().isoformat() and result.energy_kwh == 4800
+    assert (key in fleet._jobs) is started
+    if started:
+        await fleet._jobs[key]
+        assert isolated.await_count == 1
+
+
+async def test_续拉只请求缺失坐标且每天轮数有上限(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleet, "directory", lambda: tmp_path)
+    monkeypatch.setattr(settings, "fleet_coords_per_request", 1)
+    monkeypatch.setattr(settings, "fleet_fetch_rounds_per_day", 2)
+    raw = forecast()
+    seen = []
+
+    def respond(request):
+        latitude = request.url.params["latitude"]
+        seen.append(latitude)
+        # 用 5xx 模拟单个坐标持续失败；429 会进入共享冷却，干扰其他用例
+        return httpx.Response(500 if latitude.startswith("40.") else 200, json=raw)
+
+    plants = [plant("a"), plant("c", lat=40.3)]
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(url__regex=r".*/static/meta\.json").respond(404)
+        mock.get(url__regex=r".*/v1/forecast.*").mock(side_effect=respond)
+        async with httpx.AsyncClient() as http:
+            for _ in range(3):
+                await fleet.build(http, "gfs_global", fleet.day_key(), plants)
+    # 第一轮两个坐标都请求；第二轮只补失败的坐标；第三轮轮数用完不再出网
+    assert len(seen) == 3
+    assert not seen[0].startswith("40.") and seen[1].startswith("40.") and seen[2] == seen[1]
+    out = fleet.load(tmp_path / f"gfs_global-{fleet.day_key()}.json")
+    assert out["covered_count"] == 1 and out["status"] == "partial"

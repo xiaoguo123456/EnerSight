@@ -39,6 +39,9 @@ def station(kind="solar", **kwargs):
 
 async def test_并发消费者仅请求完整15分钟且跨日重新取数(quarter, monkeypatch):
     weather.clear_cache()
+    # 回源时段比较拉取时刻与当前时刻，二者须用同一个时钟；
+    # 夹具固定的 06:37 会与真实拉取时刻分属不同时段
+    monkeypatch.setattr(weather.Forecast, "now", lambda self: datetime.now(ZoneInfo(TZ)))
     with respx.mock(assert_all_called=False) as mock:
         mock.get(url__regex=r".*/static/meta.json").respond(404)
         route = mock.get(url__regex=r".*/v1/forecast.*").respond(200, json=quarter)

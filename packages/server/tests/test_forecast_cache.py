@@ -1,7 +1,7 @@
-"""按模型批次缓存预报、15 分钟序列按需拉取、上游 429 降级。
+"""单点预报按回源时段与模型批次缓存、15 分钟序列统一请求、上游 429 降级。
 
-上游每 6 小时才出一批，按时间片缓存会把同一份数据反复拉回来（每网格每天 96 次，
-92 次是重复的）。这里锁住「同批次只回源一次、新批次立刻刷新」这条线。
+上游每 6 小时才出一批，短时间片缓存会把同一份数据反复拉回来（每网格每天 96 次，
+92 次是重复的）。这里锁住「每个坐标每天最多回源 4 次、跨时段批次没变不重拉」这条线。
 """
 
 from datetime import UTC, datetime, timedelta
@@ -96,17 +96,6 @@ class TestBatchCache:
         assert upstream.hourly_calls == 0
         assert upstream.meta_calls == 5
 
-    async def test_新批次落地立刻刷新(self, upstream: _Upstream):
-        async with httpx.AsyncClient() as http:
-            await _get(http)
-            upstream.issued = BATCH_B
-            weather._meta_cache.clear()  # 模拟元数据 TTL 到期，看到新批次
-            fc = await _get(http)
-        assert upstream.quarter_calls == 2
-        assert upstream.hourly_calls == 0
-        assert fc.meta is not None
-        assert fc.meta.issued_at == BATCH_B
-
     async def test_起报时刻进缓存键(self, upstream: _Upstream):
         async with httpx.AsyncClient() as http:
             fc = await _get(http)
@@ -128,6 +117,62 @@ class TestBatchCache:
         assert upstream.quarter_calls == 1
         assert upstream.hourly_calls == 0  # 同一时间片内仍然命中
         assert fc.basis().issued_at is None  # 不拿拉取时间冒充起报
+
+
+class _Clock(datetime):
+    """weather 模块里的 datetime：拉取时刻与 Forecast.now 共用同一个可拨动的时钟。"""
+
+    current = datetime(2026, 9, 14, 0, 30, tzinfo=ZoneInfo(TZ))
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.current.astimezone(tz) if tz is not None else cls.current.replace(tzinfo=None)
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    _Clock.current = datetime(2026, 9, 14, 0, 30, tzinfo=ZoneInfo(TZ))
+    monkeypatch.setattr(weather, "datetime", _Clock)
+    return _Clock
+
+
+class TestDailyRefreshSlots:
+    """每个坐标每天最多回源 4 次：时段内不追新批次，进入新时段批次没变也不重拉。"""
+
+    async def test_同一时段内新批次不回源(self, upstream: _Upstream, clock):
+        async with httpx.AsyncClient() as http:
+            await _get(http)
+            upstream.issued = BATCH_B
+            weather._meta_cache.clear()
+            clock.current += timedelta(hours=5)  # 05:30，仍在 00–06 时段
+            fc = await _get(http)
+        assert upstream.quarter_calls == 1
+        assert fc.meta is not None and fc.meta.issued_at == BATCH_A
+
+    async def test_进入新时段批次没变不回源_变了才刷新(self, upstream: _Upstream, clock):
+        async with httpx.AsyncClient() as http:
+            await _get(http)
+            clock.current += timedelta(hours=6)
+            weather._meta_cache.clear()
+            await _get(http)
+            assert upstream.quarter_calls == 1
+            upstream.issued = BATCH_B
+            weather._meta_cache.clear()
+            fc = await _get(http)
+        assert upstream.quarter_calls == 2
+        assert fc.meta is not None and fc.meta.issued_at == BATCH_B
+
+    @pytest.mark.parametrize("meta_known", [True, False])
+    async def test_批次频繁变化或元数据缺失一天也最多回源四次(
+        self, upstream: _Upstream, clock, meta_known
+    ):
+        async with httpx.AsyncClient() as http:
+            for hour in range(24):
+                upstream.issued = BATCH_A + timedelta(hours=hour) if meta_known else None
+                weather._meta_cache.clear()
+                await _get(http)
+                clock.current += timedelta(hours=1)
+        assert upstream.quarter_calls == 4
 
 
 class TestUnifiedQuarter:

@@ -223,7 +223,7 @@ def test_单格今日缺测仍计算未来日():
     assert result[0][1][0] is None and result[0][1][1] is not None
 
 
-async def test_新批次不复用旧天气且不伪造拉取时间(tmp_path, monkeypatch):
+async def test_同日新批次复用当天天气且不伪造拉取时间(tmp_path, monkeypatch):
     from app.providers.open_meteo import ModelMeta
 
     monkeypatch.setattr(fleet, "directory", lambda: tmp_path)
@@ -252,11 +252,12 @@ async def test_新批次不复用旧天气且不伪造拉取时间(tmp_path, mon
             assert route.call_count == 1
             assert fleet.load(path)["basis"]["fetched_at"] == first["basis"]["fetched_at"]
             assert fleet.load(path)["input_archive_id"] == first["input_archive_id"]
+            # 同一天新批次落地也不重拉：全目录每天只拉一次，起报沿用当天首轮
             meta = ModelMeta("ncep_gfs013", issued + timedelta(hours=6), issued, 21600)
             await fleet.build(http, "gfs_global", fleet.day_key(), [plant("a")])
-            assert route.call_count == 2
-            assert fleet.load(path)["basis"]["issued_at"] != first["basis"]["issued_at"]
-            assert fleet.load(path)["input_archive_id"] != first["input_archive_id"]
+            assert route.call_count == 1
+            assert fleet.load(path)["basis"]["issued_at"] == first["basis"]["issued_at"]
+            assert fleet.load(path)["input_archive_id"] == first["input_archive_id"]
             assert json.loads(archive_path.read_text()) == archived
 
 

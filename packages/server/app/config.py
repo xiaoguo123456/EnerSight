@@ -87,10 +87,10 @@ class Settings(BaseSettings):
     ttl_model_meta: int = 300
 
     # 缓存 TTL（秒），见 docs/05 §五
-    # 元数据拿不到、无法确认起报时的退化时间片；正常路径按批次指纹缓存，见 services/weather
+    # 元数据拿不到、无法确认起报时的批次标识时间片，见 services/weather.batch_stamp
     ttl_current_weather: int = 600
-    # 一批模型输出的缓存寿命。上游 6 小时一批，留足延迟余量；同批次内重复拉毫无意义
-    ttl_forecast_batch: int = 8 * 3600
+    # 单点预报每个坐标每天最多回源几次，按当地时段均分；时段内不追新批次。docs/04 §二
+    forecast_refreshes_per_day: int = 4
 
     # 上游拉取：一律带退避重试、限并发。CLAUDE.md「已知的环境坑」
     # 只重试传输错误与 5xx；429（配额）与 400（坐标越界）重试无用，只会烧得更快
@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     fleet_coords_per_request: int = 100
     # 因此要按坐标限速。上限 600/分钟，留两成余量给站点预报与元数据（同一个 IP 共享）
     fleet_coords_per_minute: int = 480
+    # 全目录每个模型每天只整轮拉一次气象。Open-Meteo 日额度按 UTC 零点重置，北京时间此整点前
+    # 沿用上一日快照；同日缺失坐标续拉的轮数有上限。docs/04 §二
+    fleet_refresh_hour: int = 8
+    fleet_fetch_rounds_per_day: int = 4
     # 汇总取气象的网格步长，按能源类型分开。辐射场在百公里尺度上平滑，风速不是 ——
     # 实测 1° 下光伏容量加权汇总偏差 +0.75%、风电 -8.46%，0.25° 分别为 +0.15% / +0.09%。
     # 见 docs/04 §七。改小要同步看坐标预算：风电占可算场站的六成

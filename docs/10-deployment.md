@@ -305,3 +305,11 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 - 旧探测 Worker `enersight-weather-probe` 已到期，所有请求返回 410，不再使用。
 - 后端区分 Worker 拒绝与上游响应：透传响应带 `X-Weather-Relay: cloudflare`，无此头的 4xx 与任何 3xx 判为转发异常且不重试，避免白名单拒绝被误当成坐标越界。
 - 转发代码在开发分支，尚未合入 main；当前测试镜像 `1ad4ad60c1bd` 不读取转发配置，合入并自动部署后生效。生产 Worker 尚未建立，建立前先在生产机确认实际出口 IP。
+
+### 气象拉取限次（2026-09-14）
+
+- 背景：测试环境日额度耗尽排查显示，全目录在新批次、跨日、索引 12 小时到期和元数据缺失时都会整轮重拉（每轮约 2,747 个坐标，四个模型各自一份），单点预报在元数据缺失时每 10 分钟回源一次。
+- 全目录每个模型每个北京日整轮拉取一次，08:00 前沿用上一日快照；同日新批次不重拉，部分覆盖只补拉缺失坐标，续拉轮数上限 4。移除构建过程中每批次一次的元数据复核请求。
+- 单点预报每坐标每模型每天最多回源 4 次，按当地时段均分；跨时段批次未变不重拉，元数据缺失时也受同一上限约束。
+- 新增配置 `ENERSIGHT_FORECAST_REFRESHES_PER_DAY`、`ENERSIGHT_FLEET_REFRESH_HOUR`、`ENERSIGHT_FLEET_FETCH_ROUNDS_PER_DAY`，默认 4 / 8 / 4；移除 `ttl_forecast_batch`。
+- 未改动：地图云量降级网格仍未计入共享预算；`best_match` 与 `ecmwf_ifs` 仍分别缓存。
