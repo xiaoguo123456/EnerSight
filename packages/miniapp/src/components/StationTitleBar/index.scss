@@ -30,3 +30,10 @@
     @include ellipsis;
   }
 }
+
+.station-title--compact {
+  padding-bottom: var(--space-1);
+  .station-title__row { min-height: var(--size-control); }
+  .station-title__sub { margin-right: calc(-1 * var(--space-2)); flex-wrap: wrap; gap: var(--space-1); }
+  .station-title__addr { line-height: 1.5; }
+}

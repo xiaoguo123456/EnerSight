@@ -73,14 +73,13 @@ export default function Report() {
 
       <View className="report__body">
         <View className="report__meta">
-          <Text className="report__eyebrow">每日气象分析 · {r.report_date}</Text>
+          <Text className="report__eyebrow">{r.report_date}</Text>
           <Text className="report__station-name">{r.station.name}</Text>
-          {r.station.address && <Text className="report__station-addr-text">{r.station.address}</Text>}
           <Text className="report__method">{r.method === 'ai' ? 'AI 辅助分析' : '规则分析'} · 气象模型估算，非实测</Text>
         </View>
 
-        <DataFreshness label="报告生成 · 自动模型" time={r.generated_at_iso} staleMinutes={20} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
-        {r.data_as_of && <Text className="report__data-note">气象数据截至 {formatBeijingTime(r.data_as_of)}（北京时间）</Text>}
+        <DataFreshness compact label={r.method === 'ai' ? 'AI 辅助分析' : '规则分析'} timeLabel="生成于 " time={r.generated_at_iso} staleMinutes={20} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload}
+          detail={`气象数据截至 ${formatBeijingTime(r.data_as_of)}（北京时间）。${r.station.address ? `电站地区：${r.station.address}。` : ''}发电与收益为模型估算，非实测或实际结算。`} />
         {/* 先给结论，再提供风险与分时依据。 */}
         <View className="report__verdict">
           <View className="report__verdict-head">
@@ -122,7 +121,6 @@ export default function Report() {
           <SectionHeader icon="barChart" title="估算数据" info={{ title: '估算口径', content: `发电量与收益为模型估算，非实际结算。电价假设 ${r.tariff_yuan_per_kwh ?? '未记录'} 元/kWh，减排系数 ${r.co2_factor_kg_per_kwh ?? '未记录'} kg/kWh。环比为较昨日同期，昨日缺记录时不显示。` }} />
           <DataSummaryGrid cells={cells} />
         </View>
-        <Text className="report__generated">生成时间：{r.generated_at_iso ? `${formatBeijingTime(r.generated_at_iso)}（北京时间）` : r.generated_at}</Text>
       </View>
     </View>
   )

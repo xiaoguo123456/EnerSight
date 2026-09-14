@@ -180,3 +180,29 @@
 
 // 数值标签对应预报采样点，与色阶共同阅读。
 .map-page__sample { white-space: nowrap; position: absolute; z-index: 1; transform: translate(-50%, -50%); pointer-events: none; padding: 4px 7px; border-radius: 5px; color: #23364b; background: rgba(255,255,255,.88); font-size: 12px; font-weight: 600; box-shadow: 0 1px 3px rgba(15,23,42,.1); }
+
+// 地图只保留一层底部面板，搜索及地图操作维持完整点击区域。
+.map-page__station { height: var(--size-control); min-width: 0; max-width: 100%; box-sizing: border-box; box-shadow: none; }
+.map-page__station-name { min-width: 0; @include ellipsis; }
+.map-page__search { height: var(--size-control); }
+.map-page__search-clear, .map-page__picked-close, .map-page__tool { width: var(--size-control); height: var(--size-control); flex-shrink: 0; }
+.map-page__results { top: 62px; }
+.map-page__data-state { max-width: calc(100% - 88px); }
+.map-page__sheet { box-sizing: border-box; padding: var(--space-2) var(--space-3); overflow-y: auto; }
+.map-page__collapse { min-height: var(--size-control); justify-content: flex-end; font-size: var(--font-caption); }
+.map-page__sheet-head { min-height: var(--size-control); }
+.map-page__picked { position: static; display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); padding: 0; border-radius: 0; box-shadow: none; }
+.map-page__picked-head { display: flex; align-items: center; gap: var(--space-2); }
+.map-page__picked-add { min-height: var(--size-control); justify-content: center; padding: 0 var(--space-3); border-radius: var(--radius-thumb); }
+.map-page__legend { max-width: calc(100% - 76px); }
+@media (max-height: 700px) {
+  .map-page__tools { flex-direction: row; }
+  .map-page__legend { transform: translateY(-56px); }
+}
+
+.map-page__sheet-heading { display: flex; align-items: center; gap: 8px; }
+.map-page__sheet-head { flex: 1; min-width: 0; }
+.map-page__collapse { flex-shrink: 0; min-width: 52px; }
+
+// H5 导航容器已扣除底栏高度，地图沿用容器高度。
+.taro_tabbar_page .map-page { height: 100%; }

@@ -10,6 +10,7 @@ interface Props {
   status: StationStatus
   address: string
   own?: boolean
+  compact?: boolean
   onSwitch?: () => void
 }
 
@@ -19,22 +20,22 @@ interface Props {
  * 不放品牌名 —— 用户已经在 app 里了，不需要反复被告知产品叫什么。
  * 这块黄金位置给用户真正关心的：我在看哪个站。
  */
-export function StationTitleBar({ name, status, address, own = false, onSwitch }: Props) {
+export function StationTitleBar({ name, status, address, own = false, compact = false, onSwitch }: Props) {
   const safe = getSafeArea()
   return (
     <View
-      className="station-title"
+      className={`station-title${compact ? ' station-title--compact' : ''}`}
       style={{
         paddingTop: `${safe.statusBarHeight + 4}px`,
-        paddingRight: `${Math.max(safe.menuGuardRight, 16)}px`,
+        paddingRight: `${compact ? 16 : Math.max(safe.menuGuardRight, 16)}px`,
       }}
     >
-      <View className="station-title__row" hoverClass="pressed" hoverStayTime={80} onClick={onSwitch}>
+      <View className="station-title__row" style={compact ? { paddingRight: `${Math.max(safe.menuGuardRight - 16, 0)}px` } : undefined} hoverClass="pressed" hoverStayTime={80} onClick={onSwitch}>
         <Text className="station-title__name">{name}</Text>
         <Icon name="chevronDown" size={16} color="#6b7280" strokeWidth={1.75} />
       </View>
       <View className="station-title__sub">
-        <StatusBadge status={status} own={own} />
+        {(!compact || status !== 'normal') && <StatusBadge status={status} own={own} />}
         <Text className="station-title__addr">{address}</Text>
       </View>
     </View>

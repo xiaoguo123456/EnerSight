@@ -52,7 +52,7 @@ function resolveCanvas(node: any, id: string): any {
  */
 export function TrendChart({ id, data, height = 150 }: Props) {
   const ctxRef = useRef<any>(null)
-  const sizeRef = useRef({ w: 0, h: 0 })
+  const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
   const [ready, setReady] = useState(false)
 
   const peak = useCallback((vals: (number | null)[]) => {
@@ -97,7 +97,7 @@ export function TrendChart({ id, data, height = 150 }: Props) {
           canvas.height = h * dpr
           ctx.scale(dpr, dpr)
           ctxRef.current = ctx
-          sizeRef.current = { w, h }
+          sizeRef.current = { w, h, dpr }
           setReady(true)
         })
     }

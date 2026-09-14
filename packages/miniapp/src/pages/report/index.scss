@@ -30,3 +30,15 @@
   .suggestions__no { margin-top: 3px; background: var(--color-bg); color: #475569; font-size: 12px; }
   .suggestions__text { font-size: 14px; line-height: 1.75; color: #475569; }
 }
+
+// 元信息收拢，短结论突出，正文按连续段落阅读。
+.report__body { padding: var(--space-2) var(--space-page) calc(var(--space-6) + env(safe-area-inset-bottom)); }
+.report__meta { padding: 0 0 var(--space-2); border-bottom: 0; text-align: left; }
+.report__eyebrow { margin-bottom: var(--space-1); }
+.report__method { margin-top: var(--space-1); }
+.report__verdict { padding: var(--space-3) 0; text-align: left; }
+.report__verdict-title { margin-top: var(--space-1); }
+.report__verdict-detail { margin-top: var(--space-2); text-align: left; line-height: 1.65; }
+.report__card { padding: var(--space-4) 0; }
+.report .section-header { margin-bottom: var(--space-3); }
+.report .data-freshness { margin-bottom: var(--space-1); }

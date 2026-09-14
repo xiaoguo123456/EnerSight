@@ -5,105 +5,110 @@
   &__body {
     display: flex;
     flex-direction: column;
-    gap: var(--space-group);
-    padding: 4px var(--space-page) calc(var(--space-page) + var(--space-tabbar));
+    gap: var(--space-3);
+    padding: 0 var(--space-page) calc(var(--space-page) + var(--space-tabbar));
   }
-
-  // Hero + 四宫格：8px 紧贴，读作一组
-  &__group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-card-gap);
-  }
-
   &__card {
     background: var(--color-surface);
     border-radius: var(--radius-card);
-    padding: 14px;
+    padding: var(--space-3);
   }
-
-  &__chart { margin-top: 8px; }
+  .station-title, .page-title { position: sticky; top: 0; z-index: 10; }
+  &__weather .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    > view + view { border-left: 0; }
+  }
+  &__weather .metric-card { padding: 0; }
+  &__weather .metric-card__num { font-size: var(--font-metric-sm); }
+  &__weather .metric-card__head { gap: var(--space-1); }
+  &__weather .metric-card__value { white-space: nowrap; }
+  &__trend { padding-top: 0; padding-bottom: 0; }
+  &__trend-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    min-height: var(--size-control);
+    padding: var(--space-2) 0;
+    margin: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    color: var(--color-text);
+    font-size: var(--font-module-title);
+    font-weight: 600;
+    line-height: 1.5;
+    &::after { border: 0; }
+    @include pressable;
+  }
+  &__trend-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    .seg-tabs { flex: 1; min-width: 0; }
+    .seg-tabs__item { height: var(--size-control); }
+  }
 }
 
-.home__data-note { font-size: 12px; line-height: 1.5; color: var(--color-text-sub); }
-.home .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; padding: 18px 10px; > view + view { border-left: 0; } }
-
-.home .station-title { position: sticky; top: 0; z-index: 10; }
-.home__detail-link { font-size: 13px; color: #1264d6; min-height: 36px; display: flex; align-items: center; }
-.forecast-toolbar,.forecast-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.forecast-model { min-height:44px; display:flex; align-items:center; gap:6px; color:#1264d6; font-size:14px; }
-.forecast-title { font-size:15px; font-weight:600; color:#233146; }
-.forecast-muted { display:block; color:#617084; font-size:12px; line-height:1.6; }
-.forecast-note { display:block; color:#526174; font-size:12px; line-height:1.7; }
-.forecast-help { min-height:40px; display:flex; align-items:center; color:#617084; font-size:12px; }
-.forecast-value { display:flex; align-items:baseline; gap:8px; margin:5px 0 6px; font-size:34px; font-weight:650; color:#192b40; font-variant-numeric:tabular-nums; }
-.forecast-value__unit { font-size:15px; font-weight:400; color:#617084; }
-.forecast-meta { padding:14px 0; color:#53667d; font-size:12px; border-bottom:1px solid #eef2f6; }
-.forecast-curve { padding-top:18px; }
-.forecast-curve .forecast-muted { margin-top:5px; }
-.forecast-warning { display:block; color:#98521a; font-size:12px; line-height:1.7; margin-top:8px; }
-.forecast-split { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding:18px 0; border-bottom:1px solid #eef2f6; font-size:17px; font-weight:550; }
-.forecast-coverage { padding:18px 0 12px; font-size:13px; }
-.forecast-progress { height:4px; margin:10px 0; border-radius:4px; background:#e7edf5; overflow:hidden; }
-.forecast-progress > view { height:100%; background:#1677ff; }
-.forecast-region { display:flex; justify-content:space-between; gap:10px; min-height:48px; align-items:center; border-bottom:1px solid #eef2f6; font-size:13px; color:#33465e; }
-.forecast-more { text-align:center; padding:15px 0 2px; color:#1264d6; font-size:13px; }
-.fleet-short { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 14px; background:#eef4fb; border-radius:12px; }
-.fleet-short .forecast-title { font-size:13px; }
-.fleet-short__value { flex-shrink:0; font-size:15px; color:#1264d6; font-weight:600; }
-.forecast-footer { display:flex; justify-content:space-between; gap:12px; padding:6px 0; font-size:11px; color:#617084; }
-.forecast-footer > text:first-child { color:#1264d6; }
-
-.fleet-navigation { display:flex; align-items:center; justify-content:space-between; margin:-10px 0 -14px; min-height:44px; }
-.fleet-history-link { display:flex; align-items:center; gap:6px; min-height:44px; padding:0 4px 0 12px; color:#1264d6; font-size:13px; }
-
-// 起报批次与未来 7 天列表。docs/17 §二
-.forecast-basis { display: block; margin-top: -8px; font-size: 11px; line-height: 1.6; color: #617084; }
-.outlook { display: flex; flex-direction: column; margin-top: 10px; }
-.outlook__row { padding: 10px 6px; border-radius: 10px; }
-.outlook__row--active { background: #eef4fb; }
-.outlook__head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #33465e; }
-.outlook__day { width: 76px; flex-shrink: 0; font-weight: 550; color: #233146; font-variant-numeric: tabular-nums; }
-.outlook__tag { font-size: 10px; line-height: 18px; padding: 0 5px; border-radius: 4px; background: #f1f5f9; color: #64748b; flex-shrink: 0; }
-.outlook__weather { flex: 1; min-width: 0; font-size: 12px; color: #617084; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.outlook__level { flex-shrink: 0; font-size: 12px; font-weight: 600; }
-.outlook__energy { margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; font-weight: 550; color: #192b40; }
-.outlook__bar { height: 4px; margin-top: 7px; border-radius: 4px; background: #e7edf5; overflow: hidden; }
-.outlook__bar > view { height: 100%; background: #1677ff; border-radius: 4px; }
-.home .forecast-row .section-header { margin-bottom: 0; flex: 1; }
-
-// 2026-09-12 紧凑化：一个 Hero、一条 7 天横条、一张曲线；说明收进 ⓘ。
-.forecast-toolbar { min-height: 44px; }
-.forecast-model { flex: 1; min-width: 0; > text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } }
-.forecast-subtitle { font-size: 14px; font-weight: 600; color: #233146; }
-.forecast-unit { font-size: 12px; color: #617084; }
-.forecast-series { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; }
-.forecast-label { display: block; font-size: 12px; font-weight: 400; color: #617084; margin-bottom: 4px; }
-.forecast-split--tight { padding: 12px 0; font-size: 16px; border-bottom: 1px solid #eef2f6; }
-.forecast-caption { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; color: #617084; }
-.forecast-state { display: block; margin-top: 10px; font-size: 13px; line-height: 1.6; color: #526174; }
-.forecast-link { color: #1264d6; }
-.forecast-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid #eef2f6; font-size: 12px; color: #617084; }
-.forecast-foot .forecast-link { min-height: 32px; display: flex; align-items: center; }
-.forecast-curve { padding-top: 14px; }
-.forecast-coverage { padding: 14px 0 4px; }
-.home__card .forecast-caption:last-child { margin-top: 10px; }
-.fleet-history-link { padding: 0 4px; }
-.fleet-history-link { flex-shrink: 0; white-space: nowrap; }
-
-.forecast-action { margin: 0; padding: 0 8px; min-height: 44px; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--color-primary); font-size: var(--font-caption); line-height: 1.5; }
+.forecast-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--size-control);
+  .seg-tabs { flex-shrink: 0; }
+  .seg-tabs__item { flex: none; }
+  .forecast-picker { flex: 1; min-width: 0; }
+}
+.forecast-model {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  min-height: var(--size-control);
+  color: var(--color-text-sub);
+  font-size: var(--font-caption);
+  > text { @include ellipsis; }
+}
+.forecast-row, .forecast-overview { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.forecast-heading { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.forecast-row > .forecast-heading { flex: 1; }
+.forecast-title, .forecast-subtitle { color: var(--color-text); font-weight: 600; }
+.forecast-title { font-size: var(--font-module-title); }
+.forecast-subtitle { font-size: var(--font-body); }
+.forecast-muted { display: block; color: var(--color-text-sub); font-size: var(--font-caption); line-height: 1.6; }
+.forecast-unit, .forecast-label { font-size: var(--font-caption); color: var(--color-text-sub); font-weight: 400; }
+.forecast-label { display: block; margin-bottom: var(--space-1); }
+.forecast-value { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--font-hero); font-weight: 700; color: var(--color-text); @include numeric; }
+.forecast-value__unit { font-size: var(--font-body); font-weight: 400; color: var(--color-text-sub); }
+.forecast-peak { text-align: right; font-size: var(--font-metric-sm); font-weight: 600; @include numeric; }
+.forecast-curve { padding-top: var(--space-1); }
+.forecast-series { display: flex; gap: var(--space-3); font-size: var(--font-caption); color: var(--color-primary); }
+.forecast-series__grid { color: var(--color-energy); }
+.forecast-split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-divider); font-size: var(--font-metric-sm); font-weight: 600; }
+.forecast-state, .forecast-warning, .forecast-empty { display: block; margin-top: var(--space-2); font-size: var(--font-caption); line-height: 1.6; }
+.forecast-state, .forecast-empty { color: var(--color-text-sub); }
+.forecast-warning { color: #98521a; }
+.forecast-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-2); border-top: 1px solid var(--color-divider); font-size: var(--font-caption); color: var(--color-text-sub); }
+.forecast-action { width: auto; min-width: 0; margin: 0; padding: 0 var(--space-1); min-height: var(--size-control); display: flex; flex-shrink: 0; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--color-primary); font-size: var(--font-caption); line-height: 1.5; border-radius: var(--radius-thumb); @include pressable; }
 .forecast-action::after { border: 0; }
-.forecast-action:focus-visible { outline: 2px solid var(--color-primary); }
+.forecast-action:focus-visible, .home__trend-toggle:focus-visible { outline: 2px solid var(--color-primary); }
 .forecast-action[disabled] { color: var(--color-text-sub); }
-.forecast-actions { display: flex; justify-content: center; gap: var(--space-2); }
+.forecast-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.forecast-details { border-top: 1px solid var(--color-divider); }
 .forecast-table { max-height: 280px; overflow-y: auto; font-size: var(--font-caption); color: var(--color-text); }
-.forecast-table .forecast-row { min-height: 36px; border-bottom: 1px solid var(--color-divider); }
-.forecast-empty { margin: var(--space-3) 0; font-size: var(--font-body); line-height: 1.7; color: var(--color-text-sub); }
-.forecast-foot .forecast-link { min-height: 44px; }
-.forecast-toolbar { flex-wrap: wrap; gap: 0 var(--space-2); }
-
-// 汇总页只保留一行覆盖状态，详细口径放入已有信息入口。
-.fleet-status { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0 4px; color: var(--color-text-sub); font-size: 13px; }
+.forecast-table .forecast-row { min-height: var(--size-control); border-bottom: 1px solid var(--color-divider); }
+.forecast-region { display: flex; justify-content: space-between; gap: var(--space-2); min-height: var(--size-control); align-items: center; border-bottom: 1px solid var(--color-divider); font-size: var(--font-body); color: var(--color-text); }
+.forecast-more { display: flex; align-items: center; justify-content: center; min-height: var(--size-control); color: var(--color-primary); font-size: var(--font-body); }
+.fleet-history-link { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-1); min-height: var(--size-control); color: var(--color-primary); font-size: var(--font-caption); }
+.fleet-status { display: flex; justify-content: space-between; gap: var(--space-2); padding-top: var(--space-2); color: var(--color-text-sub); font-size: var(--font-caption); }
 .fleet-refresh { justify-content: flex-end; }
-.home .page-title { position: sticky; top: 0; z-index: 10; }
-.forecast-toolbar > picker { flex: 1; min-width: 0; }
+
+@media (max-width: 359px) {
+  .home__weather .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .forecast-toolbar .seg-tabs { gap: var(--space-2); }
+  .forecast-toolbar .seg-tabs__label { font-size: var(--font-caption); }
+}

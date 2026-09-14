@@ -12,6 +12,7 @@ import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
 import { formatBeijingTime, isDataStale } from '@enersight/core/format'
 import './index.scss'
+import { Disclosure } from '@/components/Disclosure'
 import { SatelliteTimeline } from '@/components/SatelliteTimeline'
 
 type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
@@ -23,6 +24,7 @@ type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
 export default function AlertCenter() {
   useAppShare()
   const currentId = useStationStore((s) => s.currentId)
+  const [cloudOpen, setCloudOpen] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   const [now, setNow] = useState(Date.now())
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
@@ -32,6 +34,7 @@ export default function AlertCenter() {
   const list = useRequest(() => alertsApi.list(currentId ?? undefined, filter), [currentId, filter])
 
   usePullDownRefresh(async () => { await Promise.all([cur.reload(), list.reload()]); Taro.stopPullDownRefresh() })
+  useEffect(() => { setCloudOpen(!!cur.data?.alert) }, [cur.data?.station?.id, cur.data?.alert?.id])
   const noStation = cur.status === 'error' && cur.error.status === 404
   const refreshing = cur.refreshing || list.refreshing
   const refresh = () => { if (!refreshing) { void cur.reload(); void list.reload() } }
@@ -41,7 +44,6 @@ export default function AlertCenter() {
     <View className="alerts">
       <PageTitleBar
         title="预警中心"
-        aside={list.status === 'success' ? `${list.data.alerts.length} 条记录` : undefined}
       />
 
       <View className="alerts__body">
@@ -89,7 +91,7 @@ export default function AlertCenter() {
           )
         )}
 
-        {cur.status === 'success' && cur.data.station && <SatelliteTimeline key={cur.data.station.id} stationId={cur.data.station.id} />}
+        {cur.status === 'success' && cur.data.station && <Disclosure title="近 3 小时云图" open={cloudOpen} onToggle={() => setCloudOpen(v => !v)}><SatelliteTimeline key={cur.data.station.id} stationId={cur.data.station.id} embedded /></Disclosure>}
         {!noStation && (
           <View className="alerts__card">
             <SectionHeader icon="clipboard" title="预警记录" />

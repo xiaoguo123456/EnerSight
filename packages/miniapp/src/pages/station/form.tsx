@@ -1,5 +1,5 @@
 import { useAppShare } from '@/hooks/useAppShare'
-import { View, Text, Input, Picker, Map, Switch, Textarea } from '@tarojs/components'
+import { Button, View, Text, Input, Picker, Map, Switch, Textarea } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import type { CurtailmentRule, Mounting, PowerCurvePoint, StationSummary, StationType, TurbineClass, UpdateStationRequest } from '@enersight/core/types'
@@ -11,6 +11,8 @@ import { Icon, InfoTip, PageHeader, SegmentedTabs, Skeleton } from '@/components
 import { useStationStore } from '@/store'
 import { useAuthStore } from '@/store/auth'
 import { decodeRouteParam } from '@/route'
+import { Disclosure } from '@/components/Disclosure'
+import { getSafeArea } from '@/hooks/useSafeArea'
 import './form.scss'
 
 /**
@@ -93,26 +95,30 @@ function fromStation(s: StationSummary, form: Form): Form {
   }
 }
 
-function validate(f: Form): string | null {
-  if (!f.name.trim()) return '请填写电站名称'
-  if (f.name.trim().length > 64) return '名称不超过 64 个字'
-  const cap = num(f.capacity); if (cap === null || cap <= 0) return '装机容量需大于 0'
+type FormSection = 'basic' | 'location' | 'model' | 'limits'
+type FormError = { section: FormSection | 'submit'; message: string }
+const invalid = (section: FormSection, message: string): FormError => ({ section, message })
+
+function validate(f: Form): FormError | null {
+  if (!f.name.trim()) return invalid('basic', '请填写电站名称')
+  if (f.name.trim().length > 64) return invalid('basic', '名称不超过 64 个字')
+  const cap = num(f.capacity); if (cap === null || cap <= 0) return invalid('basic', '装机容量需大于 0')
   const lat = num(f.latitude); const lon = num(f.longitude)
-  if (lat === null || lon === null) return '请填写经纬度，或使用定位 / 地图选点'
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return '经纬度超出范围'
+  if (lat === null || lon === null) return invalid('location', '请填写经纬度，或使用定位 / 地图选点')
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return invalid('location', '经纬度超出范围')
   if (f.type === 'solar') {
-    const tilt = num(f.tilt); if (f.tilt && (tilt === null || tilt < 0 || tilt > 90)) return '倾角需在 0 ~ 90°'
-    const az = num(f.azimuth); if (f.azimuth && (az === null || az < 0 || az > 360)) return '方位角需在 0 ~ 360°'
+    const tilt = num(f.tilt); if (f.tilt && (tilt === null || tilt < 0 || tilt > 90)) return invalid('model', '倾角需在 0 ~ 90°')
+    const az = num(f.azimuth); if (f.azimuth && (az === null || az < 0 || az > 360)) return invalid('model', '方位角需在 0 ~ 360°')
   } else {
-    const hub = num(f.hub_height); if (f.hub_height && (hub === null || hub <= 0 || hub > 200)) return '轮毂高度需在 0 ~ 200 m'
-    if (f.turbine === 'custom') { const parsed = parseCurve(f.curveText); if (typeof parsed === 'string') return parsed }
+    const hub = num(f.hub_height); if (f.hub_height && (hub === null || hub <= 0 || hub > 200)) return invalid('model', '轮毂高度需在 0 ~ 200 m')
+    if (f.turbine === 'custom') { const parsed = parseCurve(f.curveText); if (typeof parsed === 'string') return invalid('model', parsed) }
   }
-  if (f.mode === 'ratio') { const r = num(f.ratio); if (r === null || r <= 0 || r > 100) return '限电比例需在 0 ~ 100%' }
+  if (f.mode === 'ratio') { const r = num(f.ratio); if (r === null || r <= 0 || r > 100) return invalid('limits', '限电比例需在 0 ~ 100%') }
   if (f.mode === 'schedule') {
-    if (!f.windows.length) return '至少添加一条限电时段'
+    if (!f.windows.length) return invalid('limits', '至少添加一条限电时段')
     for (const w of f.windows) {
-      const l = num(w.limit); if (l === null || l < 0 || l > 100) return '出力上限需在 0 ~ 100%'
-      if (w.start === w.end) return '时段起止不能相同'
+      const l = num(w.limit); if (l === null || l < 0 || l > 100) return invalid('limits', '出力上限需在 0 ~ 100%')
+      if (w.start === w.end) return invalid('limits', '时段起止不能相同')
     }
   }
   return null
@@ -130,6 +136,17 @@ export default function StationForm() {
   const id = decodeRouteParam(params.id)
   const editing = !!id
   const [form, setForm] = useState<Form>(EMPTY)
+  const [modelOpen, setModelOpen] = useState(false)
+  const [limitsOpen, setLimitsOpen] = useState(false)
+  const [formError, setFormError] = useState<FormError | null>(null)
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
+  useEffect(() => { setFormError(null) }, [form])
+  useEffect(() => {
+    if (!IS_WEAPP) return
+    const keyboardChanged = ({ height }: { height: number }) => setKeyboardOpen(height > 0)
+    Taro.onKeyboardHeightChange(keyboardChanged)
+    return () => Taro.offKeyboardHeightChange(keyboardChanged)
+  }, [])
   const initial = useRef<Form | null>(null)
   const [loading, setLoading] = useState(editing)
   const [failed, setFailed] = useState<string | null>(null)
@@ -149,6 +166,8 @@ export default function StationForm() {
       const loaded = fromStation(d.station, EMPTY)
       initial.current = loaded
       setForm(loaded)
+      setLimitsOpen(loaded.mode !== 'none')
+      setModelOpen(loaded.turbine === 'custom')
     }).catch(() => setFailed('电站加载失败')).finally(() => setLoading(false))
   }, [id, editing])
 
@@ -176,7 +195,14 @@ export default function StationForm() {
 
   const submit = async () => {
     const err = validate(form)
-    if (err) { void Taro.showToast({ title: err, icon: 'none' }); return }
+    if (err) {
+      setFormError(err)
+      if (err.section === 'model') setModelOpen(true)
+      if (err.section === 'limits') setLimitsOpen(true)
+      Taro.nextTick(() => void Taro.pageScrollTo({ selector: `#sform-${err.section}`, offsetTop: -getSafeArea().navBarHeight, duration: 200 }))
+      return
+    }
+    setFormError(null)
     setSaving(true)
     const body = {
       name: form.name.trim(), type: form.type, capacity: num(form.capacity)!,
@@ -215,7 +241,7 @@ export default function StationForm() {
       }
       setTimeout(() => Taro.navigateBack(), 700)
     } catch (e) {
-      void Taro.showToast({ title: e instanceof ApiError ? e.message : '保存失败', icon: 'none' })
+      setFormError({ section: 'submit', message: e instanceof ApiError ? e.message : '保存失败，请重试' })
     } finally { setSaving(false) }
   }
 
@@ -237,13 +263,19 @@ export default function StationForm() {
   const capHint = capKw && capKw > 0 ? `= ${formatPower(capKw).value} ${formatPower(capKw).unit}` : ''
   const originTag = form.origin === 'locate' ? '来自定位' : form.origin === 'choose' ? '来自地图选点' : null
 
+  const modelSummary = form.type === 'solar'
+    ? [form.mounting === 'single_axis' ? '单轴跟踪' : '固定支架', form.bifacial ? '双面' : '单面', ...(form.mounting === 'fixed' ? [`倾角 ${form.tilt ? `${form.tilt}°` : '随纬度'}`, `方位 ${form.azimuth || '180'}°`] : [])].join(' · ')
+    : `${TURBINES.find(t => t.value === form.turbine)?.label} · 轮毂 ${form.hub_height || '100'} m`
+  const limitsSummary = form.mode === 'none' ? '未设置' : form.mode === 'ratio' ? `限电 ${form.ratio || '待填写'}${form.ratio ? '%' : ''}` : `分时段上限 · ${form.windows.length} 条`
+  const errorIn = (section: FormSection) => formError?.section === section && <Text className="sform__error">{formError.message}</Text>
   return <View className="sform">
-    <PageHeader title={editing ? '编辑电站' : '添加电站'} subtitle={editing ? form.name : undefined} />
+    <PageHeader title={editing ? '编辑电站' : '添加电站'} />
     <View className="sform__body">
       {failed && <View className="sform__card"><Text className="sform__hint">{failed}</Text></View>}
       {loading && !failed && <Skeleton height={200} lines={4} />}
       {!loading && !failed && <>
-        <View className="sform__card">
+        <View className="sform__card" id="sform-basic">
+          {errorIn('basic')}
           <View className="sform__row-head"><Text className="sform__card-title">基本信息</Text><InfoTip {...FORM_INFO} /></View>
           <View className="sform__field"><Text className="sform__label">电站名称</Text>
             <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" value={form.name} maxlength={64} placeholder="例如：某某光伏电站" placeholderClass="sform__ph" onInput={set('name')} /></View></View>
@@ -253,7 +285,8 @@ export default function StationForm() {
             <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.capacity} placeholder="例如 5000" placeholderClass="sform__ph" onInput={set('capacity')} />{capHint && <Text className="sform__adorn">{capHint}</Text>}</View></View>
         </View>
 
-        <View className="sform__card">
+        <View className="sform__card" id="sform-location">
+          {errorIn('location')}
           <View className="sform__row-head"><Text className="sform__card-title">位置</Text><InfoTip {...LOCATION_INFO} /></View>
           <View className="sform__actions">
             <View className="sform__locate" hoverClass="pressed" onClick={locating ? undefined : locate}><Icon name="crosshair" size={14} color="#1264d6" /><Text className="sform__locate-text">{locating ? '定位中…' : '当前定位'}</Text></View>
@@ -275,8 +308,8 @@ export default function StationForm() {
             : <View className="sform__map-placeholder"><Text>地图预览仅在小程序中显示</Text></View>)}
         </View>
 
-        <View className="sform__card">
-          <View className="sform__row-head"><Text className="sform__card-title">出力模型参数</Text><InfoTip {...MODEL_INFO} /></View>
+        <Disclosure id="sform-model" title="出力模型参数" summary={modelSummary} info={MODEL_INFO} open={modelOpen} onToggle={() => setModelOpen(v => !v)}>
+          <View className="sform__fields">{errorIn('model')}
           {form.type === 'solar' ? <>
             <View className="sform__field"><Text className="sform__label">安装方式</Text>
               <SegmentedTabs value={form.mounting} options={[{ value: 'fixed', label: '固定支架' }, { value: 'single_axis', label: '单轴跟踪' }]} onChange={(v) => patch({ mounting: v as Mounting })} /></View>
@@ -296,10 +329,11 @@ export default function StationForm() {
             <View className="sform__field"><Text className="sform__label">轮毂高度（m）</Text>
               <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.hub_height} placeholder="默认 100" placeholderClass="sform__ph" onInput={set('hub_height')} /></View></View>
           </>}
-        </View>
+          </View>
+        </Disclosure>
 
-        <View className="sform__card">
-          <View className="sform__row-head"><Text className="sform__card-title">出力约束（限电 / 检修）</Text><InfoTip {...LIMIT_INFO} /></View>
+        <Disclosure id="sform-limits" title="限电与检修" summary={limitsSummary} info={LIMIT_INFO} open={limitsOpen} onToggle={() => setLimitsOpen(v => !v)}>
+          <View className="sform__fields">{errorIn('limits')}
           <SegmentedTabs value={form.mode} options={[{ value: 'none', label: '不设置' }, { value: 'ratio', label: '固定比例' }, { value: 'schedule', label: '分时段上限' }]}
             onChange={(v) => patch({ mode: v as Form['mode'], windows: v === 'schedule' && !form.windows.length ? [{ start: 11, end: 14, limit: '60', days: 'all' }] : form.windows })} />
           {form.mode === 'ratio' && <View className="sform__field"><Text className="sform__label">限电比例（%）</Text>
@@ -328,13 +362,15 @@ export default function StationForm() {
               <View className="sform__add-window" hoverClass="pressed" onClick={() => patch({ windows: [...form.windows, { start: 0, end: 24, limit: '0', days: 'all' }] })}><Icon name="sliders" size={14} color="#1264d6" /><Text>检修停机</Text></View>
             </View>}
           </>}
-        </View>
+          </View>
+        </Disclosure>
 
-        <View className={`sform__submit ${saving ? 'sform__submit--busy' : ''}`} hoverClass="pressed" onClick={saving ? undefined : submit}>
-          <Text className="sform__submit-text">{saving ? '保存中…' : editing ? '保存修改' : '添加电站'}</Text>
-        </View>
         {editing && <View className="sform__delete" hoverClass="pressed" onClick={remove}><Icon name="trash" size={14} color="#b91c1c" /><Text>删除电站</Text></View>}
       </>}
     </View>
+    {!loading && !failed && !keyboardOpen && <View className="sform__footer">
+      {formError?.section === 'submit' && <Text className="sform__error">{formError.message}</Text>}
+      <Button className="sform__submit" disabled={saving} onClick={submit}><Text className="sform__submit-text">{saving ? '保存中…' : editing ? '保存修改' : '添加电站'}</Text></Button>
+    </View>}
   </View>
 }

@@ -44,7 +44,8 @@ export interface ChartTheme {
 
 export const PAD_LEFT = 34
 export const PAD_RIGHT = 8
-const PAD_TOP = 54 // 双曲线提示需要三行空间
+const PAD_TOP_SINGLE = 40 // 单曲线两行提示
+const PAD_TOP_COMPARE = 54 // 双曲线三行提示
 const PAD_BOTTOM = 20 // 横轴标签
 const GRID_LINES = 4
 
@@ -84,7 +85,7 @@ function roundedRect(ctx: any, x: number, y: number, w: number, h: number, r: nu
 
 export function draw(
   ctx: any,
-  size: { w: number; h: number },
+  size: { w: number; h: number; dpr?: number },
   data: ChartData,
   active: number,
   t: ChartTheme,
@@ -92,16 +93,20 @@ export function draw(
   const { w, h } = size
   if (!w || !h) return
 
-  ctx.clearRect(0, 0, w, h)
+  // 按物理像素清空整块画布，再恢复逻辑坐标，避免高分屏触摸重绘残留气泡。
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, w * (size.dpr ?? 1), h * (size.dpr ?? 1))
+  ctx.restore()
 
   const n = data.values.length
   const step = data.stepMinutes ?? 60
   const timeLabel = (i: number) => data.times?.[i]?.slice(11, 16) ?? hhmm(i * step)
   const max = niceMax(data.values, data.yMax)
   const x0 = PAD_LEFT
-  const y0 = PAD_TOP
+  const y0 = data.comparison ? PAD_TOP_COMPARE : PAD_TOP_SINGLE
   const iw = w - PAD_LEFT - PAD_RIGHT
-  const ih = h - PAD_TOP - PAD_BOTTOM
+  const ih = h - y0 - PAD_BOTTOM
 
   const px = (i: number) => x0 + (i / (n - 1)) * iw
   const py = (v: number) => y0 + ih - (v / max) * ih
@@ -204,11 +209,11 @@ export function draw(
     ctx.stroke()
   }
 
-  // ── 横轴刻度：每 4 小时 ──
+  // ── 横轴刻度：窄画布每 6 小时，避免端点标签重叠 ──
   ctx.fillStyle = t.axisText
   ctx.font = '11px sans-serif'
   ctx.textBaseline = 'top'
-  const every = Math.max(1, Math.round(240 / step))
+  const every = Math.max(1, Math.round((iw < 250 ? 360 : 240) / step))
   for (let i = 0; i < n; i += every) {
     ctx.textAlign = i === 0 ? 'left' : i === n - 1 ? 'right' : 'center'
     ctx.fillText(timeLabel(i), px(i), y0 + ih + 6)

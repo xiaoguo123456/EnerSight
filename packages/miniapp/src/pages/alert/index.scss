@@ -38,3 +38,7 @@
 .alerts__calm { padding: 16px; }
 .alerts__calm-title { display: block; font-size: 16px; font-weight: 600; color: var(--color-text); }
 .alerts__calm-note { display: block; margin-top: 10px; font-size: 13px; line-height: 1.7; color: var(--color-text-sub); }
+
+.alerts__card, .alerts__calm { padding: var(--space-3); }
+.alerts__calm-title { font-size: var(--font-module-title); }
+.alerts .seg-tabs__item { height: var(--size-control); }

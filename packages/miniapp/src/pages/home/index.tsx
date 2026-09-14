@@ -18,6 +18,8 @@ import { requireLogin } from '@/utils/requireLogin'
 import './index.scss'
 
 const RESOLVED_LABEL: Record<string, string> = { ecmwf_ifs: 'ECMWF IFS 9 km', ncep_gfs013: 'GFS 0.13°', ncep_gfs025: 'GFS 0.25°', dwd_icon: 'ICON 13 km' }
+const COMPACT_MODEL: Record<string, string> = { ecmwf_ifs: 'ECMWF', ncep_gfs013: 'GFS', ncep_gfs025: 'GFS', dwd_icon: 'ICON' }
+const TREND_OPEN_KEY = 'enersight_home_trend_open'
 const DISCLAIMER = '预测不等于实际并网电量，未计入检修与故障。'
 
 function energy(value?: number | null) {
@@ -27,7 +29,7 @@ function energy(value?: number | null) {
 }
 function fmtEnergy(value?: number | null) { const v = energy(value); return `${v.value} ${v.unit}` }
 function fmtDate(d: { date: string; weekday: number; lead_days: number }) { return `${dayLabel(d)} ${d.date.slice(5).replace('-', '/')}` }
-/** 起报一句话：顶栏只放这一句；拿不到起报时不猜，只给拉取时间。docs/17 §二 */
+/** 模型选择器内展示批次；拿不到起报时只给拉取时间。 */
 function shortTime(iso: string) {
   const t = formatBeijingTime(iso)
   const today = formatBeijingTime(new Date().toISOString()).slice(0, 5)
@@ -60,14 +62,16 @@ function PowerCurve({ points, grid, id, title, step = 60, onExport }: { points: 
   const gridByTime = new Map(grid?.map(p => [p.time, p.value]))
   const compare = grid ? points.map(p => gridByTime.get(p.time) ?? null) : undefined
   return <View className="forecast-curve">
-    <View className="forecast-row"><Text className="forecast-subtitle">{title}</Text><Text className="forecast-unit">{unit.label}</Text></View>
-    {grid && <View className="forecast-series"><Text style={{ color: '#1677ff' }}>可发</Text><Text style={{ color: '#16a34a' }}>预计上网</Text></View>}
-    <TrendChart id={id} key={id} height={190} data={{ values: values.map(v => v == null ? null : v / unit.divisor), comparison: compare?.map(v => v == null ? null : v / unit.divisor), times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
-    <View className="forecast-actions">
-      <Button className="forecast-action" onClick={() => setTable(v => !v)}>{table ? '收起数据明细' : '查看数据明细'}</Button>
-      {onExport && <Button className="forecast-action" onClick={onExport}>导出七天 CSV</Button>}
+    <View className="forecast-row">
+      <Text className="forecast-subtitle">{title}<Text className="forecast-unit"> · {unit.label}</Text></Text>
+      <Button className="forecast-action" onClick={() => setTable(v => !v)}>{table ? '收起明细' : '数据明细'}</Button>
     </View>
-    {table && <View className="forecast-table">{points.map((p, i) => <View key={p.time} className="forecast-row"><Text>{p.time.slice(11,16)}</Text><Text>可发 {p.value == null ? '—' : (p.value / unit.divisor).toFixed(2)} {unit.label}{compare ? ` · 上网 ${compare[i] == null ? '—' : (compare[i]! / unit.divisor).toFixed(2)} ${unit.label}` : ''}</Text></View>)}</View>}
+    {grid && <View className="forecast-series"><Text>可发</Text><Text className="forecast-series__grid">预计上网</Text></View>}
+    <TrendChart id={id} key={id} height={180} data={{ values: values.map(v => v == null ? null : v / unit.divisor), comparison: compare?.map(v => v == null ? null : v / unit.divisor), times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
+    {table && <View className="forecast-details">
+      {onExport && <View className="forecast-actions"><Button className="forecast-action" onClick={onExport}>导出七天 CSV</Button></View>}
+      <View className="forecast-table">{points.map((p, i) => <View key={p.time} className="forecast-row"><Text>{p.time.slice(11,16)}</Text><Text>可发 {p.value == null ? '—' : (p.value / unit.divisor).toFixed(2)} {unit.label}{compare ? ` · 上网 ${compare[i] == null ? '—' : (compare[i]! / unit.divisor).toFixed(2)} ${unit.label}` : ''}</Text></View>)}</View>
+    </View>}
   </View>
 }
 /** 上网口径按数字优先摆两格；没有规则不出现。 */
@@ -79,7 +83,7 @@ function GridSplit({ p }: { p: GenerationPrediction | DailyOutlook | null | unde
   </View>
 }
 
-/** 本站：今日与未来 7 天合成一张卡，一个大数字、一条 7 天横条、一张曲线。 */
+/** 本站按所选日电量、峰值、功率曲线、七日电量组织。 */
 function StationForecast({ station, p, version, onReload, refreshError, generatedAt, req }: {
   station: StationSummary; p: GenerationPrediction | null | undefined; version: number; onReload: () => void; refreshError: boolean; generatedAt?: string; req: { data: StationOutlook | null; status: string; error: ApiError | null; reload: () => Promise<void>; refreshError: ApiError | null }
 }) {
@@ -90,8 +94,6 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
   const points = day ? day.power_kw : p?.power_kw
   const label = day ? fmtDate(day) : '今日'
   const peak = points ? peakOf(points) : null
-  const typeText = station.type === 'wind' ? '风电' : '光伏'
-  const cap = formatPower(station.capacity)
   const info = {
     title: '预测口径',
     content: [
@@ -103,20 +105,21 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
     ].join('\n'),
   }
   return <View className="home__card forecast-main">
-    <View className="forecast-row"><Text className="forecast-title">{label} 发电量估算</Text><InfoTip {...info} /></View>
-    {station.prediction_blocked_reason ? <View className="forecast-empty"><Text>{station.prediction_blocked_reason}，暂不估算电量</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择其他电站</Button></View> : <Value value={value} />}
+    <View className="forecast-row"><View className="forecast-heading"><Text className="forecast-title">{label} 发电量估算</Text><InfoTip {...info} /></View><Button className="forecast-action" onClick={() => Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>电站资料 ›</Button></View>
+    {station.prediction_blocked_reason ? <View className="forecast-empty"><Text>{station.prediction_blocked_reason}，暂不估算电量</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择其他电站</Button></View> : <View className="forecast-overview">
+      <Value value={value} />
+      {value != null && peak && <View className="forecast-peak"><Text className="forecast-label">峰值 · {peak.time}</Text><Text>{formatPower(peak.value).value}<Text className="forecast-unit"> {formatPower(peak.value).unit}</Text></Text></View>}
+    </View>}
     <GridSplit p={day ?? p} />
-    <View className="forecast-row forecast-meta"><Text>{typeText} · 装机 {cap.value} {cap.unit}{station.is_own ? ' · 自建' : ''}</Text><Text className="forecast-link" onClick={() => Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>电站资料 ›</Text></View>
-    {req.status === 'error' ? <ErrorState error={req.error!} onRetry={req.reload} />
-      : req.status !== 'success' ? <Skeleton height={120} lines={2} />
-      : <OutlookStrip days={days.map(d => ({ ...d, caption: d.weather_text, level: d.index_level, score: d.index_score }))} selected={selected} onSelect={setSelected} />}
-    {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title={`${label} 预测功率`} step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)}
+    {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title="预测功率" step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)}
       onExport={() => { if (requireLogin()) void exportCsv(`${station.name}_预测功率_${days[0]?.date ?? p?.date ?? ''}.csv`, powerCsv(days.length ? days : p ? [p] : [])) }} />}
-    {value != null && peak && <Text className="forecast-caption">峰值 {formatPower(peak.value).value} {formatPower(peak.value).unit} · {peak.time}{day?.weather_text ? ` · 日间 ${day.weather_text}` : ''}</Text>}
+    {req.status === 'error' ? <ErrorState error={req.error!} onRetry={req.reload} />
+      : req.status !== 'success' ? <Skeleton height={100} lines={2} />
+      : <OutlookStrip days={days.map(d => ({ ...d, caption: d.weather_text, level: d.index_level, score: d.index_score }))} selected={selected} onSelect={setSelected} />}
     {value == null && !station.prediction_blocked_reason && <Text className="forecast-state">{station.prediction_blocked_reason ? `${station.prediction_blocked_reason}，暂不估算日电量` : !p && !day ? '预测服务暂未就绪，请稍后刷新' : '气象数据或电站参数不完整，暂不估算'}</Text>}
     {(refreshError || req.refreshError) && <Text className="forecast-warning" onClick={onReload}>刷新失败，当前保留上次预测 · 点击重试</Text>}
     {(day?.estimated ?? p?.estimated) && <Text className="forecast-warning">部分气象输入使用补值或降级估算</Text>}
-    <View className="forecast-foot"><Text>预测计算于 {formatBeijingTime(req.data?.generated_at ?? generatedAt)}</Text><Text className="forecast-link" onClick={onReload}>刷新</Text></View>
+    <View className="forecast-foot"><Text>{formatBeijingTime(req.data?.generated_at ?? generatedAt)} 更新</Text><Button className="forecast-action" onClick={onReload}>刷新</Button></View>
   </View>
 }
 
@@ -156,20 +159,11 @@ function FleetForecast({ f, selected, onSelect, version, onReload, refreshError 
     <View className="forecast-split forecast-split--tight"><View><Text className="forecast-label">光伏</Text><Text>{fmtEnergy(value == null ? null : solar)}</Text></View><View><Text className="forecast-label">风电</Text><Text>{fmtEnergy(value == null ? null : wind)}</Text></View></View>
     <View className="fleet-status"><Text>容量覆盖 {coverage.toFixed(1)}%</Text><Text>{value == null ? (f.status === 'error' ? '暂不可用' : '准备中') : ''}</Text></View>
     {refreshError && <Text className="forecast-warning" onClick={onReload}>刷新失败 · 点击重试</Text>}
-    {days.length > 0 && <OutlookStrip days={days} selected={selected} onSelect={onSelect} title="七天电量" showHorizonNote={false} />}
-    {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title={`${label} 预测功率合计`} step={day?.resolution_minutes ?? f.resolution_minutes ?? 60}
+    {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title="预测功率合计" step={day?.resolution_minutes ?? f.resolution_minutes ?? 60}
       onExport={() => { if (requireLogin()) void exportCsv(`全目录_预测功率合计_${f.date}.csv`, powerCsv(days.length ? days : [f], '预测功率合计')) }} />}
+    {days.length > 0 && <OutlookStrip days={days} selected={selected} onSelect={onSelect} title="七天电量" showHorizonNote={false} />}
     {value == null && days.length > 0 && <Text className="forecast-state">该日尚无覆盖电站结果</Text>}
     <View className="forecast-foot fleet-refresh"><Button className="forecast-action" onClick={onReload}>刷新</Button></View>
-  </View>
-}
-
-function FleetSummary({ data, onClick }: { data: FleetPrediction | null; onClick: () => void }) {
-  const coverage = data?.total_capacity_kw ? Math.min(100, data.covered_capacity_kw / data.total_capacity_kw * 100) : 0
-  const v = energy(data?.energy_kwh)
-  return <View className="fleet-short" hoverClass="pressed" onClick={onClick}>
-    <View><Text className="forecast-title">全目录今日合计</Text><Text className="forecast-caption">{data ? `目录容量覆盖 ${coverage.toFixed(1)}%` : '正在准备汇总'}</Text></View>
-    <Text className="fleet-short__value">{`${v.value} ${v.unit} ›`}</Text>
   </View>
 }
 
@@ -181,6 +175,14 @@ export default function Home() {
   const [version, setVersion] = useState(0)
   const [showAllRegions, setShowAllRegions] = useState(false)
   const [fleetDay, setFleetDay] = useState(0)
+  const [trendOpen, setTrendOpen] = useState(() => {
+    try { return Taro.getStorageSync(TREND_OPEN_KEY) === true } catch { return false }
+  })
+  const toggleTrend = () => {
+    const next = !trendOpen
+    setTrendOpen(next)
+    try { Taro.setStorageSync(TREND_OPEN_KEY, next) } catch { /* 存储不可用时仍可展开 */ }
+  }
   useDidShow(() => { setVisible(true); setVersion(v => v + 1) })
   useDidHide(() => setVisible(false))
   const currentId = useStationStore(s => s.currentId)
@@ -207,33 +209,37 @@ export default function Home() {
   const selectedFleet: FleetDay | undefined = fleetDays[fleetDay]
   const regions = selectedFleet ? (selectedFleet.regions ?? []) : (f?.regions ?? [])
   const basis = scope === 'fleet' ? f?.basis : outlook.data?.basis ?? p?.basis
+  const modelText = model === 'best_match' ? `自动${basis?.resolved_model ? ` · ${COMPACT_MODEL[basis.resolved_model] ?? basis.resolved_model}` : ''}` : weatherModelLabel(model)
+  const stationMeta = station ? [station.address?.match(/[㐀-鿿]+/g)?.join(' · ') || station.address, station.type === 'wind' ? '风电' : '光伏', `${formatPower(station.capacity).value} ${formatPower(station.capacity).unit}`].filter(Boolean).join(' · ') : ''
   const regionClick = (province: string) => {
     if (province === '地区待补充') return
     Taro.setStorageSync('enersight_prediction_province', province)
     void Taro.switchTab({ url: '/pages/station/index' })
   }
   return <View className="home">
-    {scope === 'station' && station ? <StationTitleBar name={station.name} status={station.status} own={station.is_own} address={station.address ?? (station.is_own ? '仅本账号可见' : '公开电站')} onSwitch={() => Taro.switchTab({ url: '/pages/station/index' })} /> : <PageTitleBar title={scope === 'fleet' ? '全目录发电预测' : '发电预测'} />}
+    {scope === 'station' && station ? <StationTitleBar name={station.name} status={station.status} own={station.is_own} compact address={stationMeta} onSwitch={() => Taro.switchTab({ url: '/pages/station/index' })} /> : <PageTitleBar title={scope === 'fleet' ? '全目录发电预测' : '发电预测'} />}
     <View className="home__body">
       <View className="forecast-toolbar">
-        <Picker mode="selector" range={WEATHER_MODELS.map(m => m.label)} value={WEATHER_MODELS.findIndex(m => m.id === model)} onChange={e => choose(Number(e.detail.value))}>
-          <View className="forecast-model"><Text>{`${model === 'best_match' ? (basis?.resolved_model ? `自动 · ${RESOLVED_LABEL[basis.resolved_model] ?? basis.resolved_model}` : '自动选择 · 模型待确认') : weatherModelLabel(model)}${scope === 'fleet' ? '' : basisShort(basis)}`}</Text><Icon name="chevronDown" size={14} strokeWidth={1.5} /></View>
+        <SegmentedTabs variant="underline" value={scope} options={[{ value: 'station', label: '本站' }, { value: 'fleet', label: '全部电站' }]} onChange={setScope} />
+        <Picker className="forecast-picker" mode="selector" range={WEATHER_MODELS.map(m => m.id === model ? `${m.label}${basis?.resolved_model ? ` · ${RESOLVED_LABEL[basis.resolved_model] ?? basis.resolved_model}` : ''}${basisShort(basis)}` : `${m.label} · ${m.description}`)} value={WEATHER_MODELS.findIndex(m => m.id === model)} onChange={e => choose(Number(e.detail.value))}>
+          <View className="forecast-model"><Text>{modelText}</Text><Icon name="chevronDown" size={14} strokeWidth={1.5} /></View>
         </Picker>
-        {scope === 'fleet' && <View className="fleet-history-link" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: '/pages/fleet-history/index' })}><Icon name="trendingUp" size={15} strokeWidth={1.5} /><Text>历史趋势</Text></View>}
       </View>
-      <SegmentedTabs value={scope} options={[{ value: 'station', label: '本站' }, { value: 'fleet', label: '全部电站' }]} onChange={setScope} />
+      {scope === 'fleet' && <View className="fleet-history-link" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: '/pages/fleet-history/index' })}><Icon name="trendingUp" size={15} strokeWidth={1.5} /><Text>历史趋势</Text></View>}
       {scope === 'station' ? <>
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : d?.has_station === false ? <View className="home__card"><Text>选择或添加一座电站，开始查看预测</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择电站</Button></View> : !d || !station ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
           <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} />
           {d.alert && <AlertBanner title={d.alert.title} description={d.alert.description} onMore={() => Taro.switchTab({ url: '/pages/alert/index' })} />}
-          {weather && <View className="home__card"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前 15 分钟时段的预报值：气温、10 米风速、云量为瞬时值，辐射为对应区间的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
+          {weather && <View className="home__card home__weather"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前 15 分钟时段的预报值：气温、10 米风速、云量为瞬时值，辐射为对应区间的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
             <MetricCard icon="cloudSun" label="天气" metric={formatTemperature(weather.temperature.value)} caption={weather.weather_text ?? undefined} />
             <MetricCard icon="sun" label="辐射" metric={formatRadiation(weather.radiation.value)} />
             <MetricCard icon="wind" iconFill={false} label="10米风速" metric={formatWindSpeed(weather.wind_speed.value)} />
             <MetricCard icon="cloud" label="云量" metric={formatPercent(weather.cloud_cover.value)} />
-          </MetricGrid>{d.index?.summary && <Text className="forecast-caption">{d.index.summary}</Text>}</View>}
-          <FleetSummary data={f} onClick={() => setScope('fleet')} />
-          <View className="home__card"><StationTrend key={`${station.id}-${model}`} stationId={station.id} type={station.type} initial={d.trends} version={version} exportName={station.name} /></View>
+          </MetricGrid></View>}
+          <View className="home__card home__trend">
+            <Button className="home__trend-toggle" ariaLabel={trendOpen ? '收起24小时气象趋势' : '展开24小时气象趋势'} onClick={toggleTrend}><View className="forecast-heading"><Icon name="trendingUp" size={18} /><Text>24 小时气象趋势</Text></View><Icon name={trendOpen ? 'chevronUp' : 'chevronDown'} size={16} /></Button>
+            {trendOpen && <StationTrend key={`${station.id}-${model}`} stationId={station.id} type={station.type} initial={d.trends} version={version} exportName={station.name} compact />}
+          </View>
         </>}
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>

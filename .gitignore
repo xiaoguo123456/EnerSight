@@ -3,7 +3,7 @@
 ._*
 
 # 依赖
-node_modules/
+node_modules
 .pnpm-store/
 
 # 构建产物
@@ -47,3 +47,6 @@ dist/
 packages/server/enersight.db
 packages/server/.env
 packages/server/data/
+
+# 本机界面验证截图
+output/playwright/

@@ -109,6 +109,7 @@ export default function Stations() {
   const editStation = (id: string) => void Taro.navigateTo({ url: `/pages/station/form?id=${encodeURIComponent(id)}` })
   const regions = ['全部地区', ...result.regions]
   const isMine = scope === 'mine'
+  const showTools = !isMine || (loggedIn && mine.items.length > 0)
   const unfiltered = !query.keyword && query.type === 'all' && !query.province
   const mineItems = mine.items.filter((s) => (query.type === 'all' || s.type === query.type) && (!query.keyword || s.name.includes(query.keyword) || (s.address ?? '').includes(query.keyword)))
 
@@ -135,15 +136,15 @@ export default function Stations() {
     <View className="catalog__header">
       <PageTitleBar title="电站" />
       <View className="catalog__controls">
-        <View className="catalog__search">
+        <View className="catalog__scope"><SegmentedTabs variant="underline" value={scope} options={[{ value: 'catalog', label: '公开目录' }, { value: 'mine', label: '我的电站' }]} onChange={(v) => { setKeyword(''); setScope(v as Scope); change({ keyword: '', type: 'all', province: '' }) }} /></View>
+        {showTools && <View className="catalog__search">
           <Icon name="search" size={19} color="#64748b" />
           <Input className="catalog__search-input" placeholder={isMine ? '搜索我的电站' : '搜索电站、地区或业主'}
             placeholderClass="catalog__ph" value={keyword} maxlength={64}
             onInput={(e) => setKeyword(e.detail.value)} />
           {keyword && <View className="catalog__clear" onClick={() => setKeyword('')}><Icon name="x" size={17} color="#64748b" /></View>}
-        </View>
-        <View className="catalog__scope"><SegmentedTabs value={scope} options={[{ value: 'catalog', label: '公开目录' }, { value: 'mine', label: '我的电站' }]} onChange={(v) => { setScope(v as Scope); change({}) }} /></View>
-        <View className="catalog__filters">
+        </View>}
+        {showTools && <View className="catalog__filters">
           <View className="catalog__types">
             {TYPE_OPTIONS.map((opt) => <View key={opt.value}
               className={`catalog__type ${query.type === opt.value ? 'catalog__type--active' : ''}`}
@@ -155,16 +156,16 @@ export default function Stations() {
               onChange={(e) => change({ province: regions[Number(e.detail.value)] === '全部地区' ? '' : regions[Number(e.detail.value)] })}>
               <View className="catalog__region"><Text>{query.province || '全部地区'}</Text><Icon name="chevronDown" size={14} color="#64748b" /></View>
             </Picker>}
-        </View>
+        </View>}
       </View>
     </View>
 
     {isMine && !loggedIn ? <EmptyState icon="user" title="登录后查看我的电站" actionText="登录" onAction={() => void requireLogin()} /> : isMine ? <>
-      <View className="catalog__results-head"><View className="catalog__results-title"><Text>{mine.loading && !mine.loaded ? '正在读取' : `我的电站 ${mine.items.length} 座`}</Text><InfoTip {...MINE_INFO} /></View><Text>仅本账号可见</Text></View>
+      {mine.items.length > 0 && <View className="catalog__results-head"><View className="catalog__results-title"><Text>{`我的电站 ${mine.items.length} 座`}</Text><InfoTip {...MINE_INFO} /></View></View>}
       <View className="catalog__list">{mineItems.map((s) => item(s, true))}</View>
-      {mine.loading && !mine.loaded && <View className="catalog__loading"><Skeleton height={100} lines={3} /></View>}
+      {mine.loading && mine.items.length === 0 && <View className="catalog__loading"><Skeleton height={100} lines={3} /></View>}
       {mine.error && <EmptyState icon="alertTriangle" title="我的电站加载失败" actionText="重新加载" onAction={() => setMineVersion((v) => v + 1)} />}
-      {!mine.loading && !mine.error && mine.loaded && mine.items.length === 0 && <EmptyState icon="factory" title="还没有自建电站" description="公开目录里找不到的电站可以自己添加，参与预测、预警与报告" actionText="添加电站" onAction={addStation} />}
+      {!mine.loading && !mine.error && mine.loaded && mine.items.length === 0 && <EmptyState icon="factory" title="还没有自建电站" actionText="添加电站" onAction={addStation} />}
       {!mine.loading && !mine.error && mine.items.length > 0 && mineItems.length === 0 && <EmptyState icon="search" title="没有匹配的电站" actionText="清除筛选" onAction={() => { setKeyword(''); change({ type: 'all' }) }} />}
     </> : <>
       {unfiltered && favorites.length > 0 && <View className="catalog__recent">

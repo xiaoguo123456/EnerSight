@@ -26,3 +26,11 @@
 .mine__login { display: flex; align-items: center; gap: 2px; min-height: 44px; font-size: 14px; color: var(--color-primary); }
 .mine__row--center { justify-content: center; }
 .mine__signout { font-size: 14px; color: #b91c1c; }
+
+.mine__body { padding: var(--space-2) var(--space-page) calc(var(--space-6) + env(safe-area-inset-bottom)); gap: var(--space-3); }
+.mine__identity { padding: var(--space-1) 0 var(--space-2); gap: var(--space-3); }
+.mine__avatar { width: var(--size-control); height: var(--size-control); }
+.mine__card { padding: 0 var(--space-3); }
+.mine__row, .mine__feedback { min-height: 48px; }
+.mine--settings .page-header { position: sticky; top: 0; z-index: 10; }
+.mine__feedback { width: 100%; }

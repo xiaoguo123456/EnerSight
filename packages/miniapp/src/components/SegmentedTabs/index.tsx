@@ -14,12 +14,13 @@ interface Props {
   options: TabOption[]
   value: string
   onChange: (value: string) => void
+  variant?: 'pill' | 'underline'
 }
 
-/** 横向筛选切换。全圆角胶囊，激活项蓝底白字。docs/03 */
-export function SegmentedTabs({ options, value, onChange }: Props) {
+/** 胶囊用于指标筛选，下划线用于页面范围切换。 */
+export function SegmentedTabs({ options, value, onChange, variant = 'pill' }: Props) {
   return (
-    <View className="seg-tabs">
+    <View className={`seg-tabs seg-tabs--${variant}`}>
       {options.map((o) => (
         <View
           key={o.value}

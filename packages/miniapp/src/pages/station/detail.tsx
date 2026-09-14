@@ -80,22 +80,18 @@ export default function StationDetail() {
       <View className="detail__body">
         <View className="detail__group">
           <View className="detail__station">
-            <View className="detail__station-spec">
-              <Icon name={station.type === 'solar' ? 'sun' : 'wind'} size={16} color="#64748b" />
-              <Text>{station.type === 'solar' ? '光伏电站' : '风力电站'}</Text>
-              <StatusBadge status={station.status} own={station.is_own} />
-            </View>
             <Text className="detail__station-name">{station.name}</Text>
-            <View className="detail__capacity">
-              <Text className="detail__capacity-label">{station.is_own ? '装机容量' : '目录申报容量'}</Text>
-              <Text className="detail__capacity-value">{cap.value}<Text className="detail__capacity-unit"> {cap.unit}</Text></Text>
+            <View className="detail__station-spec">
+              <Text>{station.type === 'solar' ? '光伏' : '风电'} · {station.is_own ? '装机' : '目录容量'} {cap.value} {cap.unit}</Text>
+              <Button className={`detail__favorite ${favorites.some(s => s.id === id) ? 'detail__favorite--active' : ''}`} ariaLabel={favorites.some(s => s.id === id) ? '取消收藏电站' : '收藏电站'} onClick={() => toggleFavorite(station)}>{favorites.some(s => s.id === id) ? '已收藏' : '收藏'}</Button>
             </View>
+            {station.status !== 'normal' && <StatusBadge status={station.status} own={station.is_own} />}
+            {currentId === id && <Text className="detail__current">当前电站</Text>}
             {station.is_own && <View className="detail__chip" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: `/pages/station/form?id=${encodeURIComponent(id)}` })}>
               <Icon name="sliders" size={13} color="#98521a" /><Text>{station.curtailment ? constraintSummary(station.curtailment) : '未设置限电规则'}</Text><Icon name="chevronRight" size={12} color="#98521a" />
             </View>}
-            <View className="detail__favorite" onClick={() => toggleFavorite(station)}>{favorites.some((s) => s.id === id) ? '已收藏 · 点击取消' : '收藏到常看电站'}</View>
-            <View className="detail__selection" onClick={selectStation}>{currentId === id ? '✓ 当前查看电站' : '设为当前电站'}</View>
             <View className="detail__actions">
+              {currentId !== id && <View className="detail__action detail__action--primary" hoverClass="pressed" onClick={selectStation}><Text>设为当前</Text></View>}
               <View className="detail__action detail__action--primary" onClick={() => Taro.navigateTo({ url: `/pages/report/index?id=${encodeURIComponent(id)}` })}>
                 <Icon name="fileText" size={16} color="#1264d6" /><Text>分析报告</Text>
               </View>
@@ -111,12 +107,11 @@ export default function StationDetail() {
           <EnergyScoreCard
             score={index?.score ?? null}
             level={index?.level ?? null}
-            summary={index?.summary ?? null}
+            summary={null}
           />
         </View>
 
-        <DataFreshness label={`${weatherModelLabel(useWeatherModel.getState().model)}${req.data.basis?.issued_at ? ` · 起报 ${formatBeijingTime(req.data.basis.issued_at)}` : ''}`} timeLabel="数据至 " time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
-        <View className="detail__card"><StationTrend key={id} stationId={id} type={station.type} initial={req.data.trends} /></View>
+
 
         {weather && (
           <View className="detail__card">
@@ -140,6 +135,9 @@ export default function StationDetail() {
             </MetricGrid>
           </View>
         )}
+
+        <DataFreshness compact label={`${weatherModelLabel(useWeatherModel.getState().model)}${req.data.basis?.issued_at ? ` · 起报 ${formatBeijingTime(req.data.basis.issued_at)}` : ''}`} timeLabel="数据至 " time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
+        <View className="detail__card"><StationTrend key={id} stationId={id} type={station.type} initial={req.data.trends} /></View>
 
         {(station.phases?.length || station.prediction_blocked_reason) && <View className="detail__card">
           <SectionHeader icon="fileText" title="分期与容量口径" />

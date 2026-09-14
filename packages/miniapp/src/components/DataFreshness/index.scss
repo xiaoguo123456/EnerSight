@@ -1,3 +1,8 @@
 .data-freshness { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; line-height: 1.6; color: #64748b; }
 .data-freshness__action { color: #1264d6; min-height: 36px; display: flex; align-items: center; }
 .data-freshness__warning { color: #945b0b; }
+
+.data-freshness--compact { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1); }
+.data-freshness__row { display: flex; align-items: center; gap: var(--space-2); min-height: var(--size-control); }
+.data-freshness--compact .data-freshness__action { width: auto; min-width: 0; min-height: var(--size-control); margin: 0 0 0 auto; padding: 0 var(--space-2); border: 0; border-radius: 0; background: transparent; font-size: var(--font-caption); line-height: 1.5; &::after { border: 0; } }
+.data-freshness--compact .data-freshness__action[disabled] { color: var(--color-text-sub); }

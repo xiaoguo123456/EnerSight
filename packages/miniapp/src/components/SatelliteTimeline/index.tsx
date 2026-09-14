@@ -9,7 +9,7 @@ import { SatelliteCloudCard } from '../SatelliteCloudCard'
 import './index.scss'
 
 /** 三小时真实观测序列；按需下载当前/下一帧，缺失帧不复制伪造。 */
-export function SatelliteTimeline({ stationId }: { stationId: string }) {
+export function SatelliteTimeline({ stationId, embedded = false }: { stationId: string; embedded?: boolean }) {
   const manifest = useRequest(() => api.get<SatelliteHistoryResponse>('/v1/satellite/cloud/history', { station_id: stationId }), [stationId])
   const times = manifest.data?.times ?? []
   const [index, setIndex] = useState(0)
@@ -49,8 +49,8 @@ export function SatelliteTimeline({ stationId }: { stationId: string }) {
     return () => clearTimeout(timer)
   }, [playing, visible, loaded, when, speed, failed, times.length])
   const retry = () => { if (when) cache.current.delete(when); setFailed(false); void frame.reload() }
-  return <View className="sat-timeline">
-    <View className="sat-timeline__head"><Text>近 3 小时云图</Text></View>
+  return <View className={`sat-timeline${embedded ? ' sat-timeline--embedded' : ''}`}>
+    {!embedded && <View className="sat-timeline__head"><Text>近 3 小时云图</Text></View>}
     {manifest.status === 'success' && !times.length ? <View className="sat-timeline__empty">暂无日间观测</View> : manifest.status === 'error' ? <View onClick={manifest.reload}>时间轴加载失败 · 点击重试</View> : <>
       {/* 加载中只占位不出文字：逐帧播放时文字行反复出现会让卡片跳动 */}
       {!display && (frame.status === 'loading' || manifest.status === 'loading') ? <View className="sat-timeline__loading" /> : <SatelliteCloudCard satellite={display} onRetry={retry}

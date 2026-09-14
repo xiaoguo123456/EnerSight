@@ -7,3 +7,5 @@
 .sat-timeline__controls > view { padding: 12px 6px; text-align: center; flex: 1; color: #1677ff; background: #f3f7fc; border-radius: 8px; font-size: 13px; }
 .sat-timeline__loading { height: 190px; display: flex; align-items: center; justify-content: center; background: #edf2f7; border-radius: 12px; color: #61738a; font-size: 13px; }
 .sat-timeline__empty { padding: 16px 0; color: #52647b; font-size: 13px; }
+
+.sat-timeline--embedded { padding: 0; border-radius: 0; }

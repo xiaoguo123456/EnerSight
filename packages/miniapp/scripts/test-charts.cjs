@@ -33,3 +33,26 @@ test('历史小时曲线保留步长，缺测不会被转换成零', () => {
   assert.equal(data.stepMinutes, 60)
   assert.equal(data.values[1], null)
 })
+
+test('高分屏重绘清空完整位图，单曲线和双曲线的提示文字均在画布内', () => {
+  for (const comparison of [undefined, [0, 8, 0]]) {
+    const calls = []
+    const textPositions = []
+    const ctx = new Proxy({
+      save: () => calls.push('save'),
+      setTransform: (...args) => calls.push(args),
+      clearRect: (...args) => calls.push(args),
+      restore: () => calls.push('restore'),
+      fillText: (label, x, y) => textPositions.push({ label, x, y }),
+      measureText: label => ({ width: label.length * 6 }),
+      createLinearGradient: () => ({ addColorStop() {} }),
+    }, { get: (target, key) => target[key] ?? (() => {}) })
+    for (const active of [0, 1, 2]) {
+      exported.draw(ctx, { w: 280, h: 180, dpr: 3 }, { values: [0, 10, 0], comparison, unit: 'MW', yMax: null }, active, {})
+    }
+    assert.deepEqual(calls.slice(0, 4), ['save', [1, 0, 0, 1, 0, 0], [0, 0, 840, 540], 'restore'])
+    assert.equal(calls.filter(v => v === 'restore').length, 3)
+    assert.ok(textPositions.every(p => Number.isFinite(p.x) && p.y >= 0 && p.y <= 169))
+    if (comparison) assert.ok(textPositions.some(p => p.label === '上网 8 MW'))
+  }
+})

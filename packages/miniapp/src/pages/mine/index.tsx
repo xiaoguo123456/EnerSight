@@ -3,7 +3,7 @@ import { View, Text, Button } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useState } from 'react'
 import { ApiError } from '@enersight/core/api'
-import { Icon, PageTitleBar } from '@/components'
+import { Icon, PageHeader, PageTitleBar } from '@/components'
 import { meApi } from '@/api/me'
 import { stationsApi } from '@/api/stations'
 import { useStationStore } from '@/store'
@@ -15,12 +15,16 @@ import './index.scss'
  * 「我的」：身份、自建电站入口、本机记录、数据与隐私、帮助、关于。docs/17 §一、docs/09 §4.3
  * 游客可浏览公开数据；我的电站需要登录，登录后可退出登录或删除我的数据。
  */
-export default function Mine() {
+export type SettingsGroup = 'privacy' | 'help' | 'about'
+export const SETTINGS_TITLES: Record<SettingsGroup, string> = { privacy: '数据与隐私', help: '帮助与反馈', about: '关于' }
+
+export default function Mine({ group }: { group?: SettingsGroup } = {}) {
   useAppShare()
   const { recent, favorites, clearRecent } = useStationStore()
   const { loggedIn, logout } = useAuthStore()
   const [mineCount, setMineCount] = useState<number | null>(null)
   useDidShow(() => {
+    if (group) return
     if (!useAuthStore.getState().loggedIn) { setMineCount(null); return }
     stationsApi.mine().then((d) => setMineCount(d.counts.all)).catch(() => setMineCount(null))
   })
@@ -68,38 +72,46 @@ export default function Mine() {
     <Text className="mine__row-label">{label}</Text>{value && <Text className="mine__row-value">{value}</Text>}<Icon name="chevronRight" size={16} color="#64748b" />
   </View>
   const copyContext = () => Taro.setClipboardData({ data: `产品：晴川观象\n版本：${version}\n当前电站：${useStationStore.getState().currentId || '目录示例电站'}\n登录态：${loggedIn ? '已登录' : '未登录'}\n时间：${new Date().toISOString()}\n问题描述：` })
-  return <View className="mine"><PageTitleBar title="我的" /><View className="mine__body">
-    <View className="mine__identity" hoverClass={loggedIn ? 'none' : 'pressed'} onClick={loggedIn ? undefined : () => void Taro.navigateTo({ url: '/pages/login/index' })}>
-      <View className="mine__avatar"><Icon name="user" size={26} color="#1264d6" strokeWidth={1.6} /></View>
-      <View className="mine__identity-text">
-        <Text className="mine__brand">{loggedIn ? '微信用户' : '未登录'}</Text>
+  const settings = (target: SettingsGroup) => Taro.navigateTo({ url: `/pages/mine/settings?group=${target}` })
+  return <View className={`mine ${group ? 'mine--settings' : ''}`}>{group ? <PageHeader title={SETTINGS_TITLES[group]} /> : <PageTitleBar title="我的" />}<View className="mine__body">
+    {!group && <>
+      <View className="mine__identity" hoverClass={loggedIn ? 'none' : 'pressed'} onClick={loggedIn ? undefined : () => void Taro.navigateTo({ url: '/pages/login/index' })}>
+        <View className="mine__avatar"><Icon name="user" size={24} color="#1264d6" strokeWidth={1.6} /></View>
+        <View className="mine__identity-text"><Text className="mine__brand">{loggedIn ? '微信用户' : '未登录'}</Text></View>
+        {!loggedIn && <View className="mine__login"><Text>登录</Text><Icon name="chevronRight" size={16} color="#1264d6" /></View>}
       </View>
-      {!loggedIn && <View className="mine__login"><Text>登录</Text><Icon name="chevronRight" size={16} color="#1264d6" /></View>}
-    </View>
-    <View><Text className="mine__group-title">我的电站</Text><View className="mine__card">
-      {row('我的电站', goMine, !loggedIn ? '登录后查看' : mineCount == null ? undefined : `${mineCount} 座`)}
-      {row('添加电站', addStation)}
-    </View></View>
-    <View><Text className="mine__group-title">浏览记录</Text><View className="mine__card">
-      {row('常看电站', () => Taro.switchTab({ url: '/pages/station/index' }), favorites.length ? `${favorites.length} 座` : '暂无收藏')}
-      <View className="mine__row" hoverClass="pressed" onClick={clear}><Text className="mine__row-label">清除最近浏览</Text><Text className="mine__row-value">{recent.length ? `${recent.length} 条` : '暂无记录'}</Text></View>
-    </View></View>
-    <View><Text className="mine__group-title">数据与隐私</Text><View className="mine__card">
-      {row('数据来源与估算方法', () => info('sources'))}
-      {row('本机记录、位置与登录', () => info('privacy'))}
-      {row('用户服务协议', () => info('terms'))}
-      {row('微信隐私保护指引', privacy)}
-      {loggedIn && row('删除我的数据', deleteData)}
-    </View></View>
-    <View><Text className="mine__group-title">使用帮助</Text><View className="mine__card">
+      <View className="mine__card">
+        {row('我的电站', goMine, !loggedIn ? '登录后查看' : mineCount == null ? undefined : `${mineCount} 座`)}
+        {row('添加电站', addStation)}
+        {row('常看电站', () => Taro.switchTab({ url: '/pages/station/index' }), favorites.length ? `${favorites.length} 座` : undefined)}
+      </View>
+      <View className="mine__card">
+        {row('数据与隐私', () => settings('privacy'))}
+        {row('帮助与反馈', () => settings('help'))}
+        {row('关于', () => settings('about'), version)}
+      </View>
+      {loggedIn && <View className="mine__card"><View className="mine__row mine__row--center" hoverClass="pressed" onClick={signOut}><Text className="mine__signout">退出登录</Text></View></View>}
+    </>}
+    {group === 'privacy' && <>
+      <View className="mine__card">
+        {row('数据来源与估算方法', () => info('sources'))}
+        {row('本机记录、位置与登录', () => info('privacy'))}
+        {row('用户服务协议', () => info('terms'))}
+        {row('微信隐私保护指引', privacy)}
+      </View>
+      <View className="mine__card">
+        <View className="mine__row" hoverClass={recent.length ? 'pressed' : 'none'} onClick={clear}><Text className="mine__row-label">清除最近浏览</Text><Text className="mine__row-value">{recent.length ? `${recent.length} 条` : '暂无记录'}</Text></View>
+        {loggedIn && row('删除我的数据', deleteData)}
+      </View>
+    </>}
+    {group === 'help' && <View className="mine__card">
       {row('使用指南与常见问题', () => info('help'))}
       {row('复制问题反馈信息', copyContext)}
       <Button className="mine__feedback" openType="feedback"><Text className="mine__row-label">提交意见反馈</Text><Icon name="chevronRight" size={16} color="#64748b" /></Button>
-    </View></View>
-    <View><Text className="mine__group-title">关于</Text><View className="mine__card">
+    </View>}
+    {group === 'about' && <View className="mine__card">
       {row('关于晴川观象', () => info('about'))}
       <View className="mine__row"><Text className="mine__row-label">当前版本</Text><Text className="mine__row-value">{version}</Text></View>
-    </View></View>
-    {loggedIn && <View className="mine__card"><View className="mine__row mine__row--center" hoverClass="pressed" onClick={signOut}><Text className="mine__signout">退出登录</Text></View></View>}
+    </View>}
   </View></View>
 }

@@ -84,3 +84,18 @@
 .sform__delete { margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; color: #b91c1c; font-size: var(--font-body); @include pressable; }
 .sform__switch { display: flex; align-items: center; justify-content: space-between; min-height: 42px; }
 .sform__textarea { width: 100%; min-height: 120px; padding: 10px 12px; box-sizing: border-box; border-radius: var(--radius-button); background: var(--color-bg); font-size: var(--font-body); line-height: 1.6; color: var(--color-text); font-variant-numeric: tabular-nums; }
+
+.sform .page-header { position: sticky; top: 0; z-index: 10; }
+.sform__body { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+.sform__card { gap: var(--space-3); padding: var(--space-3); }
+.sform__fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.sform__footer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 11; padding: var(--space-2) var(--space-page) calc(var(--space-2) + env(safe-area-inset-bottom)); background: var(--color-surface); border-top: 1px solid var(--color-divider); }
+.sform__submit { margin: 0; width: 100%; height: var(--size-control); padding: 0; border: 0; line-height: 1.5; box-shadow: none; &::after { border: 0; } }
+.sform__submit[disabled] { opacity: .6; background: var(--color-primary); }
+.sform__error { display: block; color: var(--color-danger); font-size: var(--font-caption); line-height: 1.5; padding: var(--space-1) 0; }
+.sform__locate, .sform__remove { min-height: var(--size-control); padding-top: 0; padding-bottom: 0; }
+.sform__field--half { min-width: 0; }
+.sform__coords > picker { flex: 1; min-width: 0; }
+.sform__input-wrap, .sform__select { min-height: var(--size-control); border-radius: var(--radius-thumb); }
+.sform__delete { margin-top: var(--space-2); }
+/* H5 软键盘聚焦时让保存栏回到文档流，原生端使用键盘事件。 */

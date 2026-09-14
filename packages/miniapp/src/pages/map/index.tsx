@@ -23,6 +23,7 @@ import { WindParticles } from '@/components/WindParticles'
 
 // 底部面板高度，地图浮层的 bottom 要避开它
 const SHEET_HEIGHT = 172
+const PANEL_KEY = 'enersight_map_panel_collapsed'
 
 const LEVEL_TEXT: Record<string, string> = {
   excellent: '优秀', good: '良好', fair: '一般', poor: '较差',
@@ -41,8 +42,14 @@ export default function MapPage() {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false)
   const [pageVisible, setPageVisible] = useState(true)
   useDidHide(() => setPageVisible(false))
-  const [collapsed, setCollapsed] = useState(false)
-  const sheetHeight = collapsed ? 68 : SHEET_HEIGHT
+  const [collapsed, setCollapsed] = useState(() => {
+    try { const saved = Taro.getStorageSync(PANEL_KEY); return typeof saved === 'boolean' ? saved : true } catch { return true }
+  })
+  const togglePanel = () => {
+    const next = !collapsed
+    setCollapsed(next)
+    try { Taro.setStorageSync(PANEL_KEY, next) } catch { /* 存储不可用时仍能切换 */ }
+  }
   useEffect(() => setLayer(activeLayer), [activeLayer])
   // 卫星影像底图。docs/01 §四：全球地图 / 行政地图 / 卫星影像底图
   const [satellite, setSatellite] = useState(false)
@@ -59,6 +66,7 @@ export default function MapPage() {
 
   useEffect(() => { setPicked(null) }, [currentId])
   useDidShow(() => { setPageVisible(true); setPicked(null) })
+  const sheetHeight = picked ? 120 : req.status !== 'success' ? 172 : collapsed ? 68 : SHEET_HEIGHT
   const station = req.data?.station
   const index = req.data?.index
   const weather = req.data?.weather
@@ -140,7 +148,7 @@ export default function MapPage() {
           <View className="map-page__station-thumb">
             <Icon name={station?.type === 'wind' ? 'wind' : 'sun'} size={14} color="#fff" />
           </View>
-          <Text className="map-page__station-name">{station?.name ?? '选择站点'}</Text>
+          <Text className="map-page__station-name">{station?.name ?? '选择电站'}</Text>
           <Icon name="chevronDown" size={13} color="#6b7280" />
         </View>
       </View>
@@ -213,8 +221,8 @@ export default function MapPage() {
             onInput={(e) => { ++searchSeq.current; setKeyword(e.detail.value) }}
           />
           {keyword && (
-            <View className="map-page__search-clear" onClick={() => { setKeyword(''); setResults(null) }}>
-              <Icon name="minus" size={12} color="#9ca3af" />
+            <View className="map-page__search-clear" role="button" aria-label="清除搜索" onClick={() => { setKeyword(''); setResults(null) }}>
+              <Icon name="x" size={16} color="#64748b" />
             </View>
           )}
         </View>
@@ -237,25 +245,6 @@ export default function MapPage() {
           </View>
         )}
 
-        {picked && (
-          <View className="map-page__picked" style={{ bottom: `${sheetHeight + 12}px` }}>
-            <View className="map-page__picked-text">
-              <Text className="map-page__picked-name">{picked.name}</Text>
-              <Text className="map-page__picked-meta">
-                {'capacity' in picked
-                  ? `${picked.type === 'solar' ? '光伏' : '风电'} · ${formatPower(picked.capacity).value} ${formatPower(picked.capacity).unit}${picked.address ? ` · ${picked.address}` : ''}`
-                  : picked.address}
-              </Text>
-            </View>
-            <View className="map-page__picked-add" hoverClass="pressed" onClick={viewPicked}>
-              <Icon name="chevronRight" size={13} color="#fff" />
-              <Text className="map-page__picked-add-text">查看电站</Text>
-            </View>
-            <View className="map-page__picked-close" onClick={() => setPicked(null)}>
-              <Icon name="minus" size={12} color="#9ca3af" />
-            </View>
-          </View>
-        )}
 
         <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
         {dataLayer && <View className="map-page__data-state" onClick={() => {
@@ -305,9 +294,30 @@ export default function MapPage() {
 
         {/* 底部面板叠在地图上 */}
         <View className="map-page__sheet" style={{ height: `${sheetHeight}px` }}>
-          <View className="map-page__collapse" onClick={() => setCollapsed((v) => !v)}><Text>{collapsed ? '展开气象详情' : '收起详情'}</Text><Icon name={collapsed ? 'chevronUp' : 'chevronDown'} size={14} color="#64748b" /></View>
-          {req.status === 'loading' && <Skeleton height={120} lines={2} />}
-          {req.status === 'error' && (
+        {picked && (
+          <View className="map-page__picked">
+            <View className="map-page__picked-head">
+            <View className="map-page__picked-text">
+              <Text className="map-page__picked-name">{picked.name}</Text>
+              <Text className="map-page__picked-meta">
+                {'capacity' in picked
+                  ? `${picked.type === 'solar' ? '光伏' : '风电'} · ${formatPower(picked.capacity).value} ${formatPower(picked.capacity).unit}${picked.address ? ` · ${picked.address}` : ''}`
+                  : picked.address}
+              </Text>
+            </View>
+            <View className="map-page__picked-close" role="button" aria-label="关闭选中电站" onClick={() => setPicked(null)}>
+              <Icon name="x" size={16} color="#64748b" />
+            </View>
+            </View>
+            <View className="map-page__picked-add" hoverClass="pressed" onClick={viewPicked}>
+              <Icon name="chevronRight" size={13} color="#fff" />
+              <Text className="map-page__picked-add-text">查看电站</Text>
+            </View>
+          </View>
+        )}
+
+          {!picked && req.status === 'loading' && <Skeleton height={collapsed ? 44 : 120} lines={2} />}
+          {!picked && req.status === 'error' && (
             <EmptyState
               icon={req.error.status === 404 ? 'mapPin' : 'alertTriangle'}
               title={req.error.status === 404 ? '目录暂无电站' : '加载失败'}
@@ -317,20 +327,23 @@ export default function MapPage() {
                 : req.reload}
             />
           )}
-          {req.status === 'success' && station && (
+          {!picked && req.status === 'success' && station && (
             <>
+              <View className="map-page__sheet-heading">
               <View
                 className="map-page__sheet-head"
                 onClick={() => Taro.navigateTo({ url: `/pages/station/detail?id=${station.id}` })}
               >
                 <Text className="map-page__sheet-name">{station.name}</Text>
-                <StatusBadge status={station.status} />
+                {station.status !== 'normal' && <StatusBadge status={station.status} />}
                 <View className="map-page__sheet-spacer" />
                 <Icon name="chevronRight" size={15} color="#9ca3af" />
               </View>
 
+              <View className="map-page__collapse" role="button" aria-label={collapsed ? '展开气象详情' : '收起气象详情'} onClick={togglePanel}><Text>{collapsed ? '展开' : '收起'}</Text><Icon name={collapsed ? 'chevronUp' : 'chevronDown'} size={14} color="#64748b" /></View>
+              </View>
               {!collapsed && <MetricGrid>
-                <MetricCard icon="leaf" iconColor="#16a34a" label="发电适宜度"
+                <MetricCard icon="leaf" iconColor="#16a34a" label="适宜度"
                   metric={{ value: index?.score != null ? String(Math.round(index.score)) : '—', unit: '分' }}
                   caption={LEVEL_TEXT[index?.level ?? ''] ?? '—'} />
                 <MetricCard icon="cloudSun" label="天气"

@@ -32,3 +32,33 @@
     @include ellipsis;
   }
 }
+
+.seg-tabs--underline {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  gap: var(--space-4);
+
+  .seg-tabs__item {
+    position: relative;
+    height: var(--size-control);
+    padding: 0 var(--space-1);
+    border-radius: 0;
+  }
+  .seg-tabs__item--active {
+    background: transparent;
+    box-shadow: none;
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: var(--space-1);
+      left: 25%;
+      right: 25%;
+      height: 2px;
+      border-radius: var(--radius-pill);
+      background: var(--color-primary);
+    }
+    .seg-tabs__label { color: var(--color-primary); }
+  }
+  .seg-tabs__label { font-size: var(--font-body); }
+}
