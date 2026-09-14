@@ -2,7 +2,7 @@ import { useHomeShare } from '@/hooks/useAppShare'
 import { Button, Picker, View, Text } from '@tarojs/components'
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
-import { powerChartUnit, thousands, formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatWindSpeed, formatPower } from '@enersight/core/format'
+import { powerChartUnit, powerCsv, thousands, formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatWindSpeed, formatPower } from '@enersight/core/format'
 import type { DailyOutlook, FleetDay, FleetPrediction, ForecastBasis, GenerationPrediction, StationOutlook, StationSummary } from '@enersight/core/types'
 import { api } from '@/api'
 import { homeApi } from '@/api/home'
@@ -13,6 +13,7 @@ import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
 import { useWeatherModel, WEATHER_MODELS, weatherModelLabel } from '@/store/weatherModel'
 import { StationTrend } from '@/components/StationTrend'
+import { exportCsv } from '@/utils/exportCsv'
 import './index.scss'
 
 const RESOLVED_LABEL: Record<string, string> = { ecmwf_ifs: 'ECMWF IFS 9 km', ncep_gfs013: 'GFS 0.13°', ncep_gfs025: 'GFS 0.25°', dwd_icon: 'ICON 13 km' }
@@ -51,7 +52,7 @@ function Value({ value }: { value?: number | null }) {
   const v = energy(value)
   return <View className="forecast-value"><Text>{v.value}</Text><Text className="forecast-value__unit">{v.unit}</Text></View>
 }
-function PowerCurve({ points, grid, id, title, step = 60 }: { points: { time: string; value: number | null }[]; grid?: { time: string; value: number | null }[] | null; id: string; title: string; step?: number }) {
+function PowerCurve({ points, grid, id, title, step = 60, onExport }: { points: { time: string; value: number | null }[]; grid?: { time: string; value: number | null }[] | null; id: string; title: string; step?: number; onExport?: () => void }) {
   const values = points.map(p => p.value)
   const unit = powerChartUnit(values)
   const [table, setTable] = useState(false)
@@ -61,7 +62,10 @@ function PowerCurve({ points, grid, id, title, step = 60 }: { points: { time: st
     <View className="forecast-row"><Text className="forecast-subtitle">{title}</Text><Text className="forecast-unit">{unit.label}</Text></View>
     {grid && <View className="forecast-series"><Text style={{ color: '#1677ff' }}>可发</Text><Text style={{ color: '#16a34a' }}>预计上网</Text></View>}
     <TrendChart id={id} key={id} height={190} data={{ values: values.map(v => v == null ? null : v / unit.divisor), comparison: compare?.map(v => v == null ? null : v / unit.divisor), times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
-    <Button className="forecast-action" onClick={() => setTable(v => !v)}>{table ? '收起数据明细' : '查看数据明细'}</Button>
+    <View className="forecast-actions">
+      <Button className="forecast-action" onClick={() => setTable(v => !v)}>{table ? '收起数据明细' : '查看数据明细'}</Button>
+      {onExport && <Button className="forecast-action" onClick={onExport}>导出七天 CSV</Button>}
+    </View>
     {table && <View className="forecast-table">{points.map((p, i) => <View key={p.time} className="forecast-row"><Text>{p.time.slice(11,16)}</Text><Text>可发 {p.value == null ? '—' : (p.value / unit.divisor).toFixed(2)} {unit.label}{compare ? ` · 上网 ${compare[i] == null ? '—' : (compare[i]! / unit.divisor).toFixed(2)} ${unit.label}` : ''}</Text></View>)}</View>}
   </View>
 }
@@ -105,7 +109,8 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
     {req.status === 'error' ? <ErrorState error={req.error!} onRetry={req.reload} />
       : req.status !== 'success' ? <Skeleton height={120} lines={2} />
       : <OutlookStrip days={days.map(d => ({ ...d, caption: d.weather_text, level: d.index_level, score: d.index_score }))} selected={selected} onSelect={setSelected} />}
-    {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title={`${label} 预测功率`} step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)} />}
+    {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title={`${label} 预测功率`} step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)}
+      onExport={() => void exportCsv(`${station.name}_预测功率_${days[0]?.date ?? p?.date ?? ''}.csv`, powerCsv(days.length ? days : p ? [p] : []))} />}
     {value != null && peak && <Text className="forecast-caption">峰值 {formatPower(peak.value).value} {formatPower(peak.value).unit} · {peak.time}{day?.weather_text ? ` · 日间 ${day.weather_text}` : ''}</Text>}
     {value == null && !station.prediction_blocked_reason && <Text className="forecast-state">{station.prediction_blocked_reason ? `${station.prediction_blocked_reason}，暂不估算日电量` : !p && !day ? '预测服务暂未就绪，请稍后刷新' : '气象数据或电站参数不完整，暂不估算'}</Text>}
     {(refreshError || req.refreshError) && <Text className="forecast-warning" onClick={onReload}>刷新失败，当前保留上次预测 · 点击重试</Text>}
@@ -151,7 +156,8 @@ function FleetForecast({ f, selected, onSelect, version, onReload, refreshError 
     <View className="fleet-status"><Text>容量覆盖 {coverage.toFixed(1)}%</Text><Text>{value == null ? (f.status === 'error' ? '暂不可用' : '准备中') : ''}</Text></View>
     {refreshError && <Text className="forecast-warning" onClick={onReload}>刷新失败 · 点击重试</Text>}
     {days.length > 0 && <OutlookStrip days={days} selected={selected} onSelect={onSelect} title="七天电量" showHorizonNote={false} />}
-    {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title={`${label} 预测功率合计`} step={day?.resolution_minutes ?? f.resolution_minutes ?? 60} />}
+    {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title={`${label} 预测功率合计`} step={day?.resolution_minutes ?? f.resolution_minutes ?? 60}
+      onExport={() => void exportCsv(`全目录_预测功率合计_${f.date}.csv`, powerCsv(days.length ? days : [f], '预测功率合计'))} />}
     {value == null && days.length > 0 && <Text className="forecast-state">该日尚无覆盖电站结果</Text>}
     <View className="forecast-foot fleet-refresh"><Button className="forecast-action" onClick={onReload}>刷新</Button></View>
   </View>
@@ -226,7 +232,7 @@ export default function Home() {
             <MetricCard icon="cloud" label="云量" metric={formatPercent(weather.cloud_cover.value)} />
           </MetricGrid>{d.index?.summary && <Text className="forecast-caption">{d.index.summary}</Text>}</View>}
           <FleetSummary data={f} onClick={() => setScope('fleet')} />
-          <View className="home__card"><StationTrend key={`${station.id}-${model}`} stationId={station.id} type={station.type} initial={d.trends} version={version} /></View>
+          <View className="home__card"><StationTrend key={`${station.id}-${model}`} stationId={station.id} type={station.type} initial={d.trends} version={version} exportName={station.name} /></View>
         </>}
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>

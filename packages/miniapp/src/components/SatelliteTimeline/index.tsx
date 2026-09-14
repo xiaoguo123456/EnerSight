@@ -52,9 +52,10 @@ export function SatelliteTimeline({ stationId }: { stationId: string }) {
   return <View className="sat-timeline">
     <View className="sat-timeline__head"><Text>近 3 小时云图</Text></View>
     {manifest.status === 'success' && !times.length ? <View className="sat-timeline__empty">暂无日间观测</View> : manifest.status === 'error' ? <View onClick={manifest.reload}>时间轴加载失败 · 点击重试</View> : <>
-      {!display && (frame.status === 'loading' || manifest.status === 'loading') ? <View className="sat-timeline__loading">正在加载历史云图…</View> : <SatelliteCloudCard satellite={display} onRetry={retry}
+      {/* 加载中只占位不出文字：逐帧播放时文字行反复出现会让卡片跳动 */}
+      {!display && (frame.status === 'loading' || manifest.status === 'loading') ? <View className="sat-timeline__loading" /> : <SatelliteCloudCard satellite={display} onRetry={retry}
         onLoaded={() => { setLoaded(display?.observed_at ?? ''); setFailed(false) }} onImageError={() => setFailed(true)} />}
-      {(manifest.status === 'loading' || frame.status === 'error' || failed || frame.status === 'loading') && <Text className="sat-timeline__status" onClick={() => { if (frame.status === 'error' || failed) retry() }}>{manifest.status === 'loading' ? '正在获取观测时刻…' : frame.status === 'error' || failed ? '此帧加载失败 · 点击重试' : `正在加载第 ${index + 1} 帧…`}</Text>}
+      {(frame.status === 'error' || failed) && <Text className="sat-timeline__status" onClick={retry}>此帧加载失败 · 点击重试</Text>}
       <Slider min={0} max={Math.max(1, times.length - 1)} step={1} value={index} disabled={times.length < 2}
         activeColor="#1677ff" blockSize={18} onChanging={() => setPlaying(false)} onChange={(e) => { setPlaying(false); setIndex(Math.max(0, Math.min(times.length - 1, e.detail.value))) }} />
       <View className="sat-timeline__range"><Text>{times[0] ? formatBeijingTime(times[0]) : '—'}</Text><Text>{times.length ? formatBeijingTime(times[times.length - 1]) : '—'}</Text></View>

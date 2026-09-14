@@ -42,7 +42,6 @@ export default function Mine() {
       <View className="mine__avatar"><Icon name="user" size={26} color="#1264d6" strokeWidth={1.6} /></View>
       <View className="mine__identity-text">
         <Text className="mine__brand">微信用户</Text>
-        <Text className="mine__description">{loggedIn ? '已通过微信登录 · 自建电站按账号隔离' : '首次访问后自动通过微信登录，无需注册'}</Text>
       </View>
     </View>
     <View><Text className="mine__group-title">我的电站</Text><View className="mine__card">
