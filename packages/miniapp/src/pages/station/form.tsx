@@ -4,7 +4,7 @@ import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import type { CurtailmentRule, Mounting, PowerCurvePoint, StationSummary, StationType, TurbineClass, UpdateStationRequest } from '@enersight/core/types'
 import { ApiError } from '@enersight/core/api'
-import { formatPower } from '@enersight/core/format'
+import { capacityMwInput, mwToKw, thousands } from '@enersight/core/format'
 import { homeApi } from '@/api/home'
 import { stationsApi } from '@/api/stations'
 import { Icon, InfoTip, PageHeader, SegmentedTabs, Skeleton } from '@/components'
@@ -79,7 +79,7 @@ function presetOf(weekdays: number[]): DaysPreset {
 function fromStation(s: StationSummary, form: Form): Form {
   const rule = s.curtailment
   return {
-    ...form, name: s.name, type: s.type, capacity: String(s.capacity),
+    ...form, name: s.name, type: s.type, capacity: capacityMwInput(s.capacity),
     tilt: s.tilt == null ? '' : String(s.tilt), azimuth: s.azimuth == null ? '' : String(s.azimuth),
     hub_height: s.hub_height == null ? '' : String(s.hub_height),
     latitude: s.latitude.toFixed(5), longitude: s.longitude.toFixed(5), coord: 'gcj02', origin: 'manual',
@@ -97,6 +97,7 @@ function validate(f: Form): string | null {
   if (!f.name.trim()) return '请填写电站名称'
   if (f.name.trim().length > 64) return '名称不超过 64 个字'
   const cap = num(f.capacity); if (cap === null || cap <= 0) return '装机容量需大于 0'
+  if (!/^\d+(\.\d{1,3})?$/.test(f.capacity.trim())) return '装机容量最多保留 3 位小数'
   const lat = num(f.latitude); const lon = num(f.longitude)
   if (lat === null || lon === null) return '请填写经纬度，或使用定位 / 地图选点'
   if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return '经纬度超出范围'
@@ -177,9 +178,15 @@ export default function StationForm() {
   const submit = async () => {
     const err = validate(form)
     if (err) { void Taro.showToast({ title: err, icon: 'none' }); return }
+    // 按千瓦习惯多填三个零会差 1000 倍，超大容量先请用户确认单位
+    const mw = num(form.capacity)!
+    if (mw > 3000 && (!editing || form.capacity !== initial.current?.capacity)) {
+      const answer = await Taro.showModal({ title: '确认装机容量', content: `装机 ${thousands(mw)} MW，单位为兆瓦，确认无误？`, confirmText: '确认' })
+      if (!answer.confirm) return
+    }
     setSaving(true)
     const body = {
-      name: form.name.trim(), type: form.type, capacity: num(form.capacity)!,
+      name: form.name.trim(), type: form.type, capacity: mwToKw(mw),
       latitude: num(form.latitude)!, longitude: num(form.longitude)!, coord: form.coord,
       tilt: form.type === 'solar' ? num(form.tilt) : null, azimuth: form.type === 'solar' ? num(form.azimuth) : null,
       hub_height: form.type === 'wind' ? num(form.hub_height) : null,
@@ -233,8 +240,8 @@ export default function StationForm() {
 
   const lat = num(form.latitude); const lon = num(form.longitude)
   const hasPoint = lat !== null && lon !== null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
-  const capKw = num(form.capacity)
-  const capHint = capKw && capKw > 0 ? `= ${formatPower(capKw).value} ${formatPower(capKw).unit}` : ''
+  const capMw = num(form.capacity)
+  const capHint = capMw && capMw > 0 ? `= ${thousands(mwToKw(capMw))} kW` : ''
   const originTag = form.origin === 'locate' ? '来自定位' : form.origin === 'choose' ? '来自地图选点' : null
 
   return <View className="sform">
@@ -249,8 +256,8 @@ export default function StationForm() {
             <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" value={form.name} maxlength={64} placeholder="例如：某某光伏电站" placeholderClass="sform__ph" onInput={set('name')} /></View></View>
           <View className="sform__field"><Text className="sform__label">类型</Text>
             <SegmentedTabs value={form.type} options={[{ value: 'solar', label: '光伏' }, { value: 'wind', label: '风电' }]} onChange={(v) => patch({ type: v as StationType })} /></View>
-          <View className="sform__field"><Text className="sform__label">装机容量（kW，交流侧）</Text>
-            <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.capacity} placeholder="例如 5000" placeholderClass="sform__ph" onInput={set('capacity')} />{capHint && <Text className="sform__adorn">{capHint}</Text>}</View></View>
+          <View className="sform__field"><Text className="sform__label">装机容量（MW，交流侧）</Text>
+            <View className="sform__input-wrap"><Input className="sform__input sform__input--bare" type="digit" value={form.capacity} placeholder="例如 50" placeholderClass="sform__ph" onInput={set('capacity')} />{capHint && <Text className="sform__adorn">{capHint}</Text>}</View></View>
         </View>
 
         <View className="sform__card">

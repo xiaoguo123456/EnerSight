@@ -131,4 +131,5 @@ export function isDataStale(value: string | null | undefined, minutes = 120, now
 }
 export { powerChartUnit } from './power-chart'
 export { csvLocalTime, powerCsv, toCsv, weatherCsv } from './csv'
+export { capacityMwInput, mwToKw } from './capacity'
 export type { CsvCell, PowerCsvDay, WeatherCsvSeries } from './csv'
