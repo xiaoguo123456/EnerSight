@@ -18,11 +18,12 @@ const adapter: HttpAdapter = {
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
       .join('&')
 
+    // X-Resolution-Minutes：取 15 分钟曲线；不带时服务端按线上旧版返回逐小时，见 docs/06 §2.8
     const res = await Taro.request({
       url: qs ? `${url}?${qs}` : url,
       method,
       data: body as Record<string, unknown> | undefined,
-      header: { 'Content-Type': 'application/json', ...headers, 'X-Weather-Model': useWeatherModel.getState().model },
+      header: { 'Content-Type': 'application/json', ...headers, 'X-Weather-Model': useWeatherModel.getState().model, 'X-Resolution-Minutes': '15' },
       timeout: timeoutMs,
     })
     return { status: res.statusCode, body: res.data }

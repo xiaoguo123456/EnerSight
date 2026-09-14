@@ -31,7 +31,12 @@ async def client() -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_session] = _override
     # ASGITransport 不触发 lifespan，手动准备 app.state.http（respx 会拦截它）
     app.state.http = httpx.AsyncClient(timeout=5.0)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    # 与新版小程序一致取 15 分钟曲线；旧版逐小时兼容见 test_curve_resolution_compat
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"X-Resolution-Minutes": "15"},
+    ) as c:
         yield c
     await app.state.http.aclose()
     app.dependency_overrides.clear()

@@ -22,8 +22,11 @@ class Envelope[T](BaseModel):
 
 
 def envelope[T](data: T, coord: Coord) -> Envelope[T]:
+    # 旧版客户端的逐小时曲线兼容，在出口换算。docs/06 §2.8
+    from app.curve_resolution import adapt
+
     return Envelope(
-        data=data,
+        data=adapt(data),
         meta=Meta(
             coord=coord,
             server_time=datetime.now(UTC).isoformat(),
