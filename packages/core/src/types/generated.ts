@@ -2106,6 +2106,8 @@ export interface operations {
                 station_id: string;
                 metric?: components["schemas"]["TrendMetric"];
                 range?: components["schemas"]["TrendRange"];
+                /** @description 24h 取今日起第几天 */
+                day_offset?: number;
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
             };

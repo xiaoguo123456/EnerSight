@@ -613,13 +613,14 @@ interface SatelliteCloudResponse {
 
 
 ```
-GET /v1/trends?station_id={id}&metric={m}&range={r}
+GET /v1/trends?station_id={id}&metric={m}&range={r}&day_offset={k}
 ```
 
 | 参数 | 取值 |
 | --- | --- |
 | `metric` | `radiation` \| `wind_speed` \| `cloud_cover` |
 | `range` | `24h` \| `7d` |
+| `day_offset` | `0`–`6`，默认 `0`（今日）。只作用于 `24h`：取今日起第 k 天 00:00 至次日 00:00，与七天预测所选日期对应 |
 
 ```ts
 interface TrendSeries {

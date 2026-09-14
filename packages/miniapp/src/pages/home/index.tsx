@@ -19,7 +19,6 @@ import './index.scss'
 
 const RESOLVED_LABEL: Record<string, string> = { ecmwf_ifs: 'ECMWF IFS 9 km', ncep_gfs013: 'GFS 0.13°', ncep_gfs025: 'GFS 0.25°', dwd_icon: 'ICON 13 km' }
 const COMPACT_MODEL: Record<string, string> = { ecmwf_ifs: 'ECMWF', ncep_gfs013: 'GFS', ncep_gfs025: 'GFS', dwd_icon: 'ICON' }
-const TREND_OPEN_KEY = 'enersight_home_trend_open'
 const DISCLAIMER = '预测不等于实际并网电量，未计入检修与故障。'
 
 function energy(value?: number | null) {
@@ -83,11 +82,11 @@ function GridSplit({ p }: { p: GenerationPrediction | DailyOutlook | null | unde
   </View>
 }
 
-/** 本站按所选日电量、峰值、功率曲线、七日电量组织。 */
-function StationForecast({ station, p, version, onReload, refreshError, generatedAt, req }: {
+/** 本站按所选日电量、峰值、功率曲线、七日电量组织。选中日由父级持有，下方气象趋势跟着切。 */
+function StationForecast({ station, p, version, onReload, refreshError, generatedAt, req, selected, onSelect }: {
   station: StationSummary; p: GenerationPrediction | null | undefined; version: number; onReload: () => void; refreshError: boolean; generatedAt?: string; req: { data: StationOutlook | null; status: string; error: ApiError | null; reload: () => Promise<void>; refreshError: ApiError | null }
+  selected: number; onSelect: (i: number) => void
 }) {
-  const [selected, setSelected] = useState(0)
   const days = req.data?.days ?? []
   const day = days[selected]
   const value = day ? day.energy_kwh : p?.energy_kwh
@@ -115,7 +114,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
       onExport={() => { if (requireLogin()) void exportCsv(`${station.name}_预测功率_${days[0]?.date ?? p?.date ?? ''}.csv`, powerCsv(days.length ? days : p ? [p] : [])) }} />}
     {req.status === 'error' ? <ErrorState error={req.error!} onRetry={req.reload} />
       : req.status !== 'success' ? <Skeleton height={100} lines={2} />
-      : <OutlookStrip days={days.map(d => ({ ...d, caption: d.weather_text, level: d.index_level, score: d.index_score }))} selected={selected} onSelect={setSelected} />}
+      : <OutlookStrip days={days.map(d => ({ ...d, caption: d.weather_text, level: d.index_level, score: d.index_score }))} selected={selected} onSelect={onSelect} />}
     {value == null && !station.prediction_blocked_reason && <Text className="forecast-state">{station.prediction_blocked_reason ? `${station.prediction_blocked_reason}，暂不估算日电量` : !p && !day ? '预测服务暂未就绪，请稍后刷新' : '气象数据或电站参数不完整，暂不估算'}</Text>}
     {(refreshError || req.refreshError) && <Text className="forecast-warning" onClick={onReload}>刷新失败，当前保留上次预测 · 点击重试</Text>}
     {(day?.estimated ?? p?.estimated) && <Text className="forecast-warning">部分气象输入使用补值或降级估算</Text>}
@@ -175,14 +174,11 @@ export default function Home() {
   const [version, setVersion] = useState(0)
   const [showAllRegions, setShowAllRegions] = useState(false)
   const [fleetDay, setFleetDay] = useState(0)
-  const [trendOpen, setTrendOpen] = useState(() => {
-    try { return Taro.getStorageSync(TREND_OPEN_KEY) === true } catch { return false }
-  })
-  const toggleTrend = () => {
-    const next = !trendOpen
-    setTrendOpen(next)
-    try { Taro.setStorageSync(TREND_OPEN_KEY, next) } catch { /* 存储不可用时仍可展开 */ }
-  }
+  // 本站七天预测的选中日；下方 24 小时气象趋势取同一天
+  const [stationDay, setStationDay] = useState(0)
+  // 气象趋势默认展开，收起只在本次浏览内有效
+  const [trendOpen, setTrendOpen] = useState(true)
+  const toggleTrend = () => setTrendOpen(v => !v)
   useDidShow(() => { setVisible(true); setVersion(v => v + 1) })
   useDidHide(() => setVisible(false))
   const currentId = useStationStore(s => s.currentId)
@@ -205,6 +201,8 @@ export default function Home() {
   const station = d?.station
   const weather = d?.weather
   const p = d?.prediction
+  useEffect(() => { setStationDay(0) }, [station?.id, model])
+  const trendDay = outlook.data?.days?.[stationDay]
   const fleetDays = f?.days ?? []
   const selectedFleet: FleetDay | undefined = fleetDays[fleetDay]
   const regions = selectedFleet ? (selectedFleet.regions ?? []) : (f?.regions ?? [])
@@ -228,7 +226,7 @@ export default function Home() {
       {scope === 'fleet' && <View className="fleet-history-link" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: '/pages/fleet-history/index' })}><Icon name="trendingUp" size={15} strokeWidth={1.5} /><Text>历史趋势</Text></View>}
       {scope === 'station' ? <>
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : d?.has_station === false ? <View className="home__card"><Text>选择或添加一座电站，开始查看预测</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择电站</Button></View> : !d || !station ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
-          <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} />
+          <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} selected={stationDay} onSelect={setStationDay} />
           {d.alert && <AlertBanner title={d.alert.title} description={d.alert.description} onMore={() => Taro.switchTab({ url: '/pages/alert/index' })} />}
           {weather && <View className="home__card home__weather"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前 15 分钟时段的预报值：气温、10 米风速、云量为瞬时值，辐射为对应区间的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
             <MetricCard icon="cloudSun" label="天气" metric={formatTemperature(weather.temperature.value)} caption={weather.weather_text ?? undefined} />
@@ -237,8 +235,8 @@ export default function Home() {
             <MetricCard icon="cloud" label="云量" metric={formatPercent(weather.cloud_cover.value)} />
           </MetricGrid></View>}
           <View className="home__card home__trend">
-            <Button className="home__trend-toggle" ariaLabel={trendOpen ? '收起24小时气象趋势' : '展开24小时气象趋势'} onClick={toggleTrend}><View className="forecast-heading"><Icon name="trendingUp" size={18} /><Text>24 小时气象趋势</Text></View><Icon name={trendOpen ? 'chevronUp' : 'chevronDown'} size={16} /></Button>
-            {trendOpen && <StationTrend key={`${station.id}-${model}`} stationId={station.id} type={station.type} initial={d.trends} version={version} exportName={station.name} compact />}
+            <Button className="home__trend-toggle" ariaLabel={trendOpen ? '收起24小时气象趋势' : '展开24小时气象趋势'} onClick={toggleTrend}><View className="forecast-heading"><Icon name="trendingUp" size={18} /><Text>{`24 小时气象趋势${trendDay ? ` · ${fmtDate(trendDay)}` : ''}`}</Text></View><Icon name={trendOpen ? 'chevronUp' : 'chevronDown'} size={16} /></Button>
+            {trendOpen && <StationTrend key={`${station.id}-${model}`} stationId={station.id} type={station.type} initial={d.trends} version={version} exportName={station.name} dayOffset={stationDay} compact />}
           </View>
         </>}
       </> : <>

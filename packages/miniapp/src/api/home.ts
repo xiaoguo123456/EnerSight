@@ -11,8 +11,9 @@ export const homeApi = {
   get: (stationId?: string) =>
     api.get<HomeResponse>('/v1/home', stationId ? { station_id: stationId } : undefined),
 
-  trends: (stationId: string, metric: TrendMetric) =>
-    api.get<TrendSeries>('/v1/trends', { station_id: stationId, metric }),
+  /** dayOffset：今日起第几天（0–6），与七天预测所选日期对应；今日不带参数 */
+  trends: (stationId: string, metric: TrendMetric, dayOffset = 0) =>
+    api.get<TrendSeries>('/v1/trends', { station_id: stationId, metric, day_offset: dayOffset || undefined }),
 
   detail: (stationId: string) =>
     api.get<StationDetailResponse>(`/v1/stations/${stationId}/detail`),

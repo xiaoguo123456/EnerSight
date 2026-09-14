@@ -88,11 +88,17 @@ def build_current_weather(fc: weather.Forecast) -> CurrentWeather | None:
 
 
 def build_trend(
-    fc: weather.Forecast, metric: TrendMetric, range_: TrendRange = TrendRange.H24
+    fc: weather.Forecast,
+    metric: TrendMetric,
+    range_: TrendRange = TrendRange.H24,
+    day_offset: int = 0,
 ) -> TrendSeries:
-    """按输入步长返回趋势；15 分钟预报的 24h 为 97 点、7d 为 672 点。"""
+    """按输入步长返回趋势；15 分钟预报的 24h 为 97 点、7d 为 672 点。
+
+    day_offset 只作用于 24h：取今日起第几天，与首页七天预测所选日期对应。
+    """
     col, unit, y_max = _TREND_SPEC[metric]
-    df = fc.next_days(7) if range_ == TrendRange.D7 else fc.today_with_midnight()
+    df = fc.next_days(7) if range_ == TrendRange.D7 else fc.day_with_midnight(day_offset)
     points = [TrendPoint(time=ts.isoformat(), value=_num(v)) for ts, v in df[col].items()]
     return TrendSeries(
         metric=metric,

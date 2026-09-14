@@ -12,7 +12,6 @@ import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
 import { formatBeijingTime, isDataStale } from '@enersight/core/format'
 import './index.scss'
-import { Disclosure } from '@/components/Disclosure'
 import { SatelliteTimeline } from '@/components/SatelliteTimeline'
 
 type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
@@ -24,7 +23,6 @@ type Filter = 'all' | Exclude<AlertLevel, 'cleared'>
 export default function AlertCenter() {
   useAppShare()
   const currentId = useStationStore((s) => s.currentId)
-  const [cloudOpen, setCloudOpen] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   const [now, setNow] = useState(Date.now())
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
@@ -34,8 +32,6 @@ export default function AlertCenter() {
   const list = useRequest(() => alertsApi.list(currentId ?? undefined, filter), [currentId, filter])
 
   usePullDownRefresh(async () => { await Promise.all([cur.reload(), list.reload()]); Taro.stopPullDownRefresh() })
-  useEffect(() => { setCloudOpen(false) }, [currentId])
-  useEffect(() => { if (cur.data?.alert) setCloudOpen(true) }, [cur.data?.station?.id, cur.data?.alert?.id])
   const noStation = cur.status === 'error' && cur.error.status === 404
   const refreshing = cur.refreshing || list.refreshing
   const refresh = () => { if (!refreshing) { void cur.reload(); void list.reload() } }
@@ -92,8 +88,8 @@ export default function AlertCenter() {
           )
         )}
 
-        {/* 展开后独立请求时间线，不等待当前预警的冷启动。 */}
-        {!noStation && <Disclosure title="近 3 小时云图" open={cloudOpen} onToggle={() => setCloudOpen(v => !v)}><SatelliteTimeline key={currentId ?? 'default'} stationId={currentId ?? undefined} embedded /></Disclosure>}
+        {/* 直接展示，与当前预警并行请求，不等待其冷启动。 */}
+        {!noStation && <SatelliteTimeline key={currentId ?? 'default'} stationId={currentId ?? undefined} />}
         {!noStation && (
           <View className="alerts__card">
             <SectionHeader icon="clipboard" title="预警记录" />

@@ -98,7 +98,11 @@ class Forecast:
 
     def today_with_midnight(self) -> pd.DataFrame:
         """今日 00:00 至明日 00:00，15 分钟输入共 97 点，趋势图用。"""
-        d = self.current_hour().normalize()
+        return self.day_with_midnight(0)
+
+    def day_with_midnight(self, offset: int) -> pd.DataFrame:
+        """今日起第 offset 天 00:00 至次日 00:00，与七天预测的日期一一对应。"""
+        d = self.current_hour().normalize() + pd.Timedelta(days=offset)
         return self.data.loc[d : d + pd.Timedelta(hours=24)]
 
     def next_days(self, days: int) -> pd.DataFrame:
