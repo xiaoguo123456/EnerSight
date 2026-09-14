@@ -313,3 +313,13 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 - 单点预报每坐标每模型每天最多回源 4 次，按当地时段均分；跨时段批次未变不重拉，元数据缺失时也受同一上限约束。
 - 新增配置 `ENERSIGHT_FORECAST_REFRESHES_PER_DAY`、`ENERSIGHT_FLEET_REFRESH_HOUR`、`ENERSIGHT_FLEET_FETCH_ROUNDS_PER_DAY`，默认 4 / 8 / 4；移除 `ttl_forecast_batch`。
 - 未改动：地图云量降级网格仍未计入共享预算；`best_match` 与 `ecmwf_ifs` 仍分别缓存。
+
+### 登录体系、气象限次与预警提速测试发布（2026-09-14）
+
+- 开发分支 `feat/user-stations-7d-forecast` 以快进方式合入 `main`（`85cbb2d..ad6e6dc`），共 12 个提交：气象请求经 Cloudflare Worker 转发、气象拉取限次、云层预警测试时钟修复、首页 CSV 导出与界面精简、单点预报加请求 200 m 风速、游客模式与登录体系、自建电站装机容量按 MW 输入、预警页首屏提速、移动端界面紧凑化及整合提交。合入后开发分支已删除（本地与远端）。
+- 发布前本机 `make check` 通过：后端 468 项、core 52 项、小程序脚本测试、接口类型生成、TypeScript 与 Ruff。首轮检查发现新增登录页未开启好友分享导致「所有已注册页面开启好友分享」用例失败，修复为 `ad6e6dc` 后通过。
+- [测试部署 34822908437](https://github.com/xiaoguo123456/EnerSight/actions/runs/34822908437) 与 [CI 34822908396](https://github.com/xiaoguo123456/EnerSight/actions/runs/34822908396) 均成功；镜像 `enersight-backend:ad6e6dc3ed29@sha256:b6907c66add14616fb175fef582a02ff24d53b1954609116e905d5584c5435df`，容器 healthy。本次无数据库迁移。
+- 测试机回环验收：`/ready` 200；游客访问公开电站 200、访问我的电站 401 `UNAUTHORIZED`；当前预警冷启动 4.8 s，云图时间轴 0.13 s，最新帧 0.11 s（复用当前预警渲染结果），20 秒后中间帧与最早帧 0.12–0.14 s（后台预渲染已完成）。
+- 气象转发：测试 `.env` 的 `weather-test.weishenai.cn` 转发配置已被新代码加载，单点每天回源 4 次、全目录 08:00 起拉取的默认配置生效；部署后 30 分钟内无转发拒绝、429 或预渲染失败日志。
+- 小程序已按测试环境构建（`--mode test`），登录页、我的电站登录引导、MW 表单、预警页并行加载与紧凑布局待开发者工具与真机验收，`wx.login` 真实登录需真机验证。
+- 尚未完成：生产 Worker 未建立（建立前确认生产机出口 IP）；小程序后台隐私保护指引按 09 §4.4 填写；《用户服务协议》草稿待法务审核；生产未发布。
