@@ -27,9 +27,14 @@ export function StationTrend({ stationId, type, initial, version = 0, exportName
     setExporting(true)
     try {
       // 三个指标同一份服务端预报缓存，逐个请求不额外消耗气象额度
-      const series = await Promise.all(OPTIONS.map(o => reuse(o.value) ?? homeApi.trends(stationId, o.value as TrendMetric, dayOffset)))
+      // 风电站多导出一列轮毂高度风速，与发电预测同一换算；列名标注实际轮毂高度
+      const metrics: { value: TrendMetric; label?: string }[] = [
+        ...OPTIONS.map(o => ({ value: o.value as TrendMetric, label: o.label })),
+        ...(type === 'wind' ? [{ value: 'hub_wind_speed' as TrendMetric }] : []),
+      ]
+      const series = await Promise.all(metrics.map(m => reuse(m.value) ?? homeApi.trends(stationId, m.value, dayOffset)))
       const day = series[0]?.points[0]?.time.slice(0, 10) ?? ''
-      await exportCsv(`${exportName}_气象趋势_${day}.csv`, weatherCsv(series.map((s, i) => ({ label: OPTIONS[i]!.label, unit: s.unit, points: s.points }))))
+      await exportCsv(`${exportName}_气象趋势_${day}.csv`, weatherCsv(series.map((s, i) => ({ label: metrics[i]!.label ?? `轮毂 ${s.hub_height ?? ''} 米风速`, unit: s.unit, points: s.points }))))
     } catch {
       void Taro.showToast({ title: '导出失败，请稍后重试', icon: 'none' })
     } finally {

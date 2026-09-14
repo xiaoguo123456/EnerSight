@@ -1654,7 +1654,7 @@ export interface components {
          * TrendMetric
          * @enum {string}
          */
-        TrendMetric: "radiation" | "wind_speed" | "cloud_cover";
+        TrendMetric: "radiation" | "wind_speed" | "cloud_cover" | "hub_wind_speed";
         /** TrendPoint */
         TrendPoint: {
             /** Time */
@@ -1689,6 +1689,11 @@ export interface components {
             y_max: number | null;
             /** Points */
             points: components["schemas"]["TrendPoint"][];
+            /**
+             * Hub Height
+             * @description m，换算所用轮毂高度；仅 hub_wind_speed 有值
+             */
+            hub_height: number | null;
         };
         /**
          * UpdateStationRequest

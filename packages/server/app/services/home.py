@@ -92,14 +92,32 @@ def build_trend(
     metric: TrendMetric,
     range_: TrendRange = TrendRange.H24,
     day_offset: int = 0,
+    hub_height: float | None = None,
 ) -> TrendSeries:
     """按输入步长返回趋势；15 分钟预报的 24h 为 97 点、7d 为 672 点。
 
     day_offset 只作用于 24h：取今日起第几天，与首页七天预测所选日期对应。
+    hub_wind_speed 只对风电站：各高度层按对数廓线换算到轮毂高度，与发电预测同一实现
+    （metrics/wind.hub_wind_speed，未做空气密度修正）；hub_height 为 None 时拒绝。docs/07 §2.2
     """
-    col, unit, y_max = _TREND_SPEC[metric]
+    from app.errors import ApiError
+    from app.metrics import wind
+
     df = fc.next_days(7) if range_ == TrendRange.D7 else fc.day_with_midnight(day_offset)
-    points = [TrendPoint(time=ts.isoformat(), value=_num(v)) for ts, v in df[col].items()]
+    if metric == TrendMetric.HUB_WIND_SPEED:
+        if hub_height is None:
+            raise ApiError("INVALID_PARAM", "仅风电站提供轮毂高度风速", 400)
+        levels = {h: df[c].astype(float) for h, c in wind.LEVEL_COLUMNS.items() if c in df}
+        values = (
+            wind.hub_wind_speed(levels, hub_height)[0]
+            if levels
+            else pd.Series(float("nan"), index=df.index)
+        )
+        unit, y_max = "m/s", None
+    else:
+        col, unit, y_max = _TREND_SPEC[metric]
+        values = df[col]
+    points = [TrendPoint(time=ts.isoformat(), value=_num(v)) for ts, v in values.items()]
     return TrendSeries(
         metric=metric,
         unit=unit,
@@ -107,6 +125,7 @@ def build_trend(
         y_max=y_max,
         points=points,
         resolution_minutes=fc.step_minutes,
+        hub_height=hub_height if metric == TrendMetric.HUB_WIND_SPEED else None,
     )
 
 

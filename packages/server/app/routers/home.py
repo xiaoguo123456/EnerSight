@@ -57,7 +57,12 @@ async def get_trends(
     # 只读事务在出网前结束，避免慢请求占满连接池。
     await db.commit()
     fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
-    return envelope(svc.build_trend(fc, metric, range_, day_offset), coord)
+    hub = None
+    if station.type == "wind":
+        from app.metrics import wind
+
+        hub = station.hub_height if station.hub_height is not None else wind.default_hub_height()
+    return envelope(svc.build_trend(fc, metric, range_, day_offset, hub), coord)
 
 
 @router.get("/stations/{station_id}/detail", response_model=Envelope[StationDetailResponse])

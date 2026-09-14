@@ -16,6 +16,8 @@ class TrendMetric(StrEnum):
     RADIATION = "radiation"
     WIND_SPEED = "wind_speed"
     CLOUD_COVER = "cloud_cover"
+    # 仅风电站：换算到轮毂高度的风速，导出用。docs/07 §2.2
+    HUB_WIND_SPEED = "hub_wind_speed"
 
 
 class TrendRange(StrEnum):
@@ -35,6 +37,7 @@ class TrendSeries(BaseModel):
     range: TrendRange
     y_max: float | None = Field(description="固定纵轴上限；null 表示自适应。由服务端下发")
     points: list[TrendPoint]
+    hub_height: float | None = Field(description="m，换算所用轮毂高度；仅 hub_wind_speed 有值")
 
 
 class CurrentWeather(BaseModel):
