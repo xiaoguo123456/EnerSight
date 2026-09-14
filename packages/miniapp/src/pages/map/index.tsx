@@ -164,7 +164,8 @@ export default function MapPage() {
           latitude={center.latitude}
           longitude={center.longitude}
           scale={scale}
-          showLocation
+          // 不显示用户定位点：地图只看电站与气象，位置仅在添加电站时由用户主动获取。docs/09 §4.4
+          showLocation={false}
           enableRotate={false}
           enableOverlooking={false}
           showScale

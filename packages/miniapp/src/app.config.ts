@@ -57,7 +57,7 @@ export default defineAppConfig({
   requiredPrivateInfos: ['getLocation', 'chooseLocation'],
   permission: {
     'scope.userLocation': {
-      desc: '用于添加自建场站时填入当前位置坐标，以及定位当前区域气象',
+      desc: '用于添加或编辑自建电站时填入当前位置坐标',
     },
   },
 })
