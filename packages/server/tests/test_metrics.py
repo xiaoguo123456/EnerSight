@@ -184,6 +184,19 @@ class TestHubWind:
         v, fb = wind.hub_wind_speed(self._levels(4.0, 6.0, 7.0, 7.5), 140.0)
         assert 7.5 < v.iloc[0] < 8.5 and not fb.iloc[0]
 
+    def test_有200m层时高于120m在层间插值而不外推(self):
+        """ECMWF IFS 原生 200 m：夜间 100 m 以上风速几乎不再增加，沿 100–120 m 斜率外推会高估"""
+        import math
+
+        levels = self._levels(4.0, 6.0, 7.0, 7.5)
+        levels[200.0] = pd.Series([7.6], index=pd.RangeIndex(1))
+        v, fb = wind.hub_wind_speed(levels, 160.0)
+        ratio = (math.log(160.0) - math.log(120.0)) / (math.log(200.0) - math.log(120.0))
+        assert v.iloc[0] == pytest.approx(7.5 + 0.1 * ratio) and not fb.iloc[0]
+        extrapolated, _ = wind.hub_wind_speed(self._levels(4.0, 6.0, 7.0, 7.5), 160.0)
+        assert extrapolated.iloc[0] > v.iloc[0] + 0.5
+        assert wind.LEVEL_COLUMNS[200.0] == "wind_speed_200m"
+
     def test_只有10m时按幂律降级并标记(self):
         nan = float("nan")
         v, fb = wind.hub_wind_speed(self._levels(5.0, nan, nan, nan), 100.0)

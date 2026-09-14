@@ -16,12 +16,15 @@ from app.weather_model import current_model
 # 字段数直接决定 Open-Meteo 的计费权重：超过 10 个变量按比例计为多次调用。
 # 只列真正有消费方的字段，加字段前先确认谁在读，并同步 docs/04 §二。
 HOURLY_FIELDS = [
-    # 出力模型必需（与 fleet_prediction.FIELDS 同一套）
+    # 出力模型必需（全目录 fleet_prediction.FIELDS 是其子集）
     "temperature_2m",
     "wind_speed_10m",
-    "wind_speed_80m",  # 80 / 100 / 120 m：风电轮毂高度风速按对数廓线插值，见 metrics/wind
+    "wind_speed_80m",  # 各高度层：风电轮毂高度风速按对数廓线层间插值，见 metrics/wind
     "wind_speed_100m",
     "wind_speed_120m",
+    # ECMWF IFS 原生只有 10 / 100 / 200 m，80、120 m 由上游推算；轮毂高于 120 m 时靠它插值，
+    # 不再按 100–120 m 斜率外推。全目录统一 100 m 轮毂，不请求此层。docs/07 §2.2
+    "wind_speed_200m",
     "shortwave_radiation",
     "diffuse_radiation",
     "direct_normal_irradiance",

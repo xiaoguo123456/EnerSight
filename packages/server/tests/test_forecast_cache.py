@@ -285,7 +285,7 @@ class TestFieldBudget:
         from app.providers.open_meteo import HOURLY_FIELDS, MINUTELY_FIELDS
 
         assert len(HOURLY_FIELDS) <= 15
-        assert len(MINUTELY_FIELDS) == 14
+        assert len(MINUTELY_FIELDS) == 15
         assert set(MINUTELY_FIELDS) == set(HOURLY_FIELDS)
         assert len(set(HOURLY_FIELDS)) == len(HOURLY_FIELDS)
 
