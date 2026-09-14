@@ -37,7 +37,10 @@ def _fresh(tmp_path, monkeypatch):
     weather.clear_cache()
     himawari.clear_cache()
     monkeypatch.setattr(tiles, "_TILE_DIR", tmp_path / "tiles")
+    monkeypatch.setattr(satellite, "_prewarm_jobs", {})
     yield
+    for task in satellite._prewarm_jobs.values():
+        task.cancel()
     weather.clear_cache()
 
 
@@ -362,3 +365,45 @@ async def test_历史时轴排除夜间帧(client, monkeypatch):
     assert result.status_code == 200
     assert result.json()["data"]["times"] == []
     assert sky.calls == []
+
+
+async def test_当前云图顺带落盘历史最新帧_时间轴不再拉瓦片(monkeypatch):
+    from app.models import Station
+    from app.schemas.common import Coord
+
+    sky = FakeSky().add(DAY, [(LON + 1.0, LAT + 1.0, 0.4)]).install(monkeypatch)
+    satellite._history_cache.clear()
+    station = Station(id="reuse-test", name="复用测试", latitude=LAT, longitude=LON, type="solar")
+    async with AsyncClient() as http:
+        await satellite.load_scene(http, LAT, LON, "http://test", need_prev=False)
+        himawari.clear_cache()  # 清掉内存瓦片缓存，确保没有复用时必须重新拉瓦片
+        before = len(sky.calls)
+        data = await satellite.cloud_at(http, station, DAY, Coord.WGS84, "http://test")
+    assert len(sky.calls) == before
+    assert data.image.url.endswith("_truecolor.png")
+
+
+async def test_时间轴后台由新到旧预渲染且同批不重复(monkeypatch):
+    import asyncio
+
+    from app.models import Station
+
+    sky = FakeSky().install(monkeypatch)
+    frames = [DAY - timedelta(minutes=m) for m in (20, 10, 0)]
+    for when in frames:
+        sky.add(when, [(LON, LAT, 0.5)])
+    satellite._history_cache.clear()
+    station = Station(
+        id="prewarm-test", name="预渲染测试", latitude=LAT, longitude=LON, type="solar"
+    )
+    times = [when.isoformat() for when in frames]
+    async with AsyncClient() as http:
+        satellite.schedule_prewarm(http, station, times)
+        satellite.schedule_prewarm(http, station, times)
+        assert len(satellite._prewarm_jobs) == 1
+        await asyncio.gather(*satellite._prewarm_jobs.values())
+    rendered = [when for when, band in sky.calls if band == "truecolor"]
+    assert rendered[0] == frames[-1]
+    assert set(rendered) == set(frames)
+    bbox = satellite.station_bbox(LAT, LON)
+    assert all(satellite._history_path(bbox, when).exists() for when in frames)

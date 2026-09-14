@@ -34,7 +34,8 @@ export default function AlertCenter() {
   const list = useRequest(() => alertsApi.list(currentId ?? undefined, filter), [currentId, filter])
 
   usePullDownRefresh(async () => { await Promise.all([cur.reload(), list.reload()]); Taro.stopPullDownRefresh() })
-  useEffect(() => { setCloudOpen(!!cur.data?.alert) }, [cur.data?.station?.id, cur.data?.alert?.id])
+  useEffect(() => { setCloudOpen(false) }, [currentId])
+  useEffect(() => { if (cur.data?.alert) setCloudOpen(true) }, [cur.data?.station?.id, cur.data?.alert?.id])
   const noStation = cur.status === 'error' && cur.error.status === 404
   const refreshing = cur.refreshing || list.refreshing
   const refresh = () => { if (!refreshing) { void cur.reload(); void list.reload() } }
@@ -91,7 +92,8 @@ export default function AlertCenter() {
           )
         )}
 
-        {cur.status === 'success' && cur.data.station && <Disclosure title="近 3 小时云图" open={cloudOpen} onToggle={() => setCloudOpen(v => !v)}><SatelliteTimeline key={cur.data.station.id} stationId={cur.data.station.id} embedded /></Disclosure>}
+        {/* 展开后独立请求时间线，不等待当前预警的冷启动。 */}
+        {!noStation && <Disclosure title="近 3 小时云图" open={cloudOpen} onToggle={() => setCloudOpen(v => !v)}><SatelliteTimeline key={currentId ?? 'default'} stationId={currentId ?? undefined} embedded /></Disclosure>}
         {!noStation && (
           <View className="alerts__card">
             <SectionHeader icon="clipboard" title="预警记录" />

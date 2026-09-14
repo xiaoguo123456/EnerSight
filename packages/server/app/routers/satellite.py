@@ -69,4 +69,7 @@ async def satellite_history(
     )
     if station is None:
         raise StationNotFound()
-    return envelope(await svc.history_times(request.app.state.http, station), coord)
+    result = await svc.history_times(request.app.state.http, station)
+    # 冷帧逐帧渲染约 2 秒；后台先由新到旧备好，播放时命中缓存
+    svc.schedule_prewarm(request.app.state.http, station, result.times)
+    return envelope(result, coord)

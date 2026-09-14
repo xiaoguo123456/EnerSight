@@ -65,6 +65,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from app.services import fleet_prediction
 
         await fleet_prediction.shutdown()
+        from app.services import satellite as satellite_service
+
+        await satellite_service.shutdown_prewarm()
         from app.jobs import map_prepare
 
         await map_prepare.shutdown()

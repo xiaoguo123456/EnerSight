@@ -8,8 +8,12 @@ import { useRequest } from '@/hooks/useRequest'
 import { SatelliteCloudCard } from '../SatelliteCloudCard'
 import './index.scss'
 
-/** 三小时真实观测序列；按需下载当前/下一帧，缺失帧不复制伪造。 */
-export function SatelliteTimeline({ stationId, embedded = false }: { stationId: string; embedded?: boolean }) {
+/**
+ * 三小时真实观测序列；按需下载当前/下一帧，缺失帧不复制伪造。
+ * 先停在最新一帧（服务端已随当前预警渲染过），停留两倍时长后从最早一帧循环播放。
+ * stationId 缺省时用服务端默认电站。
+ */
+export function SatelliteTimeline({ stationId, embedded = false }: { stationId?: string; embedded?: boolean }) {
   const manifest = useRequest(() => api.get<SatelliteHistoryResponse>('/v1/satellite/cloud/history', { station_id: stationId }), [stationId])
   const times = manifest.data?.times ?? []
   const [index, setIndex] = useState(0)
@@ -35,19 +39,20 @@ export function SatelliteTimeline({ stationId, embedded = false }: { stationId: 
   }
   const frame = useRequest(() => when ? getFrame(when) : Promise.resolve(null), [stationId, when])
   useDidHide(() => setVisible(false)); useDidShow(() => setVisible(true))
-  useEffect(() => { setIndex(0) }, [manifest.data?.end_at])
+  useEffect(() => { setIndex(Math.max(0, times.length - 1)) }, [manifest.data?.end_at])
   useEffect(() => { setLoaded(''); setFailed(false) }, [when])
   useEffect(() => { if (frame.data) setDisplay(frame.data) }, [frame.data])
   useEffect(() => {
-    if (frame.status !== 'success' || !when) return
-    const next = times[index + 1]
+    if (frame.status !== 'success' || !when || times.length < 2) return
+    const next = times[(index + 1) % times.length]
     if (next) void getFrame(next).catch(() => undefined)
   }, [frame.data, when])
   useEffect(() => {
     if (!playing || !visible || loaded !== when || failed || times.length < 2) return
-    const timer = setTimeout(() => setIndex((i) => (i + 1) % times.length), 1000 / speed)
+    const hold = index === times.length - 1 ? 2000 : 1000
+    const timer = setTimeout(() => setIndex((i) => (i + 1) % times.length), hold / speed)
     return () => clearTimeout(timer)
-  }, [playing, visible, loaded, when, speed, failed, times.length])
+  }, [playing, visible, loaded, when, speed, failed, times.length, index])
   const retry = () => { if (when) cache.current.delete(when); setFailed(false); void frame.reload() }
   return <View className={`sat-timeline${embedded ? ' sat-timeline--embedded' : ''}`}>
     {!embedded && <View className="sat-timeline__head"><Text>近 3 小时云图</Text></View>}
