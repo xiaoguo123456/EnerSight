@@ -166,7 +166,7 @@ async def build_station_view(
     )
 
 
-async def default_station(db: AsyncSession, owner_id: str) -> Station | None:
+async def default_station(db: AsyncSession, owner_id: str | None) -> Station | None:
     """优先展示容量口径已核验的运营电站，分批扫描避免首次打开就是空预测。"""
     from app.db import pages
     from app.services.prediction_basis import catalog_basis
@@ -185,15 +185,17 @@ async def default_station(db: AsyncSession, owner_id: str) -> Station | None:
                 and -180 <= plant.longitude <= 180
             ):
                 return from_catalog(plant)
-    q = select(Station).where(Station.owner_id == owner_id).order_by(Station.created_at)
-    own = (await db.execute(q)).scalars().first()
+    own = None
+    if owner_id is not None:  # 游客没有自建场站
+        q = select(Station).where(Station.owner_id == owner_id).order_by(Station.created_at)
+        own = (await db.execute(q)).scalars().first()
     return own or (from_catalog(first) if first is not None else None)
 
 
 async def build_home(
     db: AsyncSession,
     http: httpx.AsyncClient,
-    owner_id: str,
+    owner_id: str | None,
     coord: Coord,
     station_id: str | None,
 ) -> HomeResponse:

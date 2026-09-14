@@ -50,7 +50,7 @@ def parse_coordinate(text: str) -> tuple[float, float] | None:
 
 
 async def search(
-    db: AsyncSession, http: httpx.AsyncClient, owner_id: str, keyword: str, coord: Coord
+    db: AsyncSession, http: httpx.AsyncClient, owner_id: str | None, keyword: str, coord: Coord
 ) -> GeoSearchResponse:
     """合并三类结果：用户站点匹配、坐标直解、城市 POI。docs/06 §十一"""
     results: list[GeoPlace] = []
@@ -58,7 +58,7 @@ async def search(
     if not kw:
         return GeoSearchResponse(results=[])
 
-    # 1. 用户站点
+    # 1. 用户站点（游客没有）
     rows = (
         (
             await db.execute(
@@ -67,6 +67,8 @@ async def search(
         )
         .scalars()
         .all()
+        if owner_id is not None
+        else []
     )
     for s in rows:
         lng, lat = _to_out(s.longitude, s.latitude, coord)

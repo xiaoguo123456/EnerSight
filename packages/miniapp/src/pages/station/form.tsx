@@ -9,6 +9,7 @@ import { homeApi } from '@/api/home'
 import { stationsApi } from '@/api/stations'
 import { Icon, InfoTip, PageHeader, SegmentedTabs, Skeleton } from '@/components'
 import { useStationStore } from '@/store'
+import { useAuthStore } from '@/store/auth'
 import { decodeRouteParam } from '@/route'
 import './form.scss'
 
@@ -135,6 +136,11 @@ export default function StationForm() {
   const [saving, setSaving] = useState(false)
   const [locating, setLocating] = useState(false)
   const { currentId, setCurrent, remember } = useStationStore()
+
+  useEffect(() => {
+    // 自建电站必须登录；从分享或历史页面直接进入时转到登录页。docs/09 §4.3
+    if (!useAuthStore.getState().loggedIn) void Taro.redirectTo({ url: '/pages/login/index' })
+  }, [])
 
   useEffect(() => {
     if (!editing) return

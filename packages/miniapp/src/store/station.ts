@@ -8,6 +8,7 @@ import type { StationSummary } from '@enersight/core/types'
 const CURRENT_KEY = 'enersight_current_public_station'
 /** 公开目录 ID 带来源前缀；自建站点是 12 位 hex。docs/17 §一 */
 const ID_PATTERN = /^(gem|wri):|^[0-9a-f]{12}$/
+const OWN_ID = /^[0-9a-f]{12}$/
 
 interface StationState {
   currentId: string | null
@@ -18,6 +19,8 @@ interface StationState {
   clearRecent: () => void
   setCurrent: (id: string) => void
   restore: () => void
+  /** 退出登录或删除数据后，移除本机记住的自建电站 */
+  forgetOwn: () => void
 }
 
 export const useStationStore = create<StationState>((set) => ({
@@ -44,6 +47,18 @@ export const useStationStore = create<StationState>((set) => ({
     try { Taro.setStorageSync(CURRENT_KEY, id) } catch { /* 不阻断站点切换 */ }
     set({ currentId: id })
   },
+  forgetOwn: () => set((state) => {
+    const keep = (s: StationSummary) => !s.is_own && !OWN_ID.test(s.id)
+    const favorites = state.favorites.filter(keep)
+    const recent = state.recent.filter(keep)
+    const currentId = state.currentId && OWN_ID.test(state.currentId) ? null : state.currentId
+    try {
+      Taro.setStorageSync('enersight_favorite_stations', favorites)
+      Taro.setStorageSync('enersight_recent_stations', recent)
+      if (!currentId) Taro.removeStorageSync(CURRENT_KEY)
+    } catch { /* 存储不可用时仅清内存 */ }
+    return { favorites, recent, currentId }
+  }),
   restore: () => {
     try {
       const favorites = Taro.getStorageSync('enersight_favorite_stations')

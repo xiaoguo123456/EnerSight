@@ -237,7 +237,8 @@ async def list_public_stations(
     )
 
 
-async def get_station(db: AsyncSession, owner_id: str, station_id: str) -> Station:
+async def get_station(db: AsyncSession, owner_id: str | None, station_id: str) -> Station:
+    """公开电站游客可看；自建场站必须登录且属于本人。owner_id 为 None 表示游客。"""
     plant = await db.get(CatalogPlant, station_id)
     if plant is not None:
         if plant.status != "operating":
@@ -246,6 +247,8 @@ async def get_station(db: AsyncSession, owner_id: str, station_id: str) -> Stati
     s = await db.get(Station, station_id)
     if s is None:
         raise StationNotFound()
+    if owner_id is None:
+        raise ApiError("LOGIN_REQUIRED", "请先登录后查看自建场站", 401)
     if s.owner_id != owner_id:
         # 不暴露「存在但不是你的」，统一按不存在处理更安全
         raise ApiError("STATION_FORBIDDEN", "无权访问该站点", 403)
@@ -378,12 +381,35 @@ async def update_station(
     return s
 
 
-async def delete_station(db: AsyncSession, owner_id: str, station_id: str) -> None:
-    from app.services.alerts import deactivate_all
+async def _purge(db: AsyncSession, stations: list[Station]) -> None:
+    """删除场站及其预警、发电记录、报告与七天预测留档。表之间没有外键级联，逐表删除。"""
+    import asyncio
 
-    s = await get_station(db, owner_id, station_id)
-    if s.owner_id == "__catalog__":
-        raise ApiError("CATALOG_READ_ONLY", "公开电站由平台维护，不支持个人修改或删除", 403)
-    await deactivate_all(db, s.id)
-    await db.delete(s)
+    from sqlalchemy import delete
+
+    from app.models import Alert, DailyGeneration, Report
+    from app.services.prediction_archive import purge_station_archives
+
+    ids = [s.id for s in stations]
+    if not ids:
+        return
+    for model in (Alert, DailyGeneration, Report):
+        await db.execute(delete(model).where(model.station_id.in_(ids)))
+    for s in stations:
+        await db.delete(s)
     await db.commit()
+    await asyncio.to_thread(purge_station_archives, set(ids))
+
+
+async def delete_station(db: AsyncSession, owner_id: str, station_id: str) -> None:
+    s = await get_station(db, owner_id, station_id)
+    if s.owner_id == CATALOG_OWNER:
+        raise ApiError("CATALOG_READ_ONLY", "公开电站由平台维护，不支持个人修改或删除", 403)
+    await _purge(db, [s])
+
+
+async def delete_owner_data(db: AsyncSession, owner_id: str) -> int:
+    """删除我的数据：本账号全部自建场站及关联记录。账号只由 openid 标识，服务端不另存用户资料。"""
+    rows = (await db.execute(select(Station).where(Station.owner_id == owner_id))).scalars().all()
+    await _purge(db, list(rows))
+    return len(rows)

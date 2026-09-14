@@ -24,6 +24,7 @@ from app.routers import (
     health,
     home,
     layers,
+    me,
     reports,
     satellite,
     stations,
@@ -95,6 +96,7 @@ app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(me.router)
 app.include_router(catalog.router)  # 必须在 stations 之前，否则 /catalog 被当成 station_id
 app.include_router(stations.router)
 app.include_router(home.router)

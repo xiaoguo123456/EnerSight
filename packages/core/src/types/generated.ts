@@ -38,6 +38,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete My Data
+         * @description 删除我的数据：本账号全部自建场站及其预警、发电记录、报告与预测留档。不可恢复。
+         */
+        delete: operations["delete_my_data_v1_me_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stations/catalog": {
         parameters: {
             query?: never;
@@ -82,7 +102,7 @@ export interface paths {
         };
         /**
          * List Public Stations
-         * @description 所有登录用户共享公开目录，不需要创建个人站点。
+         * @description 游客与登录用户共享公开目录，不需要创建个人站点。
          */
         get: operations["list_public_stations_v1_stations_public_get"];
         put?: never;
@@ -206,7 +226,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Fleet Prediction */
+        /**
+         * Fleet Prediction
+         * @description 全目录汇总只含公开目录，游客可看。
+         */
         get: operations["fleet_prediction_v1_predictions_fleet_get"];
         put?: never;
         post?: never;
@@ -1792,6 +1815,35 @@ export interface operations {
             };
         };
     };
+    delete_my_data_v1_me_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_catalog_v1_stations_catalog_get: {
         parameters: {
             query?: {
@@ -1805,9 +1857,7 @@ export interface operations {
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -1918,9 +1968,7 @@ export interface operations {
                 province?: string;
                 sort?: "capacity" | "name";
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2202,9 +2250,7 @@ export interface operations {
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2236,9 +2282,7 @@ export interface operations {
                 period?: "week" | "month" | "year";
                 anchor?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2417,9 +2461,7 @@ export interface operations {
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2454,9 +2496,7 @@ export interface operations {
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 layer: components["schemas"]["LayerType"];
             };

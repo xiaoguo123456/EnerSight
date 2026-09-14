@@ -9,7 +9,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUserDep
 from app.db import get_session
 from app.errors import ApiError
 from app.schemas.catalog import CatalogSearchResponse
@@ -49,7 +48,6 @@ def _parse_bbox(bbox: str | None, coord: Coord) -> tuple[float, float, float, fl
 
 @router.get("", response_model=Envelope[CatalogSearchResponse])
 async def search_catalog(
-    user: CurrentUserDep,
     db: DbDep,
     keyword: Annotated[str | None, Query(max_length=64)] = None,
     near: Annotated[str | None, Query(description="latitude,longitude，按 coord")] = None,

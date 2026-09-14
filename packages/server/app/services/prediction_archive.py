@@ -54,6 +54,40 @@ def save(station, forecast, result):
         pass
 
 
+def purge_station_archives(station_ids: set[str]) -> int:
+    """删除自建场站时一并删除它的预测留档，返回删除的文件数。
+
+    滚动预测留档的文件名以 sha256(站点:模型) 前 24 位开头，按名匹配不读文件；
+    七天预测留档首个键就是 station_id，只读文件头。
+    """
+    from app.weather_model import MODELS
+
+    if not station_ids:
+        return 0
+    root = tiles.tile_dir().parent
+    keys = {
+        hashlib.sha256(f"{sid}:{model}".encode()).hexdigest()[:24]
+        for sid in station_ids
+        for model in MODELS
+    }
+    removed = 0
+    for path in (root / "prediction-archive").glob("*/*.json"):
+        if path.name[:24] in keys:
+            path.unlink(missing_ok=True)
+            removed += 1
+    heads = tuple(f'{{"station_id": {json.dumps(sid)}' for sid in station_ids)
+    for path in (root / "prediction-outlook").glob("*/*.json"):
+        try:
+            with path.open(encoding="utf-8") as f:
+                head = f.read(96)
+        except OSError:
+            continue
+        if head.startswith(heads):
+            path.unlink(missing_ok=True)
+            removed += 1
+    return removed
+
+
 def save_outlook(station, forecast, outlook):
     """按签发批次留存完整七天输出和全部计算输入，同批次同配置不重复写。"""
     parameters = station_parameters(station)

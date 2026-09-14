@@ -1,4 +1,7 @@
-"""卫星云图接口。docs/06 §7.3"""
+"""卫星云图接口。docs/06 §7.3
+
+游客可看公开电站的云图；自建场站由 get_station 要求登录。docs/09 §4.3
+"""
 
 from datetime import UTC, datetime
 from typing import Annotated
@@ -6,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUserDep
+from app.auth import OptionalUserDep, owner_of
 from app.db import get_session
 from app.errors import StationNotFound
 from app.schemas.common import Coord
@@ -24,16 +27,17 @@ DbDep = Annotated[AsyncSession, Depends(get_session)]
 @router.get("/cloud", response_model=Envelope[SatelliteCloudResponse])
 async def satellite_cloud(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     station_id: Annotated[str | None, Query()] = None,
     coord: CoordQuery = Coord.WGS84,
     at: datetime | None = None,
 ) -> Envelope[SatelliteCloudResponse]:
+    owner = owner_of(user)
     station = (
-        await get_station(db, user.id, station_id)
+        await get_station(db, owner, station_id)
         if station_id
-        else await default_station(db, user.id)
+        else await default_station(db, owner)
     )
     if station is None:
         raise StationNotFound()
@@ -52,15 +56,16 @@ async def satellite_cloud(
 @router.get("/cloud/history", response_model=Envelope[SatelliteHistoryResponse])
 async def satellite_history(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     station_id: str | None = None,
     coord: CoordQuery = Coord.WGS84,
 ):
+    owner = owner_of(user)
     station = (
-        await get_station(db, user.id, station_id)
+        await get_station(db, owner, station_id)
         if station_id
-        else await default_station(db, user.id)
+        else await default_station(db, owner)
     )
     if station is None:
         raise StationNotFound()

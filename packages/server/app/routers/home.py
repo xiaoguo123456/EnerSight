@@ -1,4 +1,7 @@
-"""首页聚合与趋势。docs/06 §六、§八"""
+"""首页聚合与趋势。docs/06 §六、§八
+
+游客可看公开电站；自建场站由 get_station 要求登录。docs/09 §4.3
+"""
 
 from datetime import date
 from typing import Annotated, Literal
@@ -6,7 +9,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUserDep
+from app.auth import OptionalUserDep, owner_of
 from app.db import get_session
 from app.schemas.common import Coord
 from app.schemas.envelope import CoordQuery, Envelope, envelope
@@ -30,26 +33,26 @@ DbDep = Annotated[AsyncSession, Depends(get_session)]
 @router.get("/home", response_model=Envelope[HomeResponse])
 async def get_home(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     coord: CoordQuery = Coord.WGS84,
     station_id: Annotated[str | None, Query()] = None,
 ) -> Envelope[HomeResponse]:
-    data = await svc.build_home(db, request.app.state.http, user.id, coord, station_id)
+    data = await svc.build_home(db, request.app.state.http, owner_of(user), coord, station_id)
     return envelope(data, coord)
 
 
 @router.get("/trends", response_model=Envelope[TrendSeries])
 async def get_trends(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     station_id: Annotated[str, Query()],
     metric: Annotated[TrendMetric, Query()] = TrendMetric.RADIATION,
     range_: Annotated[TrendRange, Query(alias="range")] = TrendRange.H24,
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[TrendSeries]:
-    station = await get_station(db, user.id, station_id)
+    station = await get_station(db, owner_of(user), station_id)
     # 只读事务在出网前结束，避免慢请求占满连接池。
     await db.commit()
     fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
@@ -59,12 +62,12 @@ async def get_trends(
 @router.get("/stations/{station_id}/detail", response_model=Envelope[StationDetailResponse])
 async def get_station_detail(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     station_id: str,
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[StationDetailResponse]:
-    station = await get_station(db, user.id, station_id)
+    station = await get_station(db, owner_of(user), station_id)
     v = await svc.build_station_view(request.app.state.http, station, coord, db)
     return envelope(
         StationDetailResponse(
@@ -82,7 +85,7 @@ async def get_station_detail(
 @router.get("/predictions/station", response_model=Envelope[StationOutlook])
 async def station_outlook(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     station_id: Annotated[str, Query()],
     days: Annotated[int, Query(ge=1, le=7)] = 7,
@@ -94,7 +97,7 @@ async def station_outlook(
     from app.config import settings
     from app.services import prediction
 
-    station = await get_station(db, user.id, station_id)
+    station = await get_station(db, owner_of(user), station_id)
     # 只读事务在出网前结束，避免慢请求占满连接池。
     await db.commit()
     fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
@@ -110,15 +113,16 @@ async def station_outlook(
 @router.get("/map/overview", response_model=Envelope[MapOverviewResponse])
 async def get_map_overview(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     coord: CoordQuery = Coord.WGS84,
     station_id: Annotated[str | None, Query()] = None,
 ) -> Envelope[MapOverviewResponse]:
+    owner = owner_of(user)
     station = (
-        await get_station(db, user.id, station_id)
+        await get_station(db, owner, station_id)
         if station_id
-        else await svc.default_station(db, user.id)
+        else await svc.default_station(db, owner)
     )
     if station is None:
         from app.errors import StationNotFound
@@ -137,7 +141,8 @@ async def get_map_overview(
 
 
 @router.get("/predictions/fleet", response_model=Envelope[FleetPrediction])
-async def fleet_prediction(request: Request, user: CurrentUserDep, coord: CoordQuery = Coord.WGS84):
+async def fleet_prediction(request: Request, coord: CoordQuery = Coord.WGS84):
+    """全目录汇总只含公开目录，游客可看。"""
     from app.services import fleet_prediction as fleet
     from app.weather_model import current_model
 
@@ -147,7 +152,6 @@ async def fleet_prediction(request: Request, user: CurrentUserDep, coord: CoordQ
 @router.get("/predictions/fleet/history")
 async def fleet_history(
     request: Request,
-    user: CurrentUserDep,
     period: Literal["week", "month", "year"] = "week",
     anchor: date | None = None,
 ):

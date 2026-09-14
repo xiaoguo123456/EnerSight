@@ -6,6 +6,7 @@ import type { TrendMetric, TrendSeries } from '@enersight/core/types'
 import { homeApi } from '@/api/home'
 import { useRequest } from '@/hooks/useRequest'
 import { exportCsv } from '@/utils/exportCsv'
+import { requireLogin } from '@/utils/requireLogin'
 import { ErrorState, SectionHeader, SegmentedTabs, Skeleton, TrendChart, fromTrendSeries } from '@/components'
 const OPTIONS = [{ value: 'radiation', label: '辐射' }, { value: 'wind_speed', label: '10米风速' }, { value: 'cloud_cover', label: '云量' }]
 const INFO = {
@@ -18,6 +19,7 @@ export function StationTrend({ stationId, type, initial, version = 0, exportName
   const [exporting, setExporting] = useState(false)
   const req = useRequest(() => initial?.metric === metric ? Promise.resolve(initial) : homeApi.trends(stationId, metric), [stationId, metric, initial])
   const exportWeather = async () => {
+    if (!requireLogin()) return
     setExporting(true)
     try {
       // 三个指标同一份服务端预报缓存，逐个请求不额外消耗气象额度

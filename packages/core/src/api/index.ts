@@ -75,7 +75,7 @@ export function createClient(opts: ClientOptions): ApiClient {
   const maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES
   let loginInFlight: Promise<string> | null = null
 
-  /** 并发请求共用同一次登录：启动时首页、预测等请求同时发出，不能各自登录一遍。 */
+  /** 并发请求共用同一次续登：令牌同时失效时，首页、预测等请求不能各自登录一遍。 */
   function login(): Promise<string> {
     if (!loginInFlight) {
       loginInFlight = (async () => {
@@ -99,16 +99,8 @@ export function createClient(opts: ClientOptions): ApiClient {
     attempt = 0,
     didRelogin = false,
   ): Promise<T> {
-    let token = await opts.tokenStore.get()
-    // 还没有令牌就先登录，不先发一次必然 401 的请求。登录失败仍照常发出，由服务端决定（开发态免登录）。
-    if (!token && !didRelogin) {
-      try {
-        token = await login()
-        didRelogin = true
-      } catch {
-        // 交给服务端响应
-      }
-    }
+    // 游客不带令牌直接请求公开数据，不主动登录。docs/09 §4.3
+    const token = await opts.tokenStore.get()
     let res: RawResponse
     try {
       res = await opts.adapter.request({
@@ -136,8 +128,9 @@ export function createClient(opts: ClientOptions): ApiClient {
     const message = errBody?.error?.message ?? '请求失败'
     const err = new ApiError(code, message, res.status)
 
-    // 首次未登录或 token 失效时登录，并且最多重试一次，避免认证失败死循环。
-    if (res.status === 401 && ['UNAUTHORIZED', 'TOKEN_EXPIRED'].includes(code) && !didRelogin) {
+    // 令牌失效或访问需登录的数据时续登并重试一次，避免认证失败死循环。
+    // 游客能否续登由各端 relogin 决定：小程序未登录时抛 LOGIN_REQUIRED，由页面引导去登录页。
+    if (res.status === 401 && ['UNAUTHORIZED', 'TOKEN_EXPIRED', 'LOGIN_REQUIRED'].includes(code) && !didRelogin) {
       await login()
       return send<T>(method, url, query, body, attempt, true)
     }

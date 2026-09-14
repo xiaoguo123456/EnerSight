@@ -21,3 +21,8 @@
 .mine__description { margin-top: 4px; font-size: 12px; }
 .mine__group-note { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; color: var(--color-text-sub); }
 .mine__row .mine__row-value { max-width: 55%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+// 登录态：游客显示登录入口，登录后底部提供退出。docs/09 §4.3
+.mine__login { display: flex; align-items: center; gap: 2px; min-height: 44px; font-size: 14px; color: var(--color-primary); }
+.mine__row--center { justify-content: center; }
+.mine__signout { font-size: 14px; color: #b91c1c; }

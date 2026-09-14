@@ -217,15 +217,24 @@ POST /v1/auth/login
 
 ### 4.2 鉴权
 
-除登录外全部接口需带：
+请求头：
 
 ```
 Authorization: Bearer <token>
 ```
 
-token 过期返回 `401` + `code: "TOKEN_EXPIRED"`，
-`core/api` 拦截后自动重新登录并重试一次。本地没有 token 时先登录再发请求，不先发一次必然 401 的请求；
-并发请求共用同一次登录。
+按接口分三类，游客模式口径见 09 §4.3：
+
+| 类别 | 接口 | 不带 token 时 |
+| --- | --- | --- |
+| 公开，不取身份 | `GET /v1/stations/public`、`/v1/stations/catalog`、`/v1/predictions/fleet`、`/v1/predictions/fleet/history`、`/v1/map/layers/{layer}`、`/v1/geo/reverse` | 正常返回 |
+| 公开，身份可选 | `GET /v1/home`、`/v1/trends`、`/v1/stations/{id}/detail`、`/v1/predictions/station`、`/v1/map/overview`、`/v1/alerts`、`/v1/alerts/current`、`/v1/satellite/cloud`、`/v1/satellite/cloud/history`、`/v1/reports/{id}`、`/v1/geo/search` | 公开电站正常返回；自建电站返回 `401 LOGIN_REQUIRED`；默认电站只从公开目录选，地址搜索不含自建电站 |
+| 需要登录 | `GET` / `POST /v1/stations`、`PATCH` / `DELETE /v1/stations/{id}`、`DELETE /v1/me` | `401 UNAUTHORIZED` |
+
+带了 token 的请求一律校验：过期返回 `401 TOKEN_EXPIRED`，无效返回 `401 UNAUTHORIZED`。
+`core/api` 收到这三种 401 时调用各端 `relogin` 并重试一次，并发请求共用一次续登。
+小程序只对主动登录过的用户静默续登；游客的 `relogin` 抛 `LOGIN_REQUIRED`，由页面引导到登录页。
+游客不带 token 请求公开数据，不自动登录。
 
 
 ---
@@ -357,7 +366,11 @@ interface StationDetailResponse {
 ```
 PATCH  /v1/stations/{id}     body 为 CreateStationRequest 的任意子集
 DELETE /v1/stations/{id}     204 No Content
+DELETE /v1/me                204 No Content，删除本账号全部自建电站
 ```
+
+删除电站会一并删除它的预警、发电记录、报告与预测留档；`DELETE /v1/me`（「我的 → 删除我的数据」）
+对本账号全部自建电站执行同样的删除，不可恢复。表之间没有外键级联，由服务端逐表删除。
 
 
 ### 5.5 公开电站目录
@@ -839,6 +852,7 @@ interface MetricWithDelta {
 | 400 | `INVALID_COORDINATE` | 经纬度超出合法范围 |
 | 401 | `TOKEN_EXPIRED` | token 过期，客户端自动重登重试 |
 | 401 | `UNAUTHORIZED` | 未登录 |
+| 401 | `LOGIN_REQUIRED` | 游客访问自建电站，需先登录 |
 | 403 | `STATION_FORBIDDEN` | 站点不属于当前用户 |
 | 404 | `STATION_NOT_FOUND` | 站点不存在 |
 | 404 | `LAYER_NOT_FOUND` | 图层类型不支持 |
@@ -876,7 +890,7 @@ export function createClient(adapter: HttpAdapter, opts: ClientOptions): ApiClie
 | 职责 | 说明 |
 | --- | --- |
 | 注入 token | 从 adapter 提供的存储读取 |
-| 401 自动重登 | 重登后重试一次，失败才抛错；无 token 时先登录，并发请求共用一次登录 |
+| 401 自动重登 | 重登后重试一次，失败才抛错；并发请求共用一次续登；游客不主动登录，能否续登由各端 relogin 决定 |
 | 坐标系参数 | 按端注入固定的 `coord`，页面不传 |
 | 错误归一 | 网络错误与业务错误统一为 `ApiError` |
 | 超时与重试 | 默认 10s；仅对 `502` 与网络错误重试，最多 2 次 |

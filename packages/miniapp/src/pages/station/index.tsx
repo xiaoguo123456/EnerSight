@@ -6,6 +6,8 @@ import { formatPower, formatCoordinate, thousands } from '@enersight/core/format
 import type { StationSummary, StationType } from '@enersight/core/types'
 import { stationsApi } from '@/api/stations'
 import { useStationStore } from '@/store'
+import { useAuthStore } from '@/store/auth'
+import { requireLogin } from '@/utils/requireLogin'
 import { EmptyState, Icon, InfoTip, PageTitleBar, SegmentedTabs, Skeleton } from '@/components'
 import './catalog.scss'
 
@@ -48,6 +50,7 @@ export default function Stations() {
   const [mineVersion, setMineVersion] = useState(0)
   const pending = useRef(false)
   const { currentId, recent, favorites, remember } = useStationStore()
+  const loggedIn = useAuthStore((s) => s.loggedIn)
 
   useDidShow(() => {
     const province = Taro.getStorageSync('enersight_prediction_province')
@@ -79,14 +82,14 @@ export default function Stations() {
   }, [query, retry, scope])
 
   useEffect(() => {
-    if (scope !== 'mine') return
+    if (scope !== 'mine' || !loggedIn) return
     let cancelled = false
     setMine((m) => ({ ...m, loading: true, error: false }))
     stationsApi.mine()
       .then((data) => { if (!cancelled) setMine({ items: data.stations, loading: false, error: false, loaded: true }) })
       .catch(() => { if (!cancelled) setMine((m) => ({ ...m, loading: false, error: true })) })
     return () => { cancelled = true }
-  }, [scope, mineVersion])
+  }, [scope, mineVersion, loggedIn])
 
   const change = (patch: Partial<Filter>) => {
     setQuery((q) => ({ ...q, ...patch, offset: 0 }))
@@ -102,7 +105,7 @@ export default function Stations() {
     remember(station)
     void Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })
   }
-  const addStation = () => void Taro.navigateTo({ url: '/pages/station/form' })
+  const addStation = () => { if (requireLogin()) void Taro.navigateTo({ url: '/pages/station/form' }) }
   const editStation = (id: string) => void Taro.navigateTo({ url: `/pages/station/form?id=${encodeURIComponent(id)}` })
   const regions = ['全部地区', ...result.regions]
   const isMine = scope === 'mine'
@@ -156,7 +159,7 @@ export default function Stations() {
       </View>
     </View>
 
-    {isMine ? <>
+    {isMine && !loggedIn ? <EmptyState icon="user" title="登录后查看我的电站" actionText="登录" onAction={() => void requireLogin()} /> : isMine ? <>
       <View className="catalog__results-head"><View className="catalog__results-title"><Text>{mine.loading && !mine.loaded ? '正在读取' : `我的电站 ${mine.items.length} 座`}</Text><InfoTip {...MINE_INFO} /></View><Text>仅本账号可见</Text></View>
       <View className="catalog__list">{mineItems.map((s) => item(s, true))}</View>
       {mine.loading && !mine.loaded && <View className="catalog__loading"><Skeleton height={100} lines={3} /></View>}

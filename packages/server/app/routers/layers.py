@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 
-from app.auth import CurrentUserDep
 from app.errors import ApiError
 from app.geo import gcj02_to_wgs84
 from app.schemas.common import Coord, LayerType
@@ -33,7 +32,6 @@ def _parse_bbox(
 @router.get("/{layer}", response_model=Envelope[LayerResponse])
 async def get_layer(
     request: Request,
-    user: CurrentUserDep,
     layer: LayerType,
     bbox: Annotated[str, Query(description="west,south,east,north")],
     zoom: Annotated[int, Query(ge=1, le=20)] = 7,

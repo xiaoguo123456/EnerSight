@@ -1,4 +1,7 @@
-"""站点接口。docs/06 §五"""
+"""站点接口。docs/06 §五
+
+公开目录游客可看；自建场站的列表与增删改必须登录。docs/09 §4.3
+"""
 
 from typing import Annotated, Literal
 
@@ -35,7 +38,6 @@ async def list_stations(
 
 @router.get("/public", response_model=Envelope[PublicStationListResponse])
 async def list_public_stations(
-    user: CurrentUserDep,
     db: DbDep,
     coord: CoordQuery = Coord.WGS84,
     type: Annotated[StationType | None, Query()] = None,
@@ -45,7 +47,7 @@ async def list_public_stations(
     province: Annotated[str, Query(max_length=32)] = "",
     sort: Literal["capacity", "name"] = "capacity",
 ) -> Envelope[PublicStationListResponse]:
-    """所有登录用户共享公开目录，不需要创建个人站点。"""
+    """游客与登录用户共享公开目录，不需要创建个人站点。"""
     data = await svc.list_public_stations(
         db, coord, type.value if type else None, keyword, limit, offset, province, sort
     )

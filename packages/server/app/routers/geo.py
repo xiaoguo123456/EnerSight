@@ -1,11 +1,14 @@
-"""地理服务：代理腾讯位置服务，避免在前端暴露 key。docs/06 §十一"""
+"""地理服务：代理腾讯位置服务，避免在前端暴露 key。docs/06 §十一
+
+游客可用；登录后搜索结果额外包含本人自建场站。
+"""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUserDep
+from app.auth import OptionalUserDep, owner_of
 from app.db import get_session
 from app.errors import DataUnavailable
 from app.geo import gcj02_to_wgs84
@@ -21,18 +24,18 @@ DbDep = Annotated[AsyncSession, Depends(get_session)]
 @router.get("/search", response_model=Envelope[GeoSearchResponse])
 async def search(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     keyword: Annotated[str, Query(min_length=1, max_length=64)],
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[GeoSearchResponse]:
-    return envelope(await svc.search(db, request.app.state.http, user.id, keyword, coord), coord)
+    data = await svc.search(db, request.app.state.http, owner_of(user), keyword, coord)
+    return envelope(data, coord)
 
 
 @router.get("/reverse", response_model=Envelope[GeoReverseResponse])
 async def reverse(
     request: Request,
-    user: CurrentUserDep,
     latitude: Annotated[float, Query(ge=-90, le=90)],
     longitude: Annotated[float, Query(ge=-180, le=180)],
     coord: CoordQuery = Coord.WGS84,

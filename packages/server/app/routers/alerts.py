@@ -1,4 +1,7 @@
-"""预警接口。docs/06 §九"""
+"""预警接口。docs/06 §九
+
+游客可看公开电站的预警；自建场站由 get_station 要求登录。docs/09 §4.3
+"""
 
 from datetime import UTC, datetime
 from typing import Annotated
@@ -6,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUserDep
+from app.auth import OptionalUserDep, owner_of
 from app.db import get_session
 from app.errors import ApiError, StationNotFound
 from app.schemas.alert import AlertListResponse, CurrentAlertResponse
@@ -22,7 +25,7 @@ DbDep = Annotated[AsyncSession, Depends(get_session)]
 LEVELS = {"all", "minor", "moderate", "severe"}
 
 
-async def _resolve(db: AsyncSession, owner_id: str, station_id: str | None):
+async def _resolve(db: AsyncSession, owner_id: str | None, station_id: str | None):
     station = (
         await get_station(db, owner_id, station_id)
         if station_id
@@ -38,7 +41,7 @@ async def _resolve(db: AsyncSession, owner_id: str, station_id: str | None):
 @router.get("", response_model=Envelope[AlertListResponse])
 async def list_alerts(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     station_id: Annotated[str | None, Query()] = None,
     level: Annotated[str, Query()] = "all",
@@ -48,7 +51,7 @@ async def list_alerts(
 ) -> Envelope[AlertListResponse]:
     if level not in LEVELS:
         raise ApiError("INVALID_PARAM", "level 取值：all / minor / moderate / severe", 400)
-    station = await _resolve(db, user.id, station_id)
+    station = await _resolve(db, owner_of(user), station_id)
     fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
     before = datetime.fromisoformat(cursor) if cursor else None
     items, next_cursor = await svc.list_alerts(db, station.id, fc.tz, level, limit, before)
@@ -63,12 +66,12 @@ async def list_alerts(
 @router.get("/current", response_model=Envelope[CurrentAlertResponse])
 async def current_alert(
     request: Request,
-    user: CurrentUserDep,
+    user: OptionalUserDep,
     db: DbDep,
     station_id: Annotated[str | None, Query()] = None,
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[CurrentAlertResponse]:
-    station = await _resolve(db, user.id, station_id)
+    station = await _resolve(db, owner_of(user), station_id)
     http = request.app.state.http
     fc = await weather.get_forecast(http, station.latitude, station.longitude)
     base = str(request.base_url).rstrip("/")

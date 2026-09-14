@@ -64,3 +64,21 @@ async def get_current_user(
 
 
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+async def get_optional_user(
+    authorization: Annotated[str | None, Header()] = None,
+) -> CurrentUser | None:
+    """公开数据游客可访问：不带 token 视为游客。带了 token 仍按 token 校验，
+    失效返回 401，让已登录用户续登后重试。docs/09 §4.3
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return CurrentUser(id=DEV_USER_ID) if dev_login_enabled() else None
+    return CurrentUser(id=decode_token(authorization[7:].strip()))
+
+
+OptionalUserDep = Annotated[CurrentUser | None, Depends(get_optional_user)]
+
+
+def owner_of(user: CurrentUser | None) -> str | None:
+    return user.id if user else None

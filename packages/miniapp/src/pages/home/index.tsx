@@ -14,6 +14,7 @@ import { useStationStore } from '@/store'
 import { useWeatherModel, WEATHER_MODELS, weatherModelLabel } from '@/store/weatherModel'
 import { StationTrend } from '@/components/StationTrend'
 import { exportCsv } from '@/utils/exportCsv'
+import { requireLogin } from '@/utils/requireLogin'
 import './index.scss'
 
 const RESOLVED_LABEL: Record<string, string> = { ecmwf_ifs: 'ECMWF IFS 9 km', ncep_gfs013: 'GFS 0.13°', ncep_gfs025: 'GFS 0.25°', dwd_icon: 'ICON 13 km' }
@@ -110,7 +111,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
       : req.status !== 'success' ? <Skeleton height={120} lines={2} />
       : <OutlookStrip days={days.map(d => ({ ...d, caption: d.weather_text, level: d.index_level, score: d.index_score }))} selected={selected} onSelect={setSelected} />}
     {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title={`${label} 预测功率`} step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)}
-      onExport={() => void exportCsv(`${station.name}_预测功率_${days[0]?.date ?? p?.date ?? ''}.csv`, powerCsv(days.length ? days : p ? [p] : []))} />}
+      onExport={() => { if (requireLogin()) void exportCsv(`${station.name}_预测功率_${days[0]?.date ?? p?.date ?? ''}.csv`, powerCsv(days.length ? days : p ? [p] : [])) }} />}
     {value != null && peak && <Text className="forecast-caption">峰值 {formatPower(peak.value).value} {formatPower(peak.value).unit} · {peak.time}{day?.weather_text ? ` · 日间 ${day.weather_text}` : ''}</Text>}
     {value == null && !station.prediction_blocked_reason && <Text className="forecast-state">{station.prediction_blocked_reason ? `${station.prediction_blocked_reason}，暂不估算日电量` : !p && !day ? '预测服务暂未就绪，请稍后刷新' : '气象数据或电站参数不完整，暂不估算'}</Text>}
     {(refreshError || req.refreshError) && <Text className="forecast-warning" onClick={onReload}>刷新失败，当前保留上次预测 · 点击重试</Text>}
@@ -157,7 +158,7 @@ function FleetForecast({ f, selected, onSelect, version, onReload, refreshError 
     {refreshError && <Text className="forecast-warning" onClick={onReload}>刷新失败 · 点击重试</Text>}
     {days.length > 0 && <OutlookStrip days={days} selected={selected} onSelect={onSelect} title="七天电量" showHorizonNote={false} />}
     {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title={`${label} 预测功率合计`} step={day?.resolution_minutes ?? f.resolution_minutes ?? 60}
-      onExport={() => void exportCsv(`全目录_预测功率合计_${f.date}.csv`, powerCsv(days.length ? days : [f], '预测功率合计'))} />}
+      onExport={() => { if (requireLogin()) void exportCsv(`全目录_预测功率合计_${f.date}.csv`, powerCsv(days.length ? days : [f], '预测功率合计')) }} />}
     {value == null && days.length > 0 && <Text className="forecast-state">该日尚无覆盖电站结果</Text>}
     <View className="forecast-foot fleet-refresh"><Button className="forecast-action" onClick={onReload}>刷新</Button></View>
   </View>
