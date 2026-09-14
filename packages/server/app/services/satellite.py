@@ -106,8 +106,14 @@ async def load_scene(
 
     time_key = f"{observed.strftime('%Y%m%dT%H%M')}_{display}"
     path = tiles.tile_path("satellite", _bbox_key(bbox), time_key)
-    if not path.exists():
-        tiles.write_tile(path, to_png(image.rgb))
+    # 白天展示帧就是历史时间轴的最新帧（同一真彩马赛克），顺手落盘，时间轴不必再拉瓦片重投影
+    history = _history_path(bbox, observed) if display == "truecolor" else None
+    if not path.exists() or (history is not None and not history.exists()):
+        png = to_png(image.rgb)
+        if not path.exists():
+            tiles.write_tile(path, png)
+        if history is not None and not history.exists():
+            tiles.write_tile(history, png)
     rel = path.relative_to(tiles.tile_dir()).as_posix()
 
     prev: Reprojected | None = None
@@ -242,6 +248,64 @@ async def history_times(http: httpx.AsyncClient, station: Station | None = None)
 
 
 _history_cache = AsyncTTLCache(256, 600)
+# 后台预渲染全进程同一时刻只跑一帧：重投影占 CPU，前台请求不经过这个闸门，不排队。
+_prewarm_gate = asyncio.Semaphore(1)
+_prewarm_jobs: dict[str, asyncio.Task] = {}
+
+
+def _history_path(bbox: tuple[float, float, float, float], when: datetime):
+    return tiles.tile_path("satellite-history", _bbox_key(bbox), f"{when:%Y%m%dT%H%M}_truecolor")
+
+
+async def render_history_frame(
+    http: httpx.AsyncClient, bbox: tuple[float, float, float, float], when: datetime
+):
+    """一帧真彩历史云图落盘；并发请求同一帧只渲染一次。"""
+    path = _history_path(bbox, when)
+
+    async def render():
+        if not path.exists():
+            mosaic = await himawari.fetch_mosaic(http, when, "truecolor", bbox)
+            rep = await _reproject(mosaic, bbox)
+            tiles.write_tile(path, to_png(rep.rgb))
+        return path
+
+    await _history_cache.get_or_load(f"{_bbox_key(bbox)}:{when.isoformat()}", render)
+    return path
+
+
+def schedule_prewarm(http: httpx.AsyncClient, station: Station, times: list[str]) -> None:
+    """时间轴打开后在后台由新到旧预渲染各帧，播放时直接命中。同一批帧不重复排队。docs/06 §7.3"""
+    if not times:
+        return
+    bbox = station_bbox(station.latitude, station.longitude)
+    key = f"{_bbox_key(bbox)}:{times[-1]}"
+    job = _prewarm_jobs.get(key)
+    if job is not None and not job.done():
+        return
+    for old in [k for k, t in _prewarm_jobs.items() if t.done()]:
+        del _prewarm_jobs[old]
+    frames = [datetime.fromisoformat(t) for t in times]
+    _prewarm_jobs[key] = asyncio.create_task(_prewarm(http, bbox, frames))
+
+
+async def _prewarm(
+    http: httpx.AsyncClient, bbox: tuple[float, float, float, float], frames: list[datetime]
+) -> None:
+    for when in reversed(frames):
+        if _history_path(bbox, when).exists():
+            continue
+        try:
+            async with _prewarm_gate:
+                await render_history_frame(http, bbox, when)
+        except Exception:  # noqa: BLE001  预渲染失败不影响前台，按需请求时再试
+            log.debug("satellite prewarm failed: %s %s", bbox, when, exc_info=True)
+
+
+async def shutdown_prewarm() -> None:
+    for task in _prewarm_jobs.values():
+        task.cancel()
+    _prewarm_jobs.clear()
 
 
 async def cloud_at(
@@ -253,17 +317,7 @@ async def cloud_at(
     if when.isoformat() not in manifest.times:
         raise ApiError("SATELLITE_FRAME_UNAVAILABLE", "该观测时刻不在近三小时可用帧中", 404)
     bbox = station_bbox(station.latitude, station.longitude)
-    key = f"{_bbox_key(bbox)}:{when.isoformat()}"
-    path = tiles.tile_path("satellite-history", _bbox_key(bbox), f"{when:%Y%m%dT%H%M}_truecolor")
-
-    async def render():
-        if not path.exists():
-            mosaic = await himawari.fetch_mosaic(http, when, "truecolor", bbox)
-            rep = await _reproject(mosaic, bbox)
-            tiles.write_tile(path, to_png(rep.rgb))
-        return path
-
-    await _history_cache.get_or_load(key, render)
+    path = await render_history_frame(http, bbox, when)
     from app.schemas.layer import Bounds, LayerImage
 
     w, s, e, n = bbox

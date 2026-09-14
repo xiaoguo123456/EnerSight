@@ -89,7 +89,8 @@ export default function AlertCenter() {
           )
         )}
 
-        {cur.status === 'success' && cur.data.station && <SatelliteTimeline key={cur.data.station.id} stationId={cur.data.station.id} />}
+        {/* 不等当前预警：它冷启动要拉三组卫星瓦片，时间轴与之并行加载；未选电站时两者都用服务端默认电站 */}
+        {!noStation && <SatelliteTimeline key={currentId ?? 'default'} stationId={currentId ?? undefined} />}
         {!noStation && (
           <View className="alerts__card">
             <SectionHeader icon="clipboard" title="预警记录" />
