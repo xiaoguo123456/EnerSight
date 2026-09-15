@@ -65,9 +65,13 @@ class Settings(BaseSettings):
     # 空地址走直连；配置后统一经独立 Worker 获取 JSON API 与模型元数据。
     weather_relay_base: str = ""
     weather_relay_token: SecretStr = SecretStr("")
+    # 仅测试环境试验，默认关闭；与 CF 转发互斥。
+    weather_proxy_pool_enabled: bool = False
 
     @model_validator(mode="after")
     def validate_weather_relay(self):
+        if self.weather_proxy_pool_enabled and self.weather_relay_base:
+            raise ValueError("免费代理池与 CF 气象转发不能同时启用")
         if self.weather_relay_base:
             parsed = urlsplit(self.weather_relay_base)
             if (

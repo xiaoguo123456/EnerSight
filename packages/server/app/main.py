@@ -56,6 +56,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             max_keepalive_connections=settings.upstream_max_connections // 2,
         ),
     )
+    from app.providers.weather_proxy_pool import pool
+
+    if settings.weather_proxy_pool_enabled:
+        pool.start()
     sched = scheduler.start(app)
     try:
         yield
@@ -71,6 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from app.jobs import map_prepare
 
         await map_prepare.shutdown()
+        await pool.stop()
         await app.state.http.aclose()
 
 

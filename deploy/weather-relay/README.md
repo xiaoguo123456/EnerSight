@@ -4,8 +4,8 @@
 
 | 环境 | Worker | 域名 | `ALLOWED_IPS` | 状态 |
 | --- | --- | --- | --- | --- |
-| 测试 | `enersight-weather-test` | `weather-test.weishenai.cn` | `47.93.60.25` | 2026-09-14 已建立并验收 |
-| 生产 | `enersight-weather-prod` | `weather.weishenai.cn` | `39.105.228.11` | 2026-09-14 已建立并验收 |
+| 测试 | `enersight-weather-test` | `weather-test.weishenai.cn` | `47.93.60.25` | 2026-09-15 按用户要求，后端临时停用转发、恢复直连；Worker 保留 |
+| 生产 | `enersight-weather-prod` | `weather.weishenai.cn` | `39.105.228.11` | 2026-09-15 按用户要求，后端临时停用转发、恢复直连；Worker 保留 |
 
 ## 建立
 
@@ -19,7 +19,7 @@
 ## 行为
 
 - 只接受 GET，先校验来源 IP（`CF-Connecting-IP`），再校验 Bearer 密钥。
-- 只放行 `/v1/forecast`、`/v1/archive` 与三种模型的 `meta.json`；参数名、模型、坐标数（不超过 100）走白名单，其余返回 400。后端新增参数或模型时需同步这里。
+- 只放行 `/v1/forecast`、`/v1/archive` 与三种模型的 `meta.json`；参数名、模型、坐标数（不超过 100）走白名单，其余返回 400。后端新增参数或模型时需同步这里。`cell_selection` 只接受 land / sea / nearest，2026-09-15 为海上风电加入，已部署的 Worker 需重新部署后才放行。
 - 上游响应原样流式透传，包括 429 与 `Retry-After`，并带 `X-Weather-Relay: cloudflare`。Worker 自身的拒绝不带该头，后端据此判定为转发异常，不重试。
 - 不重试、不缓存、不跟随重定向，不向上游传递密钥或 Cookie。
 - 不含原生地图栅格文件下载。

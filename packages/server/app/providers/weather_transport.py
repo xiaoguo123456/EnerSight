@@ -34,6 +34,12 @@ def relay_path(url: str) -> str | None:
 
 
 async def weather_get(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    if settings.weather_proxy_pool_enabled:
+        if settings.weather_relay_base or relay_path(url) is None:
+            raise UpstreamUnavailable("代理池配置冲突或气象目标不受支持")
+        from app.providers.weather_proxy_pool import pool
+
+        return await pool.get(url, **kwargs)
     base = settings.weather_relay_base
     if not base:
         return await client.get(url, **kwargs)
