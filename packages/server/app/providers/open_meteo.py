@@ -99,7 +99,7 @@ class OpenMeteoProvider:
     ) -> dict:
         """统一点预报：昨日同期、七天预测及第七天末区间所需的边界数据。
 
-        cell_selection 只在海上风电时传 sea；不传即上游默认 land。转发 Worker 白名单已含该参数。
+        cell_selection 只在海上风电时传 sea；不传即上游默认 land。
         """
         params = {
             "latitude": latitude,

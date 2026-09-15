@@ -32,12 +32,10 @@ API 通过已有 Docker 网络 `weishen-test_default` 中的唯一别名被 Ngin
 因此健康检查通过不代表后台地图数据已预热；专项测试采集和地图前应重新评估内存。
 数据卷为 `/opt/enersight-test/data`，不复用生产数据，也不自动复制生产用户数据。
 
-2026-09-15 按用户要求，测试后端清空 `ENERSIGHT_WEATHER_RELAY_BASE`，先恢复直连，
-随后启用免费代理池试验（`ENERSIGHT_WEATHER_PROXY_POOL_ENABLED=true`）。当前天气请求
-通过后台验证的代理出网；试验结果与恢复步骤见 [部署说明](../docs/10-deployment.md#测试环境免费代理池试验)。
-测试 Worker `weather-test.weishenai.cn` 与密钥保留；恢复转发时再配置
-`ENERSIGHT_WEATHER_RELAY_BASE` 与 `ENERSIGHT_WEATHER_RELAY_TOKEN`。
-见 [部署说明「气象转发」](../docs/10-deployment.md#气象转发) 与 `weather-relay/`。
+2026-09-15 按用户要求，测试后端先恢复直连，随后启用免费代理池试验
+（`ENERSIGHT_WEATHER_PROXY_POOL_ENABLED=true`）。当前天气请求通过后台验证的代理出网；
+试验结果与恢复步骤见 [部署说明](../docs/10-deployment.md#测试环境免费代理池试验)。
+Cloudflare 气象转发已于同日移除，出网方式见 [部署说明「气象出网」](../docs/10-deployment.md#气象出网)。
 
 ```sh
 # 仓库根目录：构建小程序，产物在 packages/miniapp/dist/weapp

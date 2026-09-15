@@ -146,7 +146,7 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
   走 `prediction_basis.catalog_turbine_class`，全目录曲线缓存键要带机型档，见 07 §2.2
 - ❌ 海上风电用上游默认格点 —— 默认 `cell_selection=land` 把近岸场站分到陆地格点，风速偏低三成。
   目录海上风电带 `sea`（`catalog_cell_selection`），点预报走 `weather.station_forecast`，
-  全目录分组与缓存键都要区分；新增上游参数同步转发 Worker 白名单，见 04 §二
+  全目录分组与缓存键都要区分，见 04 §二
 - ❌ 拿设计稿里的数值对账 —— `packages/ui/` 中所有数字都是视觉示意值
 - ❌ 客户端硬编码图层色阶 —— 图例由 `/v1/map/layers` 下发
 - ❌ 客户端用自己请求的 bbox 贴图 —— 用服务端返回的对齐后 `bounds`
@@ -172,8 +172,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ 以为多坐标请求能省 Open-Meteo 额度 —— 限流按**坐标数**计（实测 429 精确落在
   第 600 个坐标），批次大小只省 HTTP 往返。要控的是坐标速率
   （`fleet_coords_per_minute`），且限额按 IP 与其他调用共享
-- ❌ 直接 `http.get` Open-Meteo —— 统一走 `providers/weather_transport.weather_get`，否则配置了
-  转发的环境会漏出直连。新增接口、参数或模型要同步 Worker 白名单（`deploy/weather-relay`），见 10「气象转发」
+- ❌ 直接 `http.get` Open-Meteo —— 统一走 `providers/weather_transport.weather_get`，否则测试环境开启
+  代理池试验时会漏出直连，见 10「气象出网」
 - ❌ 把 `minutely_15` 混进主请求 —— 只有单站 7 天预测要它，混进去等于让每次后台扫描
   都为它付权重。走 `get_forecast(..., fine=True)`
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）

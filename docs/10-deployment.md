@@ -54,13 +54,18 @@ AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志�
 
 服务器须事先登录 ACR 内网仓库。现有部署凭据的复用必须得到用户对新仓库 GitHub Secrets 的明确授权；不能从 GitHub 读出其他仓库 Secrets。
 
-## 气象转发
+## 气象出网
 
-公司网络要求业务服务器不直接以 IP 访问外部服务。后端的 Open-Meteo 点预报、历史小时资料和模型元数据统一经 `app/providers/weather_transport.weather_get` 出网：`.env` 未配置转发地址时直连，配置后经 Cloudflare Worker 转发。Worker 代码、白名单与建立步骤见 [deploy/weather-relay](../deploy/weather-relay/README.md)。
+后端的 Open-Meteo 点预报、历史小时资料和模型元数据统一经 `app/providers/weather_transport.weather_get` 出网：默认直连；测试环境开启免费代理池试验（下节）时经代理池请求，失败不退回直连。直连受 Open-Meteo 对服务器出口 IP 的额度限制。原生地图栅格（`openmeteo.s3.amazonaws.com`）下载不经此入口。
 
-2026-09-15 测试与生产临时调整：按用户明确要求，两套环境关闭气象转发，清空
-`ENERSIGHT_WEATHER_RELAY_BASE` 后用原发布镜像重建 API，恢复直连 Open-Meteo。
-两套环境的 Worker 与密钥保留，以便恢复转发；代理可用性实验仅在测试服务器进行。
+**2026-09-15 移除 Cloudflare 气象转发**：按用户要求删除 `deploy/weather-relay` Worker 代码与
+`ENERSIGHT_WEATHER_RELAY_BASE / _TOKEN` 配置项。Cloudflare 控制台上的 `enersight-weather-test`、
+`enersight-weather-prod` Worker 及 `weather-test.weishenai.cn`、`weather.weishenai.cn` 域名需另行停用或删除。
+服务器 `.env` 里遗留的两个转发变量可以删掉；Compose 以环境变量注入，遗留不影响启动，
+但本地 `packages/server/.env` 文件里若还有这两项会因未知字段启动失败。
+
+移除前的切换记录：2026-09-15 按用户明确要求，两套环境关闭气象转发，清空
+`ENERSIGHT_WEATHER_RELAY_BASE` 后用原发布镜像重建 API，恢复直连 Open-Meteo；代理可用性实验仅在测试服务器进行。
 直连仍受 Open-Meteo 对服务器出口 IP 的额度限制，不代表取消上游限额。
 生产配置备份为服务器 `/opt/enersight/.env.before-direct-20260915T105107`（权限 600）；
 原镜像 `17290a7aa432` 保持不变。切换后容器健康，首页及此前失败的两个公开场站详情
@@ -69,23 +74,7 @@ AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志�
 原镜像 `3e6cb264e0a8` 保持不变。测试容器健康，运行配置确认转发地址为空；测试公网
 `/ready`、首页和两个公开场站详情均返回 200，详情天气与趋势均非空。
 
-| 环境 | Worker | 转发地址 |
-| --- | --- | --- |
-| 测试 | `enersight-weather-test` | `https://weather-test.weishenai.cn` |
-| 生产 | `enersight-weather-prod` | `https://weather.weishenai.cn` |
-
-```dotenv
-ENERSIGHT_WEATHER_RELAY_BASE=https://weather-test.weishenai.cn
-ENERSIGHT_WEATHER_RELAY_TOKEN=<与该环境 Worker 的 RELAY_SECRET 相同>
-```
-
-- 地址必须是不带路径、参数和凭据的 HTTPS 域名；填了地址而密钥不足 32 字符时服务启动失败。
-- 密钥用 `openssl rand -hex 32` 在目标服务器上生成，只存在服务器 `.env`（600）与 Worker 机密中。测试与生产各自生成，不进 Git、聊天或日志。
-- Worker 自身拒绝（来源 IP、密钥、参数白名单）时后端报上游不可用，不重试，也不自动退回直连。上游 429 / 400 由 Worker 原样透传，沿用原有预算、冷却与降级。
-- 先在服务器上带密钥访问 `/health` 返回 `{"status":"ok"}`，再修改 `.env` 或发布含转发代码的镜像。密钥不一致会让全部气象请求失败。
-- `.env` 由 Compose 在创建容器时读入，修改后需重建：`set -a && . ./.release.env && set +a && docker compose up -d --no-deps api`。回滚时清空转发地址，同样重建。
-- 原生地图栅格（`openmeteo.s3.amazonaws.com`）下载不经转发。
-- 2026-09-15 起目录海上风电的点预报与全目录请求带 `cell_selection=sea`，Worker 白名单已加该参数（只接受 land / sea / nearest）。**恢复转发前先把两套 Worker 更新到当前 `worker.mjs`**，否则海上站请求会被 Worker 以 400 拒绝，后端报上游不可用。
+`.env` 由 Compose 在创建容器时读入，修改后需重建：`set -a && . ./.release.env && set +a && docker compose up -d --no-deps api`。
 
 ## 测试环境免费代理池试验
 
@@ -93,7 +82,7 @@ ENERSIGHT_WEATHER_RELAY_TOKEN=<与该环境 Worker 的 RELAY_SECRET 相同>
 该方案尚未实施，以下记录当前已部署行为与实验结果。
 
 2026-09-15 按用户要求，仅测试环境启用 ProxyScrape 免费 HTTP 代理池。开关
-`ENERSIGHT_WEATHER_PROXY_POOL_ENABLED=true`，默认关闭，与 CF 转发配置互斥。
+`ENERSIGHT_WEATHER_PROXY_POOL_ENABLED=true`，默认关闭。
 通过 HTTPS CONNECT 获取公开气象 JSON，始终验证目标证书，不发送业务身份信息。
 统一入口仍为 `weather_transport.weather_get`，天气缓存、坐标预算与数据时效不变。
 

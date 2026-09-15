@@ -5,9 +5,8 @@ from collections import deque
 
 import httpx
 import pytest
-from pydantic import ValidationError
 
-from app.config import Settings, settings
+from app.config import settings
 from app.errors import UpstreamRateLimited, UpstreamUnavailable
 from app.providers import weather_proxy_pool as module
 from app.providers.budget import shared
@@ -28,7 +27,6 @@ def pool(tmp_path, monkeypatch):
     monkeypatch.setattr(shared, "marks", deque())
     monkeypatch.setattr(shared, "paused_until", 0)
     monkeypatch.setattr(settings, "weather_proxy_pool_enabled", True)
-    monkeypatch.setattr(settings, "weather_relay_base", "")
     return value
 
 
@@ -182,16 +180,6 @@ async def test_后台列表过滤与探测计预算(pool, monkeypatch):
     assert list(pool.entries) == [PROXIES[0]]
     assert pool.entries[PROXIES[0]].available()
     assert sum(v for _, v in shared.marks) == 1
-
-
-def test_与CF转发互斥():
-    with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            weather_proxy_pool_enabled=True,
-            weather_relay_base="https://weather.example.com",
-            weather_relay_token="x" * 64,
-        )
 
 
 async def test_列表直连失败通过已有代理更新(pool, monkeypatch):
