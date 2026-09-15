@@ -137,6 +137,10 @@ def blank(model: str, day: str) -> FleetPrediction:
     )
 
 
+def phases_of(p) -> list[dict]:
+    return (p.provenance or {}).get("phases") or []
+
+
 def eligible(plants):
     seen, rows = set(), []
     duplicate, invalid = 0, 0
@@ -150,14 +154,10 @@ def eligible(plants):
         ):
             invalid += 1
             continue
-        # 仅合并完全同名、同位置、同容量的重复记录，不误合并不同分期。
-        key = (
-            p.type,
-            p.display_name.strip().casefold(),
-            round(p.latitude, 5),
-            round(p.longitude, 5),
-            round(p.capacity_kw, 3),
-        )
+        # 同一 GEM 分期只算一次。不能按「同名、同坐标、同容量」合并：GEM 里大量不同项目共用
+        # 中文名与占位坐标，容量也可能相同（如白沟商业屋顶光伏 II–VI 期均为 1.6 MW）。
+        phase_ids = tuple(sorted(str(ph["id"]) for ph in phases_of(p) if ph.get("id")))
+        key = (p.type, phase_ids) if phase_ids else (p.type, p.source, p.source_id)
         if key in seen:
             duplicate += 1
             continue

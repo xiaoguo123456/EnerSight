@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.catalog import importer  # noqa: E402
+from app.catalog import importer, quality  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 
 
@@ -32,8 +32,11 @@ async def run(source: str, path: Path, country: str | None) -> None:
             types = {r.type for r in rows}
             for t in types:
                 retired += await importer.retire_missing(db, "gem", t, res.seen_ids or set())
+        # 占位坐标、WRI 重复、合并场址命名，每次导入后重算，见 app/catalog/quality.py
+        report = await quality.apply_db(db)
         await db.commit()
     print(f"新增 {res.added}，更新 {res.updated}，同址去重 {res.replaced}，标记退役 {retired}")
+    print(f"数据质量：{report}")
 
 
 def main() -> int:

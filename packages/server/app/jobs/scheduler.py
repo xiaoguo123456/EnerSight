@@ -191,7 +191,7 @@ def _make_sync_catalog(app: FastAPI):
         from datetime import datetime, timedelta
         from pathlib import Path
 
-        from app.catalog import gem, importer
+        from app.catalog import gem, importer, quality
 
         if not settings.gem_contact_email:
             return
@@ -210,14 +210,16 @@ def _make_sync_catalog(app: FastAPI):
                 async with SessionLocal() as db:
                     res = await importer.upsert(db, rows)
                     retired = await importer.retire_missing(db, "gem", t, res.seen_ids or set())
+                    report = await quality.apply_db(db)
                     await db.commit()
                 log.info(
-                    "sync_catalog %s: +%d ~%d dedup %d retired %d",
+                    "sync_catalog %s: +%d ~%d dedup %d retired %d quality %s",
                     t,
                     res.added,
                     res.updated,
                     res.replaced,
                     retired,
+                    report,
                 )
             except Exception:  # noqa: BLE001
                 log.exception("sync_catalog failed: %s", t)

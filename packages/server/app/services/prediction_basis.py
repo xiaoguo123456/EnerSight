@@ -68,6 +68,10 @@ def version_for_day(day: date | str) -> str:
 
 def catalog_basis(plant):
     provenance = plant.provenance or {}
+    location = provenance.get("location") or {}
+    if location.get("tier") == "province" and not location.get("method"):
+        # 省级占位且同县、同市都没有可靠参照（app/catalog/quality.py），气象会差几百公里
+        return None, "坐标为省级占位，位置不可靠，暂不估算"
     phases = provenance.get("phases", [])
     if not phases:
         return None, "原始分期与容量来源尚未核验"

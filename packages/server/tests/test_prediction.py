@@ -116,10 +116,14 @@ def batched(raw: dict):
 async def test_汇总去重覆盖与贡献相加(tmp_path, monkeypatch):
     monkeypatch.setattr(fleet, "directory", lambda: tmp_path)
     raw = forecast()
+    a, dup = plant("a"), plant("dup", name="a")
+    # 同一 GEM 分期出现在两条记录里才算重复
+    for p in (a, dup):
+        p.provenance = {"phases": [{"id": "G1", "capacity_kw": 1000, "capacity_rating": "ac"}]}
     plants = [
-        plant("a"),
+        a,
         plant("b", capacity=2000, kind="solar"),
-        plant("dup", name="a"),
+        dup,
         plant("invalid", lat=100, capacity=500),
     ]
     with respx.mock:

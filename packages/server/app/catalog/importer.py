@@ -307,10 +307,10 @@ def read_gem(path: Path, country: str | None) -> list[Row]:
         phases = item.provenance["phases"]
         if len(phases) > 1:
             # 不能继续把首期名称当作全部容量的名称；各期完整名称保存在溯源中。
+            from app.catalog.quality import merged_site_name
+
             region = item.district or item.city or item.province or "公开"
-            item.name_local = (
-                f"{region}{'光伏' if item.type == 'solar' else '风电'}场址（{len(phases)}期合计）"
-            )
+            item.name_local = merged_site_name(phases, item.type, region)
     return list(grouped.values())
 
 
