@@ -52,7 +52,7 @@ async def list_alerts(
     if level not in LEVELS:
         raise ApiError("INVALID_PARAM", "level 取值：all / minor / moderate / severe", 400)
     station = await _resolve(db, owner_of(user), station_id)
-    fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
+    fc = await weather.station_forecast(request.app.state.http, station)
     before = datetime.fromisoformat(cursor) if cursor else None
     items, next_cursor = await svc.list_alerts(db, station.id, fc.tz, level, limit, before)
     return envelope(
@@ -73,7 +73,7 @@ async def current_alert(
 ) -> Envelope[CurrentAlertResponse]:
     station = await _resolve(db, owner_of(user), station_id)
     http = request.app.state.http
-    fc = await weather.get_forecast(http, station.latitude, station.longitude)
+    fc = await weather.station_forecast(http, station)
     base = str(request.base_url).rstrip("/")
     # 卫星拿不到（夜间、上游故障）不影响预报类预警，云图置 null
     sat = await satellite.load_scene_safely(http, station, base)

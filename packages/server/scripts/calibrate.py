@@ -37,7 +37,7 @@ from app.metrics import wind  # noqa: E402
 from app.metrics.index import pv_index, wind_index  # noqa: E402
 from app.models import Station  # noqa: E402
 from app.services import energy, weather  # noqa: E402
-from app.services.prediction_basis import VERSION  # noqa: E402
+from app.services.prediction_basis import VERSION, wind_turbine_class  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "calibration"
@@ -152,7 +152,10 @@ def fetch_pvgis(http: httpx.Client, site: Site) -> dict | None:
 
 
 def _station(site: Site, kind: str) -> Station:
-    """校准用的临时站点，不入库。参数与线上默认值一致。"""
+    """校准用的临时站点，不入库。参数与线上默认值一致。
+
+    风电基地按目录新站（投运年份未知、陆上）取机型档，与公开电站的默认一致（docs/07 §2.2）。
+    """
     return Station(
         id=f"calib-{site.key}",
         owner_id="calib",
@@ -164,6 +167,7 @@ def _station(site: Site, kind: str) -> Station:
         tilt=None,
         azimuth=None,
         hub_height=None,
+        turbine_class=wind_turbine_class(None, offshore=False) if kind == "wind" else None,
     )
 
 
@@ -211,7 +215,11 @@ def run_wind_days(site: Site, df: pd.DataFrame, alpha: float) -> pd.DataFrame:
         prep = energy.prepare(station, fc, day=day, version=VERSION)
         if not prep.complete or prep.v_hub is None:
             continue
-        daily = float(wind.plant_power(prep.v_hub, WIND_CAPACITY_KW, rho=prep.rho).sum())
+        turbine = wind.turbine_for(station)
+        daily = float(
+            wind.plant_power(prep.v_hub, WIND_CAPACITY_KW, rho=prep.rho, turbine=turbine).sum()
+        )
+        daily_generic = float(wind.plant_power(prep.v_hub, WIND_CAPACITY_KW, rho=prep.rho).sum())
         v10 = prep.frame["wind_speed_10m"].astype(float)
         v_old = v10 * (hub / 10.0) ** alpha
         daily_old = float(wind.power_curve(v_old, WIND_CAPACITY_KW).sum())
@@ -219,8 +227,10 @@ def run_wind_days(site: Site, df: pd.DataFrame, alpha: float) -> pd.DataFrame:
             {
                 "date": pd.Timestamp(day),
                 "score": wind_index(daily, WIND_CAPACITY_KW).score,
+                "score_generic": wind_index(daily_generic, WIND_CAPACITY_KW).score,
                 "score_old": wind_index(daily_old, WIND_CAPACITY_KW).score,
                 "daily_kwh": daily,
+                "daily_kwh_generic": daily_generic,
                 "daily_kwh_old": daily_old,
                 "estimated": prep.estimated,
                 "v10_mean": float(v10.mean()),
@@ -344,19 +354,22 @@ def main() -> int:
     for site in WIND_SITES:
         wd = run_wind_days(site, wind_raw[site.key], alpha_used)
         wd["level"] = classify_with(wd["score"], th)
+        wd["level_generic"] = classify_with(wd["score_generic"], th)
         all_wind[site.key] = wd
         cf_year = float(wd["daily_kwh"].sum()) / (WIND_CAPACITY_KW * 24 * len(wd))
+        cf_generic = float(wd["daily_kwh_generic"].sum()) / (WIND_CAPACITY_KW * 24 * len(wd))
         cf_old = float(wd["daily_kwh_old"].sum()) / (WIND_CAPACITY_KW * 24 * len(wd))
         dist = fmt_dist(level_dist(wd["level"]))
         wind_rows.append(
             f"| {site.name} | {site.zone} | {wd['v10_mean'].mean():.1f} | {wd['v100_mean'].mean():.1f} | "
-            f"{cf_year:.2f} | {cf_old:.2f} | {wd['score'].mean():.0f} / {wd['score_old'].mean():.0f} | "
-            f"{dist} |"
+            f"{cf_year:.2f} | {cf_generic:.2f} | {cf_old:.2f} | "
+            f"{wd['score'].mean():.0f} / {wd['score_generic'].mean():.0f} | {dist} | "
+            f"{fmt_dist(level_dist(wd['level_generic']))} |"
         )
         print(
             f"[{site.name}] 10m {wd['v10_mean'].mean():.1f} / 100m {wd['v100_mean'].mean():.1f} m/s，"
-            f"CF 本模型 {cf_year:.2f} / 旧方法 {cf_old:.2f}，指数 {wd['score'].mean():.0f} / "
-            f"{wd['score_old'].mean():.0f}，分档 {dist}"
+            f"CF 本模型 {cf_year:.2f} / 通用曲线 {cf_generic:.2f} / 旧方法 {cf_old:.2f}，"
+            f"指数 {wd['score'].mean():.0f} / {wd['score_generic'].mean():.0f}，分档 {dist}"
         )
 
     pv_all = pd.concat(all_pv.values())
@@ -371,8 +384,9 @@ def main() -> int:
         f"倾角=纬度、正南、系统损耗 {settings.pv_losses:.0%}、散射模型 {settings.pv_sky_diffuse_model}，"
         "太阳位置取小时区间中点；",
         f"风电 {WIND_CAPACITY_KW:.0f} kW，轮毂 {hub:.0f} m（10 m / 100 m 对数廓线插值），"
-        f"场站损耗 {settings.wind_losses:.0%}，切入/额定/切出 "
-        f"{settings.wind_v_in}/{settings.wind_v_rated}/{settings.wind_v_out} m/s。\n",
+        f"场站损耗 {settings.wind_losses:.0%}，机型档 {wind_turbine_class(None, offshore=False) or 'generic'}"
+        f"（目录陆上新站默认，docs/07 §2.2；通用曲线切入/额定/切出 "
+        f"{settings.wind_v_in}/{settings.wind_v_rated}/{settings.wind_v_out} m/s 作对照）。\n",
         "缺测处理复用线上的 `services.energy.prepare`：短缺口插值、长缺口判不可算，"
         "不可算的日子不计入分布。\n",
         "方法与判据见 [07 §八](../07-metrics.md)。脚本 `packages/server/scripts/calibrate.py`，"
@@ -392,14 +406,16 @@ def main() -> int:
         "| --- |" + " --- |" * len(monthly),
         "| 指数 | " + " | ".join(f"{v:.0f}" for v in monthly.values) + " |\n",
         "## 3. 风电\n",
-        f"本模型：轮毂风速由 10 m / 100 m 两层对数廓线插值，场站损耗 {settings.wind_losses:.0%}。"
+        f"本模型：轮毂风速由 10 m / 100 m 两层对数廓线插值，场站损耗 {settings.wind_losses:.0%}，"
+        "机型档同目录陆上新站。通用曲线：同一轮毂风速查通用功率曲线（此前的默认）。"
         f"旧方法：10 m 按固定 α = {alpha_used} 幂律外推、无损耗（ERA5 拟合 α = {alpha_fit:.3f}，"
         "但昼夜差近 3 倍，固定值抹平了夜间大风）。\n",
-        "| 站点 | 地形 | 10 m 年均 m/s | 100 m 年均 m/s | 年 CF 本模型 | 年 CF 旧方法 | "
-        "指数均值 本/旧 | 分档 优/良/中/差 |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| 站点 | 地形 | 10 m 年均 m/s | 100 m 年均 m/s | 年 CF 本模型 | 年 CF 通用曲线 | 年 CF 旧方法 | "
+        "指数均值 本/通用 | 分档 优/良/中/差 | 通用曲线分档 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         *wind_rows,
-        f"\n5 站合计分档 = {fmt_dist(level_dist(wind_all['level']))}。",
+        f"\n5 站合计分档 = {fmt_dist(level_dist(wind_all['level']))}"
+        f"（通用曲线 {fmt_dist(level_dist(wind_all['level_generic']))}）。",
         "风电没有 PVGIS 这样的公开对账源。"
         "ERA5 25 km 网格抹平了山口与海岛的局地加速，复杂地形下偏低；"
         "实际风场年 CF 多在 0.22–0.35。\n",

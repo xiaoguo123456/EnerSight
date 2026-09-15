@@ -159,7 +159,7 @@ async def build_station_view(
     # 场站资料已读取，等待上游气象与计算时归还数据库连接。
     if db is not None:
         await db.commit()
-    fc = await weather.get_forecast(http, station.latitude, station.longitude)
+    fc = await weather.station_forecast(http, station)
 
     # pvlib 是 CPU 密集同步代码，丢进线程池，别卡事件循环。docs/05 §6.6
     loop = asyncio.get_running_loop()

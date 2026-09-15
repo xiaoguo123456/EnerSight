@@ -35,9 +35,7 @@ async def satellite_cloud(
 ) -> Envelope[SatelliteCloudResponse]:
     owner = owner_of(user)
     station = (
-        await get_station(db, owner, station_id)
-        if station_id
-        else await default_station(db, owner)
+        await get_station(db, owner, station_id) if station_id else await default_station(db, owner)
     )
     if station is None:
         raise StationNotFound()
@@ -47,7 +45,7 @@ async def satellite_cloud(
             http, station, at.astimezone(UTC), coord, str(request.base_url).rstrip("/")
         )
         return envelope(data, coord)
-    fc = await weather.get_forecast(http, station.latitude, station.longitude)
+    fc = await weather.station_forecast(http, station)
     base = str(request.base_url).rstrip("/")
     data = await svc.get_cloud(http, station, fc.tz, coord, base)
     return envelope(data, coord)
@@ -63,9 +61,7 @@ async def satellite_history(
 ):
     owner = owner_of(user)
     station = (
-        await get_station(db, owner, station_id)
-        if station_id
-        else await default_station(db, owner)
+        await get_station(db, owner, station_id) if station_id else await default_station(db, owner)
     )
     if station is None:
         raise StationNotFound()

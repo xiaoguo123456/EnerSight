@@ -33,5 +33,5 @@ async def get_report(
 ) -> Envelope[AIReportResponse]:
     station = await get_station(db, owner_of(user), station_id)
     row = await svc.get_or_generate(db, request.app.state.http, station, date_)
-    fc = await weather.get_forecast(request.app.state.http, station.latitude, station.longitude)
+    fc = await weather.station_forecast(request.app.state.http, station)
     return envelope(svc.to_response(row, to_summary(station, coord), fc.tz), coord)

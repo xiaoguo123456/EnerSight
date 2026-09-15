@@ -1,9 +1,11 @@
 // 测试与生产部署相同代码，分别绑定 RELAY_SECRET、ALLOWED_IPS 和独立域名。
 const PARAMETERS = new Set([
   'latitude', 'longitude', 'minutely_15', 'hourly', 'models', 'timezone',
-  'forecast_days', 'past_days', 'wind_speed_unit', 'start_date', 'end_date',
+  'forecast_days', 'past_days', 'wind_speed_unit', 'start_date', 'end_date', 'cell_selection',
 ]);
 const MODELS = new Set(['best_match', 'ecmwf_ifs', 'gfs_global', 'icon_global']);
+// 海上风电取海上格点（后端只传 sea），其余取值一并拒绝。
+const CELL_SELECTIONS = new Set(['land', 'sea', 'nearest']);
 const META = /^\/data\/(ecmwf_ifs|ncep_gfs013|dwd_icon)\/static\/meta\.json$/;
 
 function message(text, status) {
@@ -29,6 +31,7 @@ export function upstreamUrl(input) {
     if (raw !== null && (!/^\d+$/.test(raw) || Number(raw) > 16)) return null;
   }
   if (input.searchParams.has('models') && !MODELS.has(input.searchParams.get('models'))) return null;
+  if (input.searchParams.has('cell_selection') && !CELL_SELECTIONS.has(input.searchParams.get('cell_selection'))) return null;
   const path = input.pathname === '/v1/archive' ? '/v1/archive' : '/v1/forecast';
   return `https://${host}${path}${input.search}`;
 }

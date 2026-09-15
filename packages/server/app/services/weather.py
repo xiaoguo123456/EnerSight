@@ -202,8 +202,16 @@ def refresh_slot(moment: datetime, tz: str) -> tuple[str, int]:
     return local.date().isoformat(), local.hour * settings.forecast_refreshes_per_day // 24
 
 
-async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: float) -> Forecast:
-    """所有消费者共享同一份 15 分钟缓存，按坐标与模型隔离。docs/04 §二
+async def get_forecast(
+    http: httpx.AsyncClient,
+    latitude: float,
+    longitude: float,
+    *,
+    cell_selection: str | None = None,
+) -> Forecast:
+    """所有消费者共享同一份 15 分钟缓存，按坐标、格点选择与模型隔离。docs/04 §二
+
+    cell_selection 为 None 时沿用上游默认（land）；海上风电传 sea，否则近岸场站会取到陆地格点。
 
     每个坐标每天最多回源 forecast_refreshes_per_day 次（默认 4，按当地时段均分）：
     同一时段内一律命中，不追新批次；进入新时段但起报批次没变仍命中；跨当地日必定刷新，
@@ -213,11 +221,16 @@ async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: floa
     # 先取元数据再取预报：两次调用之间若有新批次落地，元数据只会偏旧，不会冒充更新
     meta = await get_model_meta(http, model)
     stamp = batch_stamp(meta) if meta is not None else None
-    key = f"15m:{model}:{latitude!r},{longitude!r}"
+    key = f"15m:{model}:{latitude!r},{longitude!r}" + (
+        f":{cell_selection}" if cell_selection else ""
+    )
 
     async def _load() -> Forecast:
         raw = await OpenMeteoProvider(http).forecast(
-            latitude, longitude, forecast_days=settings.forecast_outlook_days + 1
+            latitude,
+            longitude,
+            forecast_days=settings.forecast_outlook_days + 1,
+            cell_selection=cell_selection,
         )
         return parse_forecast(raw, model=model, meta=meta, require_quarter=True)
 
@@ -231,6 +244,16 @@ async def get_forecast(http: httpx.AsyncClient, latitude: float, longitude: floa
         return stamp is not None and fc.meta is not None and batch_stamp(fc.meta) == stamp
 
     return await _cache.get_or_load(key, _load, valid=fresh)
+
+
+async def station_forecast(http: httpx.AsyncClient, station) -> Forecast:
+    """站点的点预报。目录海上风电带 _cell_selection（services/station.from_catalog）。"""
+    selection = getattr(station, "_cell_selection", None)
+    if selection:
+        return await get_forecast(
+            http, station.latitude, station.longitude, cell_selection=selection
+        )
+    return await get_forecast(http, station.latitude, station.longitude)
 
 
 def clear_cache() -> None:

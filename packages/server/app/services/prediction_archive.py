@@ -122,7 +122,7 @@ def save_outlook(station, forecast, outlook):
 def save_fleet_inputs(snapshot, plants, cells, fetched, coverage) -> str:
     """留存区域计算的精确样本和原始天气；内容相同只存一份。"""
     from app.services.fleet_prediction import cell
-    from app.services.prediction_basis import catalog_basis
+    from app.services.prediction_basis import catalog_basis, catalog_turbine_class
 
     content = {
         "model": snapshot.model,
@@ -137,6 +137,7 @@ def save_fleet_inputs(snapshot, plants, cells, fetched, coverage) -> str:
                 "id": p.id,
                 "parameters": station_parameters(p),
                 "capacity_basis": catalog_basis(p)[0],
+                "turbine_class": catalog_turbine_class(p),
                 "province": p.province,
                 "cell": cell(p),
                 "covered_dates": coverage.get(p.id, []),

@@ -90,7 +90,7 @@ async def compute_station(
     闸门同时管住在途的上游请求与线程池里的 pvlib 计算 —— 两者都不该随站点数线性膨胀。
     """
     async with sem:
-        fc = await weather.get_forecast(http, station.latitude, station.longitude)
+        fc = await weather.station_forecast(http, station)
         loop = asyncio.get_running_loop()
         snap = await loop.run_in_executor(None, energy.compute, station, fc)
     if snap.daily_kwh is None or snap.blocked:

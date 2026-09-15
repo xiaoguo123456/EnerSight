@@ -95,8 +95,12 @@ class OpenMeteoProvider:
         *,
         forecast_days: int = 8,
         past_days: int = 1,
+        cell_selection: str | None = None,
     ) -> dict:
-        """统一点预报：昨日同期、七天预测及第七天末区间所需的边界数据。"""
+        """统一点预报：昨日同期、七天预测及第七天末区间所需的边界数据。
+
+        cell_selection 只在海上风电时传 sea；不传即上游默认 land。转发 Worker 白名单已含该参数。
+        """
         params = {
             "latitude": latitude,
             "longitude": longitude,
@@ -107,6 +111,8 @@ class OpenMeteoProvider:
             "wind_speed_unit": "ms",
         }
         params["models"] = current_model.get()
+        if cell_selection:
+            params["cell_selection"] = cell_selection
         return await self._get(f"{settings.open_meteo_base}/forecast", params)
 
     async def model_meta(self, slug: str) -> ModelMeta | None:

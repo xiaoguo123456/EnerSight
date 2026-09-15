@@ -20,6 +20,7 @@ test('拒绝任意目标、重复参数、越界坐标和超过100坐标', () =>
   for (const p of ['/proxy?url=https://example.com', path + '&latitude=0',
     '/v1/forecast?latitude=91&longitude=0', '/v1/forecast?latitude=&longitude=0',
     path + '&url=https://example.com', path + '&models=best_match,gfs_global',
+    path + '&cell_selection=ocean', path + '&cell_selection=sea&cell_selection=land',
     '/v1/forecast?latitude=' + Array(101).fill('0').join(',') + '&longitude=' + Array(101).fill('0').join(',')]) {
     assert.equal(upstreamUrl(new URL('https://relay.example' + p)), null);
   }
@@ -62,4 +63,10 @@ test('Worker 自身拒绝不带透传标记，后端据此区分转发配置错�
   const unsupported = await handle(req('/v1/elevation?latitude=0&longitude=0'), env, forbidden);
   assert.equal(unsupported.status, 400);
   assert.equal(unsupported.headers.get('x-weather-relay'), null);
+});
+
+test('海上风电的格点选择参数原样透传', () => {
+  for (const p of [path + '&cell_selection=sea', '/v1/archive?latitude=34.4&longitude=120.2&hourly=wind_speed_100m&start_date=2026-01-01&end_date=2026-01-02&cell_selection=sea']) {
+    assert.equal(new URL(upstreamUrl(new URL('https://relay.example' + p))).searchParams.get('cell_selection'), 'sea');
+  }
 });

@@ -30,7 +30,13 @@ from app.schemas.prediction import (
 )
 from app.services import energy, weather
 from app.services.curve_cache import CurveCache
-from app.services.prediction_basis import calculation_version, catalog_basis, version_for_day
+from app.services.prediction_basis import (
+    calculation_version,
+    catalog_basis,
+    catalog_cell_selection,
+    catalog_turbine_class,
+    version_for_day,
+)
 from app.weather_model import MODELS
 
 log = logging.getLogger(__name__)
@@ -120,6 +126,8 @@ def blank(model: str, day: str) -> FleetPrediction:
             f"系统损耗 {settings.pv_losses:.0%}（含逆变器）并按交流容量限幅；"
             "未知容量类型不计入预测",
             "采用默认设备参数，未计入限电、检修及故障影响",
+            f"风电机型：陆上 {settings.wind_catalog_modern_from_year} 年起投运或年份未知"
+            "按低风速机型，此前按通用功率曲线；海上按通用功率曲线并取海上格点",
             "统一北京时间；仅汇总平台运营目录，非全国实测电量",
             f"计算版本 {calculation_version(day)}",
             "功率曲线按区间起点对齐光伏与风电"
@@ -165,23 +173,25 @@ def grid_step(station_type: str) -> float:
     )
 
 
-def cell(p) -> tuple[str, float, float]:
-    """分组键 = (类型, 格心纬度, 格心经度)。
+def cell(p) -> tuple[str, float, float, str | None]:
+    """分组键 = (类型, 格心纬度, 格心经度, 格点选择)。
 
     类型进键是必须的：两种类型步长不同，同一座标附近的光伏与风电属于不同的格。
     格心取整到 4 位小数，避免 0.25 这类步长把浮点噪声带进缓存键与请求参数。
+    海上风电的格点选择为 sea，与同格心的陆上场站分开取气象；其余为 None（上游默认 land）。
     """
     step = grid_step(p.type)
     return (
         p.type,
         round(math.floor(p.latitude / step) * step + step / 2, 4),
         round(math.floor(p.longitude / step) * step + step / 2, 4),
+        catalog_cell_selection(p),
     )
 
 
-def coord_key(lat: float, lon: float) -> str:
-    """天气缓存键只认坐标，不认类型 —— 同一座标的光伏与风电本就该共用一份气象。"""
-    return f"{lat},{lon}"
+def coord_key(lat: float, lon: float, selection: str | None = None) -> str:
+    """天气缓存键认坐标与格点选择，不认类型 —— 同一座标的光伏与陆上风电本就该共用一份气象。"""
+    return f"{lat},{lon}" + (f",{selection}" if selection else "")
 
 
 def calculate_cell(
@@ -196,11 +206,12 @@ def calculate_cell(
     results = []
     for p in plants:
         hub = wind.default_hub_height() if p.type == "wind" else None
+        turbine = catalog_turbine_class(p)
         basis, blocked = catalog_basis(p)
         if blocked:
             continue
         dc_ratio, ac_ratio = (v / p.capacity_kw for v in basis)
-        key = (p.type, hub, round(dc_ratio, 6), round(ac_ratio, 6))
+        key = (p.type, hub, turbine, round(dc_ratio, 6), round(ac_ratio, 6))
         if key not in curves:
             cache_key = (
                 cache.key(
@@ -227,6 +238,7 @@ def calculate_cell(
                 tilt=None,
                 azimuth=None,
                 hub_height=hub,
+                turbine_class=turbine,
             )
             st._pv_capacity = (dc_ratio, ac_ratio)
             per_day: list[np.ndarray | None] = []
@@ -332,6 +344,7 @@ async def build(http, model: str, day: str, plants) -> None:
                 "fetch_rounds": rounds,
             },
         )
+
     out.status = "building"
 
     def region_list(k: int) -> list[RegionPrediction]:
@@ -415,14 +428,15 @@ async def build(http, model: str, day: str, plants) -> None:
             out.message = "统计日期已变化，请刷新"
             break
         batch = keys[start : start + per_request]
-        # 同一座标可能同时是光伏格与风电格，只取一次
-        missing: list[tuple[float, float]] = []
+        # 同一座标可能同时是光伏格与风电格，只取一次。cell_selection 对整个请求生效，
+        # 海上格点单独成一次请求。
+        missing: dict[str | None, list[tuple[float, float]]] = defaultdict(list)
         pending: set[str] = set()
-        for _type, lat, lon in batch:
-            ck = coord_key(lat, lon)
+        for _type, lat, lon, selection in batch:
+            ck = coord_key(lat, lon, selection)
             if ck not in raw_cache and ck not in pending:
                 pending.add(ck)
-                missing.append((lat, lon))
+                missing[selection].append((lat, lon))
         if missing and not can_fetch:
             out.message = "今日气象拉取轮数已用完，显示已覆盖范围"
         elif missing:
@@ -430,43 +444,46 @@ async def build(http, model: str, day: str, plants) -> None:
                 rounds += 1
                 counted = True
                 save_index()
-            await pacer.take(len(missing))  # 只为真正出网的坐标付时间
-            try:
-                await shared.take(len(missing))
-                r = await weather_get(
-                    http,
-                    f"{settings.open_meteo_base}/forecast",
-                    params={
-                        "latitude": ",".join(str(a) for a, _ in missing),
-                        "longitude": ",".join(str(b) for _, b in missing),
-                        "models": model,
-                        "minutely_15": ",".join(FIELDS),
-                        "timezone": TZ,
-                        "forecast_days": n_days + 1,
-                        "wind_speed_unit": "ms",
-                    },
-                    timeout=40,
-                )
-                if r.status_code == 429:
-                    shared.retry_after(r.headers.get("Retry-After"))
-                    out.message = "气象服务限流，已保存当前覆盖结果，稍后继续"
-                    stop = True
-                else:
+            for selection, coords in missing.items():
+                await pacer.take(len(coords))  # 只为真正出网的坐标付时间
+                params = {
+                    "latitude": ",".join(str(a) for a, _ in coords),
+                    "longitude": ",".join(str(b) for _, b in coords),
+                    "models": model,
+                    "minutely_15": ",".join(FIELDS),
+                    "timezone": TZ,
+                    "forecast_days": n_days + 1,
+                    "wind_speed_unit": "ms",
+                }
+                if selection:
+                    params["cell_selection"] = selection
+                try:
+                    await shared.take(len(coords))
+                    r = await weather_get(
+                        http, f"{settings.open_meteo_base}/forecast", params=params, timeout=40
+                    )
+                    if r.status_code == 429:
+                        shared.retry_after(r.headers.get("Retry-After"))
+                        out.message = "气象服务限流，已保存当前覆盖结果，稍后继续"
+                        stop = True
+                        break
                     r.raise_for_status()
                     payload = r.json()
                     payload = payload if isinstance(payload, list) else [payload]
-                    if len(payload) != len(missing):
+                    if len(payload) != len(coords):
                         raise ValueError("批量响应数量不一致")
-                    for (lat, lon), raw in zip(missing, payload, strict=True):
-                        raw_cache[coord_key(lat, lon)] = raw
-                        fetched[coord_key(lat, lon)] = datetime.now(ZoneInfo(TZ)).isoformat()
+                    for (lat, lon), raw in zip(coords, payload, strict=True):
+                        ck = coord_key(lat, lon, selection)
+                        raw_cache[ck] = raw
+                        fetched[ck] = datetime.now(ZoneInfo(TZ)).isoformat()
                     save_index()
-            except Exception:
-                log.warning("fleet weather batch failed: %s %s", model, start, exc_info=True)
-                out.message = "部分区域气象数据暂不可用，显示已覆盖范围"
+                except Exception:
+                    log.warning("fleet weather batch failed: %s %s", model, start, exc_info=True)
+                    out.message = "部分区域气象数据暂不可用，显示已覆盖范围"
         for key in batch:
-            _type, lat, lon = key
-            raw = raw_cache.get(coord_key(lat, lon))
+            _type, lat, lon, selection = key
+            ck = coord_key(lat, lon, selection)
+            raw = raw_cache.get(ck)
             if not raw:
                 continue
             try:
@@ -479,7 +496,7 @@ async def build(http, model: str, day: str, plants) -> None:
                     lat,
                     lon,
                     curve_cache,
-                    raw_cache.references[coord_key(lat, lon)],
+                    raw_cache.references[ck],
                 )
             except Exception:
                 log.warning("fleet cell failed: %s %s", model, key, exc_info=True)

@@ -200,6 +200,7 @@ def read_gem(path: Path, country: str | None) -> list[Row]:
         "wiki": _col(headers, "Wiki URL"),
         "accuracy": _col(headers, "Location accuracy"),
         "phase_id": _col(headers, "GEM phase ID", "GEM unit/phase ID", "GEM unit ID"),
+        "installation": _col(headers, "Installation Type"),  # 风电表：Onshore / Offshore …
     }
     missing = [k for k in ("name", "cap", "lat", "lon", "status") if ix[k] is None]
     if missing:
@@ -271,6 +272,9 @@ def read_gem(path: Path, country: str | None) -> list[Row]:
             technology=str(r[tech] or "") if tech is not None else "",
             owner=str(cell(r, "owner") or cell(r, "owner_en") or ""),
             status=status,
+            # 目录风电按投运年份与海上/陆上选机型档和气象格点，见 prediction_basis
+            start_year=year,
+            installation_type=str(cell(r, "installation") or ""),
         )
         if key in grouped:
             grouped[key].capacity_mw += cap

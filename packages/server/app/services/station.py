@@ -112,6 +112,11 @@ async def list_stations(
 def from_catalog(p: CatalogPlant) -> Station:
     """公开电站直接参与计算，不复制个人记录，也不加入会话持久化。"""
     from app.services.catalog import join_address
+    from app.services.prediction_basis import (
+        catalog_basis,
+        catalog_cell_selection,
+        catalog_turbine_class,
+    )
 
     station = Station(
         id=p.id,
@@ -128,14 +133,14 @@ def from_catalog(p: CatalogPlant) -> Station:
         tilt=None,
         azimuth=None,
         hub_height=None,
+        turbine_class=catalog_turbine_class(p),
     )
     from datetime import UTC
-
-    from app.services.prediction_basis import catalog_basis
 
     basis, blocked = catalog_basis(p)
     station._pv_capacity = basis
     station._prediction_blocked = blocked
+    station._cell_selection = catalog_cell_selection(p)
     provenance = p.provenance or {}
     station._catalog_metadata = {
         "phases": provenance.get("phases", []),

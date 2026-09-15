@@ -46,6 +46,22 @@ def join_address(*parts: str | None) -> str | None:
     return out or None
 
 
+_OFFSHORE_WORDS = ("offshore", "海上")
+
+
+def is_offshore(p: CatalogPlant) -> bool:
+    """海上风电。GEM 分期的 Installation Type 导入时存进溯源；旧库没有该字段时按名称判断 ——
+    2026-02 版中国运行分期里 Offshore 与名称含 Offshore / 海上的 156 期完全一致。"""
+    if p.type != "wind":
+        return False
+    phases = (p.provenance or {}).get("phases") or []
+    kinds = [str(ph.get("installation_type") or "").lower() for ph in phases]
+    if any(kinds):
+        return any(k.startswith("offshore") for k in kinds)
+    names = f"{p.name or ''} {p.name_local or ''}".lower()
+    return any(w in names for w in _OFFSHORE_WORDS)
+
+
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)

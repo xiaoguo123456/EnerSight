@@ -68,7 +68,7 @@ def _make_scan_alerts(app: FastAPI):
 
     async def scan_one(db, station: Station) -> int:
         try:
-            fc = await weather.get_forecast(app.state.http, station.latitude, station.longitude)
+            fc = await weather.station_forecast(app.state.http, station)
             # 扫描只用云图内容，URL 前缀由读接口按请求补
             sat = await satellite.load_scene_safely(app.state.http, station, "")
             return await alerts.scan_station(db, station, fc, sat)

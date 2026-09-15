@@ -144,6 +144,10 @@ class Settings(BaseSettings):
     # 只有 10 m 风速时的幂律外推指数（降级路径）；正常用 80/100/120 m 各层按对数廓线插值
     wind_shear_alpha: float = 0.18
     wind_air_density_ref: float = 1.225  # 功率曲线标称空气密度，IEC 61400-12-1 密度修正的基准
+    # 目录风电没有机型字段：陆上此年份起投运（或年份未知）按该机型档，更早的用通用曲线；
+    # 海上一律通用曲线。依据 REIT 场站电量对账，docs/07 §2.2、§8.1
+    wind_catalog_modern_from_year: int = 2015
+    wind_catalog_modern_class: str = "low_wind"
     # 光伏跟踪与双面：pvlib singleaxis / infinite_sheds 的默认几何。docs/07 §2.1
     pv_tracking_gcr: float = 0.35
     pv_tracking_max_angle: float = 60.0

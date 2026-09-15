@@ -97,7 +97,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
     title: '预测口径',
     content: [
       ...(req.data?.assumptions ?? p?.assumptions ?? []),
-      station.type === 'wind' ? '风电按轮毂高度风速与通用功率曲线估算，低于切入或高于切出风速时功率为零，不代表实测停机。' : '光伏按倾斜面辐射与 PVWatts 估算，夜间功率为零。',
+      station.type === 'wind' ? '风电按轮毂高度风速与机型功率曲线估算（公开电站按投运年份选机型），低于切入或高于切出风速时功率为零，不代表实测停机。' : '光伏按倾斜面辐射与 PVWatts 估算，夜间功率为零。',
       '七天功率曲线均按 15 分钟计算，采用电站当地时间。',
       basisDetail(req.data?.basis ?? p?.basis),
       DISCLAIMER,

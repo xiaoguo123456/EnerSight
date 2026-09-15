@@ -107,7 +107,7 @@ class TestGridStep:
         from app.services.fleet_prediction import cell
 
         for lat in (36.62, 21.75, 43.24, -0.13):
-            _, clat, clon = cell(
+            _, clat, clon, _selection = cell(
                 CatalogPlant(
                     id="x",
                     source="gem",
