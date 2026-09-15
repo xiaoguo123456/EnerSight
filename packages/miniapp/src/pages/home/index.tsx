@@ -1,8 +1,8 @@
 import { useHomeShare } from '@/hooks/useAppShare'
-import { Button, Picker, View, Text } from '@tarojs/components'
+import { Button, Picker, Switch, View, Text } from '@tarojs/components'
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
-import { powerChartUnit, powerCsv, thousands, formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatWindSpeed, formatPower } from '@enersight/core/format'
+import { powerChartUnit, powerCsv, thousands, formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatUtilization, formatWindSpeed, formatPower } from '@enersight/core/format'
 import type { DailyOutlook, FleetDay, FleetPrediction, ForecastBasis, GenerationPrediction, StationOutlook, StationSummary } from '@enersight/core/types'
 import { api } from '@/api'
 import { homeApi } from '@/api/home'
@@ -20,6 +20,8 @@ import './index.scss'
 const RESOLVED_LABEL: Record<string, string> = { ecmwf_ifs: 'ECMWF IFS 9 km', ncep_gfs013: 'GFS 0.13°', ncep_gfs025: 'GFS 0.25°', dwd_icon: 'ICON 13 km' }
 const COMPACT_MODEL: Record<string, string> = { ecmwf_ifs: 'ECMWF', ncep_gfs013: 'GFS', ncep_gfs025: 'GFS', dwd_icon: 'ICON' }
 const DISCLAIMER = '预测不等于实际并网电量，未计入检修与故障。'
+/** 限电第二层开关，默认关闭，记在本机。docs/17 §四 */
+const PROVINCE_GRID_KEY = 'enersight_province_grid'
 
 function energy(value?: number | null) {
   if (value == null) return { value: '—', unit: 'MWh' }
@@ -82,10 +84,40 @@ function GridSplit({ p }: { p: GenerationPrediction | DailyOutlook | null | unde
   </View>
 }
 
+function periodText(period: string) {
+  const [year, month] = period.split('-')
+  return month ? `${year} 年 ${Number(month)} 月` : `${year} 年`
+}
+
+/** 限电第二层：按省级月度利用率折算的上网参考。开关默认关；月均值与真实限电差距大，只作参考。 */
+function ProvinceGridToggle({ on, onToggle, children }: { on: boolean; onToggle: (on: boolean) => void; children: React.ReactNode }) {
+  return <View className="forecast-province">
+    <View className="forecast-row"><Text className="forecast-subtitle">省级限电参考</Text><Switch checked={on} color="#1677ff" onChange={e => onToggle(!!e.detail.value)} /></View>
+    {on && children}
+  </View>
+}
+
+function StationProvinceGrid({ g, type, on, onToggle }: { g: DailyOutlook['province_grid'] | undefined; type: string; on: boolean; onToggle: (on: boolean) => void }) {
+  if (!g) return null
+  const u = formatUtilization(g.utilization)
+  return <ProvinceGridToggle on={on} onToggle={onToggle}>
+    <View className="forecast-split forecast-split--tight"><View><Text className="forecast-label">预计上网</Text><Text>{fmtEnergy(g.energy_kwh)}</Text></View><View><Text className="forecast-label">限电损失</Text><Text>{fmtEnergy(g.curtailed_kwh)}</Text></View></View>
+    <Text className="forecast-muted">{`按${g.region} ${periodText(g.period)}${type === 'wind' ? '风电' : '光伏'}利用率 ${u.value}${u.unit} 折算，月均值仅作参考。来源：${g.source}`}</Text>
+  </ProvinceGridToggle>
+}
+
+function FleetProvinceGrid({ g, on, onToggle }: { g: FleetDay['province_grid'] | undefined; on: boolean; onToggle: (on: boolean) => void }) {
+  if (!g) return null
+  return <ProvinceGridToggle on={on} onToggle={onToggle}>
+    <View className="forecast-split forecast-split--tight"><View><Text className="forecast-label">预计上网</Text><Text>{fmtEnergy(g.energy_kwh)}</Text></View><View><Text className="forecast-label">限电损失</Text><Text>{fmtEnergy(g.curtailed_kwh)}</Text></View></View>
+    <Text className="forecast-muted">{`${thousands(g.applied_count)} 座按所在省 ${g.periods.map(periodText).join('、')}利用率折算${g.unapplied_count ? `，${thousands(g.unapplied_count)} 座省份不详按可发电量计入` : ''}；月均值仅作参考。来源：${g.source}`}</Text>
+  </ProvinceGridToggle>
+}
+
 /** 本站按所选日电量、峰值、功率曲线、七日电量组织。选中日由父级持有，下方气象趋势跟着切。 */
-function StationForecast({ station, p, version, onReload, refreshError, generatedAt, req, selected, onSelect }: {
+function StationForecast({ station, p, version, onReload, refreshError, generatedAt, req, selected, onSelect, provinceOn, onProvince }: {
   station: StationSummary; p: GenerationPrediction | null | undefined; version: number; onReload: () => void; refreshError: boolean; generatedAt?: string; req: { data: StationOutlook | null; status: string; error: ApiError | null; reload: () => Promise<void>; refreshError: ApiError | null }
-  selected: number; onSelect: (i: number) => void
+  selected: number; onSelect: (i: number) => void; provinceOn: boolean; onProvince: (on: boolean) => void
 }) {
   const days = req.data?.days ?? []
   const day = days[selected]
@@ -110,6 +142,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
       {value != null && peak && <View className="forecast-peak"><Text className="forecast-label">峰值 · {peak.time}</Text><Text>{formatPower(peak.value).value}<Text className="forecast-unit"> {formatPower(peak.value).unit}</Text></Text></View>}
     </View>}
     <GridSplit p={day ?? p} />
+    {(day ?? p)?.grid_energy_kwh == null && !station.prediction_blocked_reason && value != null && <StationProvinceGrid g={(day ?? p)?.province_grid} type={station.type} on={provinceOn} onToggle={onProvince} />}
     {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title="预测功率" step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)}
       onExport={() => { if (requireLogin()) void exportCsv(`${station.name}_预测功率_${days[0]?.date ?? p?.date ?? ''}.csv`, powerCsv(days.length ? days : p ? [p] : [])) }} />}
     {req.status === 'error' ? <ErrorState error={req.error!} onRetry={req.reload} />
@@ -123,7 +156,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
 }
 
 /** 全目录：同样一张卡。选中日由父级持有，区域贡献要跟着切。 */
-function FleetForecast({ f, selected, onSelect, version, onReload, refreshError }: { f: FleetPrediction; selected: number; onSelect: (i: number) => void; version: number; onReload: () => void; refreshError: boolean }) {
+function FleetForecast({ f, selected, onSelect, version, onReload, refreshError, provinceOn, onProvince }: { f: FleetPrediction; selected: number; onSelect: (i: number) => void; version: number; onReload: () => void; refreshError: boolean; provinceOn: boolean; onProvince: (on: boolean) => void }) {
   const days = f.days ?? []
   const day = days[selected]
   const value = day ? day.energy_kwh : f.energy_kwh
@@ -156,6 +189,7 @@ function FleetForecast({ f, selected, onSelect, version, onReload, refreshError 
     <View className="forecast-row"><Text className="forecast-title">{label} {coveredCount === f.total_count ? '发电量合计' : '已覆盖电站合计'}</Text><InfoTip {...info} /></View>
     <Value value={value} />
     <View className="forecast-split forecast-split--tight"><View><Text className="forecast-label">光伏</Text><Text>{fmtEnergy(value == null ? null : solar)}</Text></View><View><Text className="forecast-label">风电</Text><Text>{fmtEnergy(value == null ? null : wind)}</Text></View></View>
+    {value != null && <FleetProvinceGrid g={day?.province_grid} on={provinceOn} onToggle={onProvince} />}
     <View className="fleet-status"><Text>容量覆盖 {coverage.toFixed(1)}%</Text><Text>{value == null ? (f.status === 'error' ? '暂不可用' : '准备中') : ''}</Text></View>
     {refreshError && <Text className="forecast-warning" onClick={onReload}>刷新失败 · 点击重试</Text>}
     {value != null && <PowerCurve points={points} id={`fleet-${f.model}-${selected}-${version}`} title="预测功率合计" step={day?.resolution_minutes ?? f.resolution_minutes ?? 60}
@@ -179,6 +213,12 @@ export default function Home() {
   // 气象趋势默认展开，收起只在本次浏览内有效
   const [trendOpen, setTrendOpen] = useState(true)
   const toggleTrend = () => setTrendOpen(v => !v)
+  // 省级限电参考默认关；本站与全部电站共用一个开关
+  const [provinceOn, setProvinceOnState] = useState(() => { try { return Taro.getStorageSync(PROVINCE_GRID_KEY) === true } catch { return false } })
+  const setProvinceOn = (on: boolean) => {
+    setProvinceOnState(on)
+    try { Taro.setStorageSync(PROVINCE_GRID_KEY, on) } catch { /* 存储不可用时只在本次浏览生效 */ }
+  }
   useDidShow(() => { setVisible(true); setVersion(v => v + 1) })
   useDidHide(() => setVisible(false))
   const currentId = useStationStore(s => s.currentId)
@@ -226,7 +266,7 @@ export default function Home() {
       {scope === 'fleet' && <View className="fleet-history-link" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: '/pages/fleet-history/index' })}><Icon name="trendingUp" size={15} strokeWidth={1.5} /><Text>历史趋势</Text></View>}
       {scope === 'station' ? <>
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : d?.has_station === false ? <View className="home__card"><Text>选择或添加一座电站，开始查看预测</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择电站</Button></View> : !d || !station ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
-          <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} selected={stationDay} onSelect={setStationDay} />
+          <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} selected={stationDay} onSelect={setStationDay} provinceOn={provinceOn} onProvince={setProvinceOn} />
           {d.alert && <AlertBanner title={d.alert.title} description={d.alert.description} onMore={() => Taro.switchTab({ url: '/pages/alert/index' })} />}
           {weather && <View className="home__card home__weather"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前 15 分钟时段的预报值：气温、10 米风速、云量为瞬时值，辐射为对应区间的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
             <MetricCard icon="cloudSun" label="天气" metric={formatTemperature(weather.temperature.value)} caption={weather.weather_text ?? undefined} />
@@ -241,7 +281,7 @@ export default function Home() {
         </>}
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
-          <FleetForecast f={f} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={fleet.reload} refreshError={!!fleet.refreshError} />
+          <FleetForecast f={f} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={fleet.reload} refreshError={!!fleet.refreshError} provinceOn={provinceOn} onProvince={setProvinceOn} />
           {!!regions.length && <View className="home__card"><SectionHeader icon="map" title={`区域贡献 · ${selectedFleet ? fmtDate(selectedFleet) : '今日'}`} info={{ title: '区域贡献', content: '按电站所在省份汇总已覆盖电站的日电量，仅含已计算的电站。点击地区可进入该省的电站目录。' }} />{(showAllRegions ? regions : regions.slice(0,6)).map(r => <View className="forecast-region" key={r.province} hoverClass="pressed" onClick={() => regionClick(r.province)}><Text>{r.province}</Text><Text>{energy(r.energy_kwh).value} {energy(r.energy_kwh).unit} ›</Text></View>)}{regions.length > 6 && <View className="forecast-more" onClick={() => setShowAllRegions(v => !v)}>{showAllRegions ? '收起地区' : `查看全部 ${regions.length} 个地区`}</View>}</View>}
         </>}
       </>}

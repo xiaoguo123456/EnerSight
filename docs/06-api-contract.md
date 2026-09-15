@@ -485,9 +485,19 @@ interface GenerationPrediction {
   grid_energy_kwh: number | null    // 计入出力约束后的上网电量；无规则一律 null
   curtailed_kwh: number | null
   grid_power_kw: PowerPoint[] | null
+  province_grid: ProvinceGrid | null  // 限电第二层参考，仅公开电站；自建场站与无数据为 null（17 §四）
   basis: ForecastBasis | null
   resolution_minutes: number        // 15：96 点；60：24 点
   assumptions: string[]
+}
+
+interface ProvinceGrid {             // 按省级月度利用率折算，只作参考，不改可发电量与指数
+  region: string                     // 统计区域，内蒙古分蒙西、蒙东
+  period: string                     // 利用率统计期：YYYY-MM 当月值，YYYY 全年值
+  utilization: number                // 0–1
+  energy_kwh: number                 // 可发电量 × 利用率
+  curtailed_kwh: number
+  source: string
 }
 
 interface StationOutlook {           // 单站未来 7 天，首页懒加载
@@ -500,6 +510,7 @@ interface StationOutlook {           // 单站未来 7 天，首页懒加载
 interface DailyOutlook {
   date: string; weekday: number; lead_days: number     // lead_days ≥ 3 为中期预报
   energy_kwh: number | null; grid_energy_kwh: number | null; curtailed_kwh: number | null
+  province_grid: ProvinceGrid | null
   index_score: number | null; index_level: IndexLevel | null   // 指数只反映气象，不受约束影响
   weather_text: string | null        // 日间众数天气
   peak_kw: number | null
@@ -516,6 +527,14 @@ interface FleetDay {
   date: string; weekday: number; lead_days: number
   energy_kwh: number | null; solar_kwh: number; wind_kwh: number
   power_kw: PowerPoint[]; regions: RegionPrediction[]
+  province_grid: FleetProvinceGrid | null   // 旧留档可能缺省
+}
+
+interface FleetProvinceGrid {        // 已覆盖电站逐站按所在省利用率折算后的合计
+  energy_kwh: number                 // 无省级数据的电站按可发电量计入
+  curtailed_kwh: number
+  applied_count: number; unapplied_count: number
+  periods: string[]; source: string
 }
 ```
 

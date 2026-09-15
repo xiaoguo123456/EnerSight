@@ -89,6 +89,9 @@
 .forecast-series { display: flex; gap: var(--space-3); font-size: var(--font-caption); color: var(--color-primary); }
 .forecast-series__grid { color: var(--color-energy); }
 .forecast-split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-divider); font-size: var(--font-metric-sm); font-weight: 600; }
+.forecast-province { padding: var(--space-1) 0 var(--space-2); border-bottom: 1px solid var(--color-divider); }
+.forecast-province .forecast-row { min-height: var(--size-control); }
+.forecast-province .forecast-split { border-bottom: 0; padding-bottom: var(--space-1); }
 .forecast-state, .forecast-warning, .forecast-empty { display: block; margin-top: var(--space-2); font-size: var(--font-caption); line-height: 1.6; }
 .forecast-state, .forecast-empty { color: var(--color-text-sub); }
 .forecast-warning { color: #98521a; }

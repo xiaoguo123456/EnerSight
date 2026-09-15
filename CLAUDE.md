@@ -292,7 +292,7 @@ make codegen                         # openapi.json → core/types/
 | satellite/cloud | ✅ | JMA 瓦片，白天可见光/真彩、夜间红外；光流外推见 07 §四 |
 | stations/catalog | ✅ | 公开电站目录运行中 17,836 座（GEM 17,735 + WRI 101；另 928 条 WRI 与 GEM 重复），按月自动同步；导入后统一做数据质量处理（占位坐标、重复、命名，见 04 §七） |
 | stations（自建） | ✅ | 站点页「我的站点」，定位 / 地图选点 / 手输经纬度，每用户 10 座，可填出力约束（限电第一层），见 17 |
-| predictions/station | ✅ | 单站未来 7 天逐日预测，首页懒加载；`basis` 带模型起报时刻 |
+| predictions/station | ✅ | 单站未来 7 天逐日预测，首页懒加载；`basis` 带模型起报时刻；公开电站与全目录带省级限电参考（限电第二层，界面默认关，见 17 §四） |
 | predictions/fleet | ✅ | 全目录未来 7 天 `days[]`，顶层仍是今日；按目标日 + 签发日留档 |
 
 已落地的关键实现：

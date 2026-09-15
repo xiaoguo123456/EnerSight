@@ -9,7 +9,7 @@ import pandas as pd
 from app.config import settings
 from app.models import Station
 from app.schemas.prediction import DailyOutlook, GenerationPrediction, PowerPoint, StationOutlook
-from app.services import energy
+from app.services import energy, province_grid
 from app.services.prediction_basis import calculation_version, version_for_day
 from app.services.weather import Forecast
 from app.services.weather_text import describe
@@ -94,6 +94,10 @@ def from_hourly(
     grid_valid = valid and grid_values is not None and bool(np.isfinite(grid_values).all())
     energy_kwh = round(float(values.sum()) * hours, 2) if valid else None
     grid_energy = round(float(grid_values.sum()) * hours, 2) if grid_valid else None
+    # 限电第二层：只有公开电站带统计区域；容量口径待核验时电量已置空，这里自然为 None
+    province = province_grid.station_reference(
+        energy_kwh, getattr(station, "_province_region", None), station.type, day0.date()
+    )
     return GenerationPrediction(
         calculation_version=calculation_version(day0.date()),
         model=model or current_model.get(),
@@ -109,6 +113,7 @@ def from_hourly(
             else None
         ),
         grid_power_kw=_points(grid_kw) if grid_kw is not None else None,
+        province_grid=province,
         basis=fc.basis(),
         resolution_minutes=step_minutes,
         assumptions=assumptions(station, version, curtailment_note, notes),
@@ -182,6 +187,7 @@ def compute_days(
                 energy_kwh=pred.energy_kwh,
                 grid_energy_kwh=pred.grid_energy_kwh,
                 curtailed_kwh=pred.curtailed_kwh,
+                province_grid=pred.province_grid,
                 index_score=snap.index.score if snap.index else None,
                 index_level=snap.index.level if snap.index else None,
                 weather_text=_daytime_weather(fc, day),

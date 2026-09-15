@@ -111,6 +111,7 @@ async def list_stations(
 
 def from_catalog(p: CatalogPlant) -> Station:
     """公开电站直接参与计算，不复制个人记录，也不加入会话持久化。"""
+    from app.services import province_grid
     from app.services.catalog import join_address
     from app.services.prediction_basis import (
         catalog_basis,
@@ -141,6 +142,8 @@ def from_catalog(p: CatalogPlant) -> Station:
     station._pv_capacity = basis
     station._prediction_blocked = blocked
     station._cell_selection = catalog_cell_selection(p)
+    # 限电第二层参考只给公开电站，见 services/province_grid
+    station._province_region = province_grid.region_of(p.province, p.city)
     provenance = p.provenance or {}
     station._catalog_metadata = {
         "phases": provenance.get("phases", []),

@@ -28,7 +28,7 @@ from app.schemas.prediction import (
     PowerPoint,
     RegionPrediction,
 )
-from app.services import energy, weather
+from app.services import energy, province_grid, weather
 from app.services.curve_cache import CurveCache
 from app.services.prediction_basis import (
     calculation_version,
@@ -293,6 +293,8 @@ async def build(http, model: str, day: str, plants) -> None:
     total = np.zeros((n_days, 96))
     solar_kwh = np.zeros(n_days)
     wind_kwh = np.zeros(n_days)
+    # 限电第二层：逐日按各电站所在省的月度利用率折算，只作参考。docs/17 §四
+    province = province_grid.FleetAccumulator([date.fromisoformat(d) for d in dates])
     covered_days = np.zeros(n_days, dtype=int)
     covered_capacity = np.zeros(n_days)
     common_total = np.zeros(n_days)
@@ -397,6 +399,7 @@ async def build(http, model: str, day: str, plants) -> None:
                     else "error"
                 ),
                 common_energy_kwh=float(common_total[k]) if out.common_covered_count else None,
+                province_grid=province.result(k) if covered_days[k] else None,
             )
             for k in range(n_days)
         ]
@@ -520,6 +523,7 @@ async def build(http, model: str, day: str, plants) -> None:
                     covered_days[k] += 1
                     covered_capacity[k] += p.capacity_kw
                     energy = float(curve.sum()) * 0.25
+                    province.add(k, p.type, p.province, p.city, energy)
                     if p.type == "solar":
                         solar_kwh[k] += energy
                     else:

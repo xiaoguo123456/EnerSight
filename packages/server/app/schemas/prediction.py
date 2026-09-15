@@ -20,6 +20,30 @@ class PowerPoint(BaseModel):
     value: float | None
 
 
+class ProvinceGrid(BaseModel):
+    """限电第二层参考：按省级月度利用率折算。只作参考，不改可发电量与指数。docs/17 §四"""
+
+    region: str = Field(description="利用率统计区域；内蒙古分蒙西、蒙东")
+    period: str = Field(description="所用利用率的统计期：YYYY-MM 为当月值，YYYY 为全年值")
+    utilization: float = Field(description="该类型新能源利用率，0–1")
+    energy_kwh: float = Field(description="可发电量 × 利用率")
+    curtailed_kwh: float = Field(description="可发电量 × (1 − 利用率)")
+    source: str
+
+
+class FleetProvinceGrid(BaseModel):
+    """全目录逐日合计的省级限电参考。docs/17 §四"""
+
+    energy_kwh: float = Field(
+        description="已覆盖电站按各自省级利用率折算后的合计；无省级数据的电站按可发电量计入"
+    )
+    curtailed_kwh: float
+    applied_count: int = Field(description="有省级利用率、参与折算的电站数")
+    unapplied_count: int = Field(description="无省级利用率（省份或城市不详）、未折算的电站数")
+    periods: list[str] = Field(description="用到的利用率统计期")
+    source: str
+
+
 class GenerationPrediction(BaseModel):
     calculation_version: str | None = None
     estimated: bool = False
@@ -33,6 +57,8 @@ class GenerationPrediction(BaseModel):
     grid_energy_kwh: float | None = None
     curtailed_kwh: float | None = None
     grid_power_kw: list[PowerPoint] | None = None
+    # 限电第二层：公开电站按省级月度利用率折算的参考；自建场站与无数据时为 null
+    province_grid: ProvinceGrid | None = None
     basis: ForecastBasis | None = None
     resolution_minutes: int = Field(default=60, description="曲线间隔：15 为 96 点，60 为 24 点")
     assumptions: list[str] = Field(default_factory=list)
@@ -47,6 +73,9 @@ class DailyOutlook(BaseModel):
     energy_kwh: float | None
     grid_energy_kwh: float | None
     curtailed_kwh: float | None
+    province_grid: ProvinceGrid | None = Field(
+        description="公开电站按省级月度利用率折算的上网参考；自建场站与无数据时为 null"
+    )
     index_score: float | None
     index_level: IndexLevel | None
     weather_text: str | None = Field(description="日间众数天气")
@@ -89,6 +118,8 @@ class FleetDay(BaseModel):
     status: str = "queued"
     common_energy_kwh: float | None = None
     regions: list[RegionPrediction] = Field(default_factory=list)
+    # 旧留档没有该字段，保留默认值以便续用昨日快照时能读回
+    province_grid: FleetProvinceGrid | None = None
 
 
 class FleetPrediction(GenerationPrediction):

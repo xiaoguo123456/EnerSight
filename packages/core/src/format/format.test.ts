@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   formatBeijingTime, isDataStale, formatCo2, formatCoordinate, formatCurrency, formatDelta, formatEnergy,
   formatHours, formatPercent, formatPower, formatRadiation,
-  formatTemperature, formatWindSpeed, thousands,
+  formatTemperature, formatUtilization, formatWindSpeed, thousands,
 } from './index'
 
 describe('thousands', () => {
@@ -59,6 +59,11 @@ describe('标量格式化', () => {
   })
   it('百分比取整', () => {
     expect(formatPercent(35.2)).toEqual({ value: '35', unit: '%' })
+  })
+  it('利用率 0–1 小数转 1 位小数百分比', () => {
+    expect(formatUtilization(0.921)).toEqual({ value: '92.1', unit: '%' })
+    expect(formatUtilization(1)).toEqual({ value: '100.0', unit: '%' })
+    expect(formatUtilization(null)).toEqual({ value: '—', unit: '%' })
   })
   it('等效小时 1 位小数', () => {
     expect(formatHours(4.5)).toEqual({ value: '4.5', unit: 'h' })

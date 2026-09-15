@@ -726,6 +726,8 @@ export interface components {
             grid_energy_kwh: number | null;
             /** Curtailed Kwh */
             curtailed_kwh: number | null;
+            /** @description 公开电站按省级月度利用率折算的上网参考；自建场站与无数据时为 null */
+            province_grid: components["schemas"]["ProvinceGrid"] | null;
             /** Index Score */
             index_score: number | null;
             index_level: components["schemas"]["IndexLevel"] | null;
@@ -914,6 +916,7 @@ export interface components {
             common_energy_kwh?: number | null;
             /** Regions */
             regions?: components["schemas"]["RegionPrediction"][];
+            province_grid?: components["schemas"]["FleetProvinceGrid"] | null;
         };
         /** FleetPrediction */
         FleetPrediction: {
@@ -948,6 +951,7 @@ export interface components {
             curtailed_kwh?: number | null;
             /** Grid Power Kw */
             grid_power_kw?: components["schemas"]["PowerPoint"][] | null;
+            province_grid?: components["schemas"]["ProvinceGrid"] | null;
             basis?: components["schemas"]["ForecastBasis"] | null;
             /**
              * Resolution Minutes
@@ -1042,6 +1046,36 @@ export interface components {
             message?: string | null;
         };
         /**
+         * FleetProvinceGrid
+         * @description 全目录逐日合计的省级限电参考。docs/17 §四
+         */
+        FleetProvinceGrid: {
+            /**
+             * Energy Kwh
+             * @description 已覆盖电站按各自省级利用率折算后的合计；无省级数据的电站按可发电量计入
+             */
+            energy_kwh: number;
+            /** Curtailed Kwh */
+            curtailed_kwh: number;
+            /**
+             * Applied Count
+             * @description 有省级利用率、参与折算的电站数
+             */
+            applied_count: number;
+            /**
+             * Unapplied Count
+             * @description 无省级利用率（省份或城市不详）、未折算的电站数
+             */
+            unapplied_count: number;
+            /**
+             * Periods
+             * @description 用到的利用率统计期
+             */
+            periods: string[];
+            /** Source */
+            source: string;
+        };
+        /**
          * ForecastBasis
          * @description 这份预测用的是哪一批气象数据。issued_at 为 null 表示无法确认起报，前端只显示拉取时间。
          */
@@ -1105,6 +1139,7 @@ export interface components {
             curtailed_kwh?: number | null;
             /** Grid Power Kw */
             grid_power_kw?: components["schemas"]["PowerPoint"][] | null;
+            province_grid?: components["schemas"]["ProvinceGrid"] | null;
             basis?: components["schemas"]["ForecastBasis"] | null;
             /**
              * Resolution Minutes
@@ -1366,6 +1401,39 @@ export interface components {
             time: string;
             /** Value */
             value: number | null;
+        };
+        /**
+         * ProvinceGrid
+         * @description 限电第二层参考：按省级月度利用率折算。只作参考，不改可发电量与指数。docs/17 §四
+         */
+        ProvinceGrid: {
+            /**
+             * Region
+             * @description 利用率统计区域；内蒙古分蒙西、蒙东
+             */
+            region: string;
+            /**
+             * Period
+             * @description 所用利用率的统计期：YYYY-MM 为当月值，YYYY 为全年值
+             */
+            period: string;
+            /**
+             * Utilization
+             * @description 该类型新能源利用率，0–1
+             */
+            utilization: number;
+            /**
+             * Energy Kwh
+             * @description 可发电量 × 利用率
+             */
+            energy_kwh: number;
+            /**
+             * Curtailed Kwh
+             * @description 可发电量 × (1 − 利用率)
+             */
+            curtailed_kwh: number;
+            /** Source */
+            source: string;
         };
         /** PublicStationListResponse */
         PublicStationListResponse: {

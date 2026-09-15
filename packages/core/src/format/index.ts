@@ -83,6 +83,12 @@ export function formatPercent(v: number | null | undefined): Formatted {
   return { value: thousands(Math.round(v)), unit: '%' }
 }
 
+/** 利用率（0–1 小数）：1 位小数的百分比，如 0.921 → 92.1% */
+export function formatUtilization(v: number | null | undefined): Formatted {
+  if (v == null || !Number.isFinite(v)) return { value: '—', unit: '%' }
+  return { value: thousands(v * 100, 1), unit: '%' }
+}
+
 /** 等效利用小时：1 位小数 */
 export function formatHours(h: number | null | undefined): Formatted {
   if (h == null || !Number.isFinite(h)) return { value: '—', unit: 'h' }

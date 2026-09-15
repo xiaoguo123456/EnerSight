@@ -431,8 +431,10 @@ schedule  out_grid(h) = min(out(h), C × limit_percent / 100)   若 h 落在某�
 缺测保持 NaN，不因封顶变成 0。
 
 逐日累积表 `daily_generation.kwh` 仍记可发电量，限电损失另记 `curtailed_kwh`。
-第二层（省级月度利用率）与第三层（用负荷推限电）未做，见
-[17 §四](./17-user-stations-and-outlook.md)。
+
+第二层（省级月度利用率，2026-09-15）只作参考：公开电站与全目录汇总另给 `province_grid`
+= 可发电量 × 所在省对应月份的风电 / 光伏利用率（当年当月没有时优先往年同月），不改可发电量、指数、累积与 AI 输入，
+取值与范围见 [17 §四](./17-user-stations-and-outlook.md)。第三层（用负荷推限电）未做。
 
 ### 2.7 未来 7 天与时间粒度
 

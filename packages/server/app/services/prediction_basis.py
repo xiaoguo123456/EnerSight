@@ -21,12 +21,17 @@ VERSION = "model-v4"
 
 def calculation_parameters() -> dict:
     """仅保留计算设置，供缓存指纹和离线复现使用。"""
-    return {
+    from app.services import province_grid
+
+    parameters = {
         k: v
         for k, v in settings.model_dump(mode="json").items()
         if k.startswith(("pv_", "wind_", "fleet_grid_", "outlook_", "index_"))
         or k in ("forecast_outlook_days", "model_v4_start_date")
     }
+    # 省级利用率按月更新，更新后全目录快照与曲线缓存要失效。docs/17 §四
+    parameters["province_utilization"] = province_grid.digest()
+    return parameters
 
 
 def calculation_version(day: date | str) -> str:
