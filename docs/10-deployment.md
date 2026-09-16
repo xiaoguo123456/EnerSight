@@ -264,6 +264,51 @@ A 第 7 次请求开始于 14:27:04.753，0.29 秒后返回分钟限流；B 请�
 来源：[ProxyScrape 免费列表](https://proxyscrape.com/free-proxy-list)、
 [HTTPX CONNECT 代理](https://www.python-httpx.org/advanced/proxies/)。
 
+## 测试环境自建气象试验（2026-09-16）
+
+按用户决定，测试环境切到 Buffalo 的自建实例，并**关掉代理池**
+（`ENERSIGHT_WEATHER_PROXY_POOL_ENABLED=false`）—— 自建与代理池是互替的两条策略，
+叠起来一次故障会同时动用两套限流账本。兜底也不经代理池，直连官方。
+
+试验镜像 `enersight-test-weather-fallback:trial-20260916-v1`
+（`sha256:8e2a947d68ad94203629244530c2e4727fb09da3f0633d131042c602a3f09f13`），
+基于当时的测试镜像 `2c68d1293bd2` 派生，只覆盖本次涉及的 7 个 Python 文件，
+不升级依赖、不迁移数据库。镜像只存在测试主机；之后常规测试发布会覆盖它。
+该提交与 main 的 Python 无差异（`bc91788` 只改文档），派生是安全的。
+
+测试服务器 `.env` 新增：
+
+```dotenv
+ENERSIGHT_OPEN_METEO_BASE=http://192.236.166.152:8090/v1
+ENERSIGHT_OPEN_METEO_ARCHIVE_BASE=http://192.236.166.152:8090/v1
+ENERSIGHT_OPEN_METEO_META_BASE=https://openmeteo.s3.amazonaws.com/data
+ENERSIGHT_OPEN_METEO_FALLBACK_BASE=https://api.open-meteo.com/v1
+```
+
+Buffalo 侧的 `DOCKER-USER` 白名单已加测试机出口 `47.93.60.25`
+（与生产 `39.105.228.11` 并列，三家查询确认出口即公网 IP）。
+
+回滚（在测试服务器执行，持有部署锁）：
+
+```sh
+cd /opt/enersight-test
+(
+  flock -n 9 || exit 1
+  cp -p .env.before-selfhost-20260916T233704 .env
+  cp -p .release.env.before-selfhost-20260916T233704 .release.env
+  docker compose --env-file .release.env up -d --no-deps --pull never api
+) 9>.deploy.lock
+```
+
+全目录压测前把当天快照与气象缓存移到
+`/opt/enersight-test/roundtest-backup-20260916T234119/`（170 MB，可还原），
+以强制一轮全冷拉取；`roundtest2-backup/` 是跨日那轮的半成品。两个目录都可以删。
+
+压测结果：一轮全冷 **40 分钟**跑完，`status=ready`、`covered 8218/8218`、`failed 0`、
+整轮 0 次 429 与 0 次主源失败、兜底一次未用。详见
+[自建评估第十一节](./2026-09-16-open-meteo-self-host.md)。
+压测用的 `ENERSIGHT_FLEET_REFRESH_HOUR=0` 已删除，测试环境除气象源外与生产行为一致。
+
 ## GitHub Secrets 与发布
 
 仓库设置中配置下列 Secrets，均不进入代码：
