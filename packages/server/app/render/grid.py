@@ -142,7 +142,10 @@ async def fetch_block(http: httpx.AsyncClient, block: Block) -> GridData:
                     raise limited()
                 res = await weather_get(
                     http,
-                    f"{settings.open_meteo_base}/forecast", params=params, timeout=25
+                    f"{settings.open_meteo_base}/forecast",
+                    params=params,
+                    timeout=25,
+                    allow_fallback=False,  # N×N 网格是批量，主源挂了用 cached，见 weather_transport
                 )
                 if res.status_code == 429:
                     _cooldown_until = time.monotonic() + 60

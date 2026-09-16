@@ -55,6 +55,7 @@ async def check(http: httpx.AsyncClient) -> bool:
                 res = await weather_get(
                     http,
                     f"{settings.open_meteo_base}/forecast",
+                    allow_fallback=False,  # 每日例行，拿不到维持现状即可，不花官方额度
                     params={
                         "latitude": lat,
                         "longitude": lon,

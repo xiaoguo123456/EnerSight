@@ -460,6 +460,9 @@ async def build(http, model: str, day: str, plants) -> None:
                 if selection:
                     params["cell_selection"] = selection
                 try:
+                    # background=True 同时意味着自建主源挂了**不退回官方**：一轮几千个
+                    # 坐标额度，退回照样超额，还会把页面那点额度一起吃掉。主源不可用就
+                    # 保留旧快照，下面的 except 已按「部分覆盖」处理。见 weather_transport
                     r = await weather_get(
                         http,
                         f"{settings.open_meteo_base}/forecast",

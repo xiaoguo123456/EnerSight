@@ -1,0 +1,62 @@
+# 自建 Open-Meteo 气象 API。评估与选型见 docs/2026-09-16-open-meteo-self-host.md
+#
+# 数据不落全量：容器按需从 AWS 开放数据桶（us-west-2）读取字节区间，命中本地 LRU 缓存。
+# 因此这台机器的位置决定性能 —— 官方明确建议与 us-west-2 同区域，见 README。
+# 与 enersight-prod 是两个独立 Compose 项目，互不影响；升级只改这里的摘要并提交。
+name: open-meteo
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+volumes:
+  # 命名卷而非绑定挂载：镜像里 /app/data 属于容器内的 openmeteo 用户，
+  # 命名卷初始化时会继承该属主，绑定挂载要自己 chown 才能写。
+  # 磁盘不够时把这个卷指到独立数据盘，见 README「磁盘」。
+  open-meteo-data:
+
+services:
+  open-meteo:
+    # ghcr.io/open-meteo/open-meteo:1.6.0，2026-09-16 解析所得多架构索引摘要。
+    # 官方镜像不改代码直接跑（AGPL-3.0：改了就要公开改动），升级前先看 release notes。
+    image: ghcr.io/open-meteo/open-meteo@sha256:e1517a01a061fd96e2a9017d022c5809bb51725bcd733bcbed435e7ea32dd9da
+    restart: unless-stopped
+    init: true
+    environment:
+      # 按需读取 + 本地缓存的开关。留空则只读本地 data/，需要自己跑 sync。
+      REMOTE_DATA_DIRECTORY: https://openmeteo.s3.amazonaws.com/data/
+      # LRU 缓存上限（镜像默认 10GB）。我们是固定的两千多个坐标反复查，
+      # 缓存越大跨境回源越少；给多少要和数据盘剩余空间一起定。
+      CACHE_SIZE: ${OPEN_METEO_CACHE_SIZE:-32GB}
+      # 单请求最多几个坐标（镜像默认 1000）。自建后可以把全目录批次提上去，
+      # 但要同步改 ENERSIGHT_FLEET_COORDS_PER_REQUEST，见 README「切换应用」。
+      LOCATIONS_LIMIT: ${OPEN_METEO_LOCATIONS_LIMIT:-1000}
+    ports:
+      # 默认只开回环。跨机调用时把 OPEN_METEO_BIND 设成 0.0.0.0，
+      # 但必须同时用 DOCKER-USER 链按来源 IP 放行 —— Docker 发布端口会绕过 ufw，
+      # 见 README「只让指定来源访问」。
+      - "${OPEN_METEO_BIND:-127.0.0.1}:${OPEN_METEO_PORT:-8090}:8080"
+    # 官方要求 8 GB 起、推荐 16 GB。低于 8 GB 不要上（更小的配置我们没实测过）。
+    mem_limit: ${OPEN_METEO_MEM_LIMIT:-10g}
+    cpus: ${OPEN_METEO_CPUS:-2}
+    pids_limit: 512
+    volumes:
+      - open-meteo-data:/app/data
+    logging: *default-logging
+    stop_grace_period: 30s
+    healthcheck:
+      # 没有专用健康路由（FileMiddleware 在上游是注释掉的，GET / 会 404），
+      # 所以探一次最小预报：一个坐标、一个字段、一天，缓存热了就是内存命中。
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS --max-time 20
+          "http://127.0.0.1:8080/v1/forecast?latitude=39.9&longitude=116.4&models=ecmwf_ifs&hourly=temperature_2m&forecast_days=1"
+          >/dev/null || exit 1
+      interval: 60s
+      timeout: 25s
+      retries: 3
+      # 冷缓存首次要读几百个文件、几 MB（官方说秒级），跨境更慢，给足启动时间
+      start_period: 300s

@@ -10,10 +10,26 @@
   一个出口（`DIRECT`），额度、冷却、429 归属全都照记 —— 不记账的兜底就是「悄悄把服务器
   IP 的日额度烧完」，那正是当初要上代理池的原因。
 
+配了自建实例（`open_meteo_fallback_base` 非空）时多一层主备：
+
+- **主源是我们自己的实例，永远直连**。绝不经代理池 —— 池子是用来分摊官方额度的，
+  把自建请求塞进随机公网代理只会又慢又不可靠，而且自建本来就没有额度问题。
+- 主源传输错误或 5xx 才退回官方；4xx 不退回（400 是坐标越界、429 是配额，
+  换个地址是同样结果）。**兜底那一跳也直连**，不经代理池：自建与代理池是互替的两条
+  策略，叠起来只会让一次故障同时动用两套限流账本，排查时说不清是谁在限。
+  兜底撞 429 仍按窗口冷却共享预算。
+- 主源连续失败到阈值就熔断一段时间，期间直接走兜底，不让每个请求先白等一次超时。
+  熔断到期后放一个请求去探主源，成功即恢复；`probe` 会绕过熔断定时去探。
+- **兜底要花官方额度**，所以默认只给页面请求用：`background=True` 的后台批量路径
+  （全目录、地图网格、模型复核）不退回，宁可让这一轮沿用旧快照 —— 它们一轮几千个
+  坐标额度，退回官方照样超额，还会把页面那点额度一起吃掉。
+
 缓存、重试与数据时效仍由调用方负责。
 """
 
 import logging
+import time
+from datetime import UTC, datetime
 
 import httpx
 
@@ -22,13 +38,150 @@ from app.providers.budget import request_cost, retry_seconds, scope_of, shared
 
 log = logging.getLogger(__name__)
 
+# 主源熔断状态，进程内。多实例部署时各自独立，与现有扫描锁、缓存的口径一致（docs/05）
+_failures = 0
+_open_until = 0.0
+_unhealthy = False
+_counters = {"primary": 0, "fallback": 0, "trips": 0}
+_last: dict[str, str | None] = {"error": None, "failure_at": None, "success_at": None}
+
+
+def status() -> dict[str, object]:
+    """给定时探测与调试用。只有地址与计数，不含请求参数。"""
+    return {
+        "primary_base": settings.open_meteo_base,
+        "fallback_base": settings.open_meteo_fallback_base or None,
+        "fallback_enabled": bool(settings.open_meteo_fallback_base),
+        "healthy": not _unhealthy,
+        "breaker_open": _open_until > time.monotonic(),
+        "breaker_open_seconds_left": max(0.0, round(_open_until - time.monotonic(), 1)),
+        "consecutive_failures": _failures,
+        "primary_requests": _counters["primary"],
+        "fallback_requests": _counters["fallback"],
+        "breaker_trips": _counters["trips"],
+        "last_error": _last["error"],
+        "last_failure_at": _last["failure_at"],
+        "last_success_at": _last["success_at"],
+    }
+
+
+def _record_success() -> None:
+    global _failures, _open_until, _unhealthy
+    _failures = 0
+    _open_until = 0.0
+    _last["success_at"] = datetime.now(UTC).isoformat()
+    if _unhealthy:
+        _unhealthy = False
+        log.warning("weather upstream 主源恢复：%s", settings.open_meteo_base)
+
+
+def _record_failure(reason: str) -> None:
+    global _failures, _open_until, _unhealthy
+    _failures += 1
+    _last["error"] = reason
+    _last["failure_at"] = datetime.now(UTC).isoformat()
+    if _failures < settings.weather_primary_trip_after:
+        log.warning(
+            "weather upstream 主源失败 %d/%d：%s",
+            _failures,
+            settings.weather_primary_trip_after,
+            reason,
+        )
+        return
+    _open_until = time.monotonic() + settings.weather_primary_probe_seconds
+    _counters["trips"] += 1
+    if not _unhealthy:
+        _unhealthy = True
+        log.error(
+            "weather upstream 主源熔断：%s 连续失败 %d 次，%.0f 秒内直接走兜底 %s；最近错误 %s",
+            settings.open_meteo_base,
+            _failures,
+            settings.weather_primary_probe_seconds,
+            settings.open_meteo_fallback_base,
+            reason,
+        )
+
+
+def fallback_url(url: str) -> str | None:
+    """主源 URL → 官方兜底 URL。没配兜底、或这个 URL 不属于主源就返回 None。
+
+    自建时预报与归档共用同一个 `/v1`（自建二进制里 `/v1/archive` 就是 ERA5），
+    官方归档却在另一个域名上，所以按路径而不是按 base 区分。
+    元数据走数据桶，不属于主源，自然不会被改写。
+    """
+    if not settings.open_meteo_fallback_base:
+        return None
+    for base in (settings.open_meteo_archive_base, settings.open_meteo_base):
+        if not base or not url.startswith(base):
+            continue
+        suffix = url[len(base) :]
+        target = (
+            settings.open_meteo_archive_fallback_base
+            if suffix.startswith("/archive")
+            else settings.open_meteo_fallback_base
+        )
+        return target.rstrip("/") + suffix
+    return None
+
 
 async def weather_get(
-    client: httpx.AsyncClient, url: str, *, background: bool = False, **kwargs
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    background: bool = False,
+    allow_fallback: bool | None = None,
+    **kwargs,
 ) -> httpx.Response:
-    """background=True 用于后台批量任务：代理池会给它单独的并发名额，优先保页面请求。"""
+    """background=True 用于后台批量任务：代理池会给它单独的并发名额，优先保页面请求。
+
+    allow_fallback 不传时等于 `not background` —— 「后台批量不退回官方」是默认规则，
+    只在需要例外时显式传。
+    """
     cost = request_cost(kwargs.get("params") or {})
     await shared.take(cost)
+    if allow_fallback is None:
+        allow_fallback = not background
+    target = fallback_url(url) if allow_fallback else None
+    if target is None:
+        return await _official(client, url, cost=cost, background=background, **kwargs)
+    return await _primary_then_fallback(client, url, target, **kwargs)
+
+
+async def _primary_then_fallback(
+    client: httpx.AsyncClient, url: str, target: str, **kwargs
+) -> httpx.Response:
+    if _open_until > time.monotonic():
+        return await _fallback(client, target, **kwargs)
+    _counters["primary"] += 1
+    try:
+        res = await client.get(url, **kwargs)  # 自建实例一律直连，不经代理池
+    except httpx.HTTPError as exc:
+        _record_failure(f"{type(exc).__name__}: {exc}")
+    else:
+        if res.status_code < 500:
+            _record_success()
+            # 自建实例理论上没有额度，但真回了 429 也要按窗口冷却 ——
+            # 「429 不管从哪来都要冷却」这条不能因为换了主源就破掉
+            if res.status_code == 429:
+                _cooldown(res)
+            return res
+        _record_failure(f"HTTP {res.status_code}")
+    return await _fallback(client, target, **kwargs)
+
+
+async def _fallback(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    """兜底直连官方，不经代理池。预算已在 `weather_get` 里计过一次，这里只管 429 归属。"""
+    _counters["fallback"] += 1
+    res = await client.get(url, **kwargs)
+    if res.status_code == 429:
+        _cooldown(res)
+    return res
+
+
+async def _official(
+    client: httpx.AsyncClient, url: str, *, cost: float, background: bool, **kwargs
+) -> httpx.Response:
+    """官方通道：按开关经代理池或直连，429 归属与冷却都在这里决定。"""
     if settings.weather_proxy_pool_enabled:
         from app.providers.weather_proxy_pool import PoolExhausted, pool
 
@@ -50,6 +203,35 @@ async def weather_get(
     if res.status_code == 429:
         _cooldown(res)
     return res
+
+
+async def probe(client: httpx.AsyncClient) -> bool:
+    """定时探主源。熔断期间也要探，所以直接打自建实例、绕过 `weather_get`。
+
+    最小请求：一个坐标、一个字段、一天。自建实例上是缓存命中，几毫秒。
+    不计项目预算 —— 打的是我们自己的实例，不花官方额度。
+    """
+    if not settings.open_meteo_fallback_base:
+        return True
+    try:
+        res = await client.get(
+            f"{settings.open_meteo_base}/forecast",
+            params={
+                "latitude": 39.9,
+                "longitude": 116.4,
+                "hourly": "temperature_2m",
+                "forecast_days": 1,
+            },
+            timeout=20,
+        )
+    except httpx.HTTPError as exc:
+        _record_failure(f"probe {type(exc).__name__}: {exc}")
+        return False
+    if res.status_code >= 500:
+        _record_failure(f"probe HTTP {res.status_code}")
+        return False
+    _record_success()
+    return True
 
 
 def _log_limit(res: httpx.Response) -> tuple[str, float]:

@@ -239,6 +239,36 @@ make codegen                         # openapi.json → core/types/
 `make codegen` 已纳入 CI，生成结果与仓库不一致则构建失败。
 
 
+## 服务器访问
+
+本机有生产服务器的部署私钥，排查线上问题不用再等 GitHub Actions：
+
+```bash
+ssh -i ~/.ssh/huahuadog_deploy    root@39.105.228.11    # 生产 ECS（北京）
+ssh -i ~/.ssh/enersight_openmeteo root@192.236.166.152  # 气象自建机（Buffalo NY，HostPapa）
+```
+
+两把钥匙都在 2026-09-16 验证可登 root。`~/.ssh/id_ed25519`（默认钥）对两台都被拒，
+直接 `ssh root@...` 不通，必须带 `-i`。`known_hosts` 里已有两台的指纹，
+保持 `StrictHostKeyChecking=yes`。
+
+气象机的 root **密码**不记在仓库里 —— 它在你的密码管理器里，需要时自己取。
+`~/.ssh/enersight_openmeteo` 是为这台机器单独生成的无口令部署钥（2026-09-16 装上），
+日常自动化只用它；密钥登录确认可用后建议把 `PasswordAuthentication` 关掉。
+
+北京那台还跑着 new-api、steward、weishen、yingji 与 platform 网关共 17 个容器，
+总内存 7.5 GB、可用约 4 GB，磁盘 99 GB 可用 56 GB。**在上面起任何新容器都要设
+`mem_limit`**，否则 OOM 会波及别人的服务。不要 `docker prune`、不要重启别人的容器。
+
+Buffalo 那台是我们独占的：Ubuntu 24.04、3 vCPU、3.9 GB 内存、磁盘 57 GB，
+只跑 `/opt/open-meteo` 一个 Compose 项目。它出厂没配任何 DNS，
+`/etc/systemd/resolved.conf.d/99-dns.conf` 是我们补的（netplan 由 SolusVM 生成，会被覆盖，
+所以别改那个）。到 AWS us-west-2 单流 8.2 MB/s —— 北京那台只有 20–36 KB/s，
+这就是气象自建不能放北京的原因，见 docs/2026-09-16-open-meteo-self-host.md。
+
+私钥与密码不进仓库、不进日志、不贴进对话；只记路径。生产库口径仍看 docs/10。
+
+
 ## Git
 
 - 提交信息用中文，说明「做了什么」和「为什么」

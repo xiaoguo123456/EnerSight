@@ -114,6 +114,17 @@ class Settings(BaseSettings):
     weather_proxy_direct_units_per_hour: float = 4000
     weather_proxy_direct_units_per_day: float = 8000
 
+    # 自建实例故障时退回的官方地址。**留空表示不退回**（直连官方时本就没有意义）。
+    # 只在 open_meteo_base 指向自建实例时配。兜底要花官方额度，因此默认只用于页面请求：
+    # background=True 的后台批量路径不退回。兜底也不经代理池，两者是互替策略。
+    # 见 providers/weather_transport
+    open_meteo_fallback_base: str = ""
+    # 归档兜底是**另一个域名**：自建把 ERA5 挂在同一个 /v1 下，官方是独立的 archive-api
+    open_meteo_archive_fallback_base: str = "https://archive-api.open-meteo.com/v1"
+    # 主源连续失败几次后熔断。熔断期间直接走兜底，不让每个请求先白等一次超时
+    weather_primary_trip_after: int = 3
+    weather_primary_probe_seconds: float = 120.0
+
     ttl_model_meta: int = 300
 
     # 缓存 TTL（秒），见 docs/05 §五
