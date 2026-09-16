@@ -156,8 +156,16 @@ def test_机型档与自定义曲线():
 # ────────────────────────────── 光伏安装方式 ──────────────────────────────
 
 
-def test_单轴跟踪与双面高于固定单面():
-    fc = weather.parse_forecast(_forecast(cloud_today=0))
+def test_单轴跟踪与双面高于固定单面(monkeypatch):
+    # 日期必须钉死：跟踪与双面的增益都随太阳高度角走，且红区错开 ——
+    # 单轴跟踪绕水平南北轴，冬季低太阳高度角时几乎平躺，反而不如有倾角的固定式
+    # （12-21 实测 0.78 倍）；双面靠地面反射，夏季直射占比大时增益最低
+    # （09-21 实测 1.028 倍，压在 1.03 阈值之下）。
+    # 用「今天」当基准会让这两条断言按季节轮流翻红，与代码改动无关。夏至三者余量最大。
+    fixed_today = datetime(2026, 6, 21, tzinfo=ZoneInfo(TZ))
+    monkeypatch.setattr(weather.Forecast, "now", lambda self: fixed_today)
+    start = (fixed_today - timedelta(days=1)).replace(tzinfo=None)
+    fc = weather.parse_forecast(make_forecast(start_date=start, cloud_today=0))
     fixed = prediction.compute(_station("solar"), fc).energy_kwh
     tracking = prediction.compute(_station("solar", mounting="single_axis"), fc).energy_kwh
     bifacial = prediction.compute(_station("solar", bifacial=True), fc).energy_kwh
