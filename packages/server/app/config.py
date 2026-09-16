@@ -68,16 +68,20 @@ class Settings(BaseSettings):
     weather_proxy_exit_probe: str = ""
     # 候选节点上限。真正决定额度宽度的是**实测独立出口数**，不是候选数 ——
     # 免费列表里能连通并测出独立出口的通常只有一到三成，所以候选要远多于目标出口。
-    weather_proxy_candidates: int = 100
+    # 实测通过率约 5%（100 个候选实测出 5 个独立出口），要 20 个出口就得按这个比例备候选。
+    weather_proxy_candidates: int = 500
     weather_proxy_target_exits: int = 20
     weather_proxy_min_exits: int = 5
     # 同一出口最多留几个节点作连接备用；多出来的不再算独立额度，见代理池 _observe_exit
     weather_proxy_nodes_per_exit: int = 2
-    # 后台检测：每轮候选数、并发、列表刷新间隔、低水位补充的最小间隔
-    weather_proxy_probe_per_round: int = 20
-    weather_proxy_probe_concurrency: int = 2
+    # 后台检测：每轮候选数、并发、列表刷新间隔、低水位补充的最小间隔。
+    # 候选数决定这两个值：500 个候选按每轮 20 个、并发 2 探，探完一遍要两个多小时，
+    # 掉线的出口补不回来。死候选的代价只是两次 4 秒超时，不花气象额度（拿不到出口就
+    # 不会去打 meta.json），所以这里可以放开。
+    weather_proxy_probe_per_round: int = 100
+    weather_proxy_probe_concurrency: int = 8
     weather_proxy_refresh_seconds: int = 900
-    weather_proxy_topup_seconds: int = 300
+    weather_proxy_topup_seconds: int = 120
     weather_proxy_drop_streak: int = 5
     # 种子文件多久算过期。实测 31 小时前的种子仍有四成能连上游，候选反正都要实测，
     # 24 小时一刀切只会让升级后无从引导。

@@ -452,21 +452,24 @@ class ProxyPool:
 
     async def _run(self):
         self.load()
-        next_refresh = 0.0
+        next_refresh = next_probe = 0.0
         while True:
             try:
                 now = time.monotonic()
-                low = self.ready_exits(time.time()) < settings.weather_proxy_min_exits
-                # 低水位提前补充，但两轮至少隔 5 分钟，别把失败的列表源打成循环抓取。
-                due = now >= next_refresh or (
-                    low and now - self._topped_up >= settings.weather_proxy_topup_seconds
-                )
-                if due:
-                    self._topped_up = now
+                low = self.ready_exits(time.time()) < settings.weather_proxy_target_exits
+                # 抓列表和探候选是两件事，节奏也该分开。候选还没探完就再抓一遍列表，
+                # 等于拿新候选去挤掉还没验过的老候选，出口数反而上不来。
+                if now >= next_refresh:
                     refreshed = await self.refresh()
                     # 附少量随机延迟，多实例不要卡在同一秒抓同一个列表
                     base = settings.weather_proxy_refresh_seconds if refreshed else 300
                     next_refresh = now + base + random.uniform(0, base * 0.1)
+                    next_probe = time.monotonic()
+                elif low and now >= next_probe and self._unprobed():
+                    # 低水位且手上还有没验过的候选：只探，不抓列表。
+                    await self._probe_round()
+                    self.report()
+                    next_probe = time.monotonic() + settings.weather_proxy_topup_seconds
                 self.save()
             except Exception:  # 后台故障不结束维护任务；不打印上游响应。
                 log.exception("代理池刷新失败，保留已验证代理")
@@ -571,6 +574,12 @@ class ProxyPool:
             if ip == DIRECT or ip in alive or e.cooldown > now or e.day.used(now)
         }
 
+    def _unprobed(self) -> int:
+        now = time.time()
+        return sum(
+            1 for n in self.nodes.values() if not n.usable(now) and not n.busy and n.cooldown <= now
+        )
+
     async def _probe_round(self):
         """按预算检测候选：先测出口，再测目标服务。检测也计项目预算。"""
         now = time.time()
@@ -586,9 +595,13 @@ class ProxyPool:
             await asyncio.gather(*(self._probe(n) for n in candidates[offset : offset + width]))
 
     async def _probe(self, node: Node):
+        start = time.monotonic()
         try:
             self._check_pause()
             if not await self._observe_exit(node):
+                # 必须记一次失败：否则拿不到出口的候选没有冷却、streak 不涨，
+                # 既永远不会被淘汰，又每轮都占着探测名额 —— 候选一多就全是它们。
+                self._record(node, None, time.monotonic() - start, False)
                 return
             item = self.exits.setdefault(node.exit_ip, Exit(node.exit_ip))
             if not item.free(time.time()) or not item.room(1, time.time()):

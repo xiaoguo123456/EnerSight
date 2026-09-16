@@ -503,6 +503,40 @@ async def test_列表全部失败不淘汰已有节点(pool, monkeypatch):
     assert pool.ready_exits(time.time()) == 3
 
 
+async def test_出口探测失败的候选会被冷却并淘汰(pool, monkeypatch):
+    """死候选不记失败就会永远占着探测名额 —— 候选提到几百个时这是致命的。"""
+    node = Node("http://8.8.4.4:8080")
+    pool.nodes[node.proxy] = node
+    mock_clients(monkeypatch, lambda *_: httpx.Response(500))
+    await pool._probe(node)
+    assert node.failures == 1
+    assert node.streak == 1
+    assert node.cooldown > time.time()
+    assert node not in [
+        n for n in pool.nodes.values() if not n.usable(time.time()) and n.cooldown <= time.time()
+    ]
+
+
+async def test_低水位只探候选不重抓列表(pool, monkeypatch):
+    """候选还没探完就再抓一遍列表，等于拿新候选挤掉还没验过的老候选。"""
+    for n in pool.nodes.values():
+        n.exit_checked_at = 0  # 全部待复核
+    hits = {"list": 0}
+
+    def handler(proxy, req):
+        if str(req.url).startswith(module.SOURCE.split("?")[0]):
+            hits["list"] += 1
+            return httpx.Response(200, json={"data": []})
+        if str(req.url).startswith(module.EXIT_PROBE):
+            return httpx.Response(200, text=EXITS[0])
+        return httpx.Response(200, json={"last_run_initialisation_time": 1})
+
+    mock_clients(monkeypatch, handler)
+    assert pool._unprobed() == 3
+    await pool._probe_round()
+    assert hits["list"] == 0  # 只探，没抓列表
+
+
 async def test_候选上限可配置(pool, monkeypatch):
     monkeypatch.setattr(settings, "weather_proxy_candidates", 4)
     rows = [{"proxy": f"http://8.8.8.{i}:8080", "ssl": True} for i in range(1, 20)]

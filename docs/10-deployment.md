@@ -111,15 +111,15 @@ JSON，始终验证目标证书，不发送业务身份信息；统一入口仍�
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `WEATHER_PROXY_POOL_ENABLED` | false | 总开关；关闭即直连 |
-| `WEATHER_PROXY_CANDIDATES` | 100 | 候选节点上限 |
+| `WEATHER_PROXY_CANDIDATES` | 500 | 候选节点上限。实测通过率约 5%，要 20 个出口就得按这个比例备候选 |
 | `WEATHER_PROXY_TARGET_EXITS` / `_MIN_EXITS` | 20 / 5 | 可用独立出口的目标与低水位线 |
 | `WEATHER_PROXY_NODES_PER_EXIT` | 2 | 同出口保留几个节点作连接备用 |
 | `WEATHER_PROXY_EXIT_UNITS_PER_MINUTE/_HOUR/_DAY` | 300 / 2,000 / 5,000 | 每出口自设保守阈值，按坐标数计，不是上游承诺额度 |
 | `WEATHER_PROXY_SLOTS` / `_BACKGROUND_SLOTS` | 4 / 2 | 全局并发与后台任务名额（每出口并发恒为 1） |
 | `WEATHER_PROXY_ATTEMPTS` / `_DEADLINE` | 2 / 14 秒 | 一个用户请求最多几次实际访问、总时间 |
 | `WEATHER_PROXY_REQUEST_TIMEOUT` / `_PROBE_TIMEOUT` / `_EXIT_TIMEOUT` | 6 / 4 / 4 秒 | 单次传输、气象探测、出口探测超时 |
-| `WEATHER_PROXY_REFRESH_SECONDS` / `_TOPUP_SECONDS` | 900 / 300 | 列表刷新间隔、低水位补充的最小间隔 |
-| `WEATHER_PROXY_PROBE_PER_ROUND` / `_PROBE_CONCURRENCY` | 20 / 2 | 每轮检测的候选数与并发 |
+| `WEATHER_PROXY_REFRESH_SECONDS` / `_TOPUP_SECONDS` | 900 / 120 | 列表刷新间隔、低水位补探的最小间隔 |
+| `WEATHER_PROXY_PROBE_PER_ROUND` / `_PROBE_CONCURRENCY` | 100 / 8 | 每轮检测的候选数与并发。跟着候选数走：500 个候选按 20 / 2 探，探完一遍要两个多小时，掉线的出口补不回来 |
 | `WEATHER_PROXY_EXIT_TTL` / `_HEALTH_TTL` | 900 / 1,800 秒 | 出口观测有效期、气象健康有效期 |
 | `WEATHER_PROXY_DROP_STREAK` | 5 | 连续失败几次退出活跃池 |
 | `WEATHER_PROXY_LEDGER_RECOVER_SECONDS` | 3,600 | 账本损坏或缺失时该出口的暂停时长 |
@@ -157,8 +157,10 @@ JSON，始终验证目标证书，不发送业务身份信息；统一入口仍�
 
 ### 运行时行为
 
-- 后台按 `REFRESH_SECONDS` 增量拉取官方列表（附少量随机延迟），可用出口低于 `MIN_EXITS`
-  时提前补充。列表优先直连，失败后最多用两个已有节点获取同一 HTTPS 列表；全失败则保留
+- **抓列表与探候选是两个节奏。** 按 `REFRESH_SECONDS` 增量拉列表（附少量随机延迟）；
+  出口数低于目标且手上还有没验过的候选时，每 `TOPUP_SECONDS` 只跑一轮探测、**不重抓列表** ——
+  候选还没探完就再抓一遍，等于拿新候选挤掉还没验过的老候选，出口数反而上不来。
+  探测本身不花气象额度：拿不到出口的候选根本不会去打 `meta.json`，代价只有两次出口探测超时。列表优先直连，失败后最多用两个已有节点获取同一 HTTPS 列表；全失败则保留
   并复检已有条目，五分钟后再试。首次部署可写入 `data/weather-proxy-seeds.json`
   （公网代理 URL 数组、一天内的官方列表快照）；候选必须实测通过才能承接业务。
 - 入池两步：先查实际出口（两次一致才认，动态出口不入池），再取一次模型元数据验证目标可用；
