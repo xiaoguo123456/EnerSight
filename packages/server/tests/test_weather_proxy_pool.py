@@ -108,15 +108,38 @@ async def test_出口未确认的节点不承接业务(pool, monkeypatch):
     assert not calls
 
 
-async def test_首次入池要两次一致的出口(pool, monkeypatch):
+async def test_首次入池同一轮里连两次确认出口(pool, monkeypatch):
+    """两次独立连接，但在同一轮完成 —— 等下一轮确认会让冷启动空窗一个刷新周期。"""
     node = Node("http://8.8.4.4:8080")
     pool.nodes[node.proxy] = node
-    seen = iter([EXITS[0], EXITS[0]])
-    mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": next(seen)}))
-    assert not await pool._observe_exit(node)  # 第一次只记录，不入池
-    assert node.exit_ip == ""
+    calls = mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": EXITS[0]}))
     assert await pool._observe_exit(node)
     assert node.exit_ip == EXITS[0]
+    assert len(calls) == 2  # 两条独立连接
+
+
+async def test_出口两次不一致不入池(pool, monkeypatch):
+    node = Node("http://8.8.4.4:8080")
+    pool.nodes[node.proxy] = node
+    seen = iter([EXITS[0], EXITS[1]])
+    mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": next(seen)}))
+    assert not await pool._observe_exit(node)
+    assert node.exit_ip == ""
+
+
+def test_旧版状态的地址留作候选(pool):
+    import json
+
+    pool.state.write_text(
+        json.dumps(
+            {"entries": [{"proxy": PROXIES[0], "successes": 9}, {"proxy": "http://10.0.0.1:1"}]}
+        )
+    )
+    other = ProxyPool(pool.state)
+    other.load()
+    assert list(other.nodes) == [PROXIES[0]]  # 内网地址过滤掉
+    assert other.nodes[PROXIES[0]].successes == 0  # 统计不继承
+    assert not other.nodes[PROXIES[0]].usable(time.time())  # 出口仍要重新实测
 
 
 async def test_出口变化时保留旧出口账本(pool, monkeypatch):
@@ -259,9 +282,12 @@ async def test_失败不与Provider重试相乘(pool, monkeypatch):
 async def test_空池立即失败且不直连(pool, monkeypatch):
     pool.nodes.clear()
     calls = mock_clients(monkeypatch, lambda *_: pytest.fail("不应请求网络"))
-    with pytest.raises(UpstreamUnavailable):
+    with pytest.raises(UpstreamUnavailable) as exc:
         await pool.get(URL)
     assert not calls
+    # 没有 SSH 时这条消息是唯一能看到池子状态的地方；只给计数，不暴露代理地址
+    assert "候选 0" in exc.value.message and "列表刷新尚未进行" in exc.value.message
+    assert not any(p.split("//")[1] in exc.value.message for p in PROXIES)
 
 
 async def test_全部出口冷却时降级(pool, monkeypatch):

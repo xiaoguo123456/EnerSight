@@ -172,6 +172,7 @@ class ProxyPool:
         self._slots: asyncio.Semaphore | None = None
         self._background: asyncio.Semaphore | None = None
         self._topped_up = 0.0
+        self.last_refresh: tuple[float, bool] = (0.0, False)
 
     # ---- 生命周期 ----
 
@@ -217,6 +218,12 @@ class ProxyPool:
                 self.nodes[node.proxy] = node
         for row in raw.get("exits", [])[: settings.weather_proxy_candidates]:
             self._exit_from(row, saved_at)
+        # 旧版（v1）状态只有 entries，没有出口信息。地址仍是有用的候选，直接扔掉等于
+        # 升级后从零开始等列表源，境内还未必拉得到。统计不继承，出口照样要重新实测。
+        for row in raw.get("entries", [])[: settings.weather_proxy_candidates]:
+            proxy = row.get("proxy") if isinstance(row, dict) else None
+            if public_proxy(proxy) and len(self.nodes) < settings.weather_proxy_candidates:
+                self.nodes.setdefault(proxy, Node(proxy))
         # 出口账本缺失时不能当成零用量重新开张 —— 上游的小时与日窗口不会因为我们重启而清零。
         now = time.time()
         for node in self.nodes.values():
@@ -431,6 +438,7 @@ class ProxyPool:
                 break
             except (httpx.HTTPError, TimeoutError, ValueError):
                 log.info("代理列表获取失败 route=%s", route or "direct")
+        self.last_refresh = (time.time(), refreshed)
         self._prune(refreshed)
         for row in rows:
             if len(self.nodes) >= settings.weather_proxy_candidates:
@@ -519,7 +527,12 @@ class ProxyPool:
             pass
 
     async def _observe_exit(self, node: Node) -> bool:
-        """查实际出口。首次入池要两次独立连接得到同一个 IP 才认。"""
+        """查实际出口。首次入池要两次独立连接得到同一个 IP 才认。
+
+        两次连接在**同一轮**里做完：一轮一次、下一轮再确认的话，冷启动要等满一个刷新
+        周期（15 分钟）才有第一个可用出口，这期间所有气象请求都是 502。策略要求的是
+        两次独立连接，不是两轮。
+        """
         now = time.time()
         if node.exit_fresh(now):
             return True
@@ -528,9 +541,11 @@ class ProxyPool:
             return False
         if not node.exit_ip:
             if node.exit_seen != observed:
-                # 第一次只记下来，下一轮再确认；动态出口不会两次给同一个 IP。
                 node.exit_seen = observed
-                return False
+                # 动态出口不会两次给同一个 IP，这一次就能判掉，不必等下一轮。
+                again = await self._exit_ip(node)
+                if again != observed:
+                    return False
             node.exit_ip = observed
         elif node.exit_ip != observed:
             # 出口换了：旧出口的计数和冷却留着，节点重新关联。
@@ -695,6 +710,18 @@ class ProxyPool:
             return None
         return min(usable, key=lambda n: (self.exits[n.exit_ip].last_used, *n.score()))
 
+    def _empty_reason(self) -> str:
+        """空池错误带上计数与列表刷新结果，只有计数没有地址，可以直接给客户端看。"""
+        now = time.time()
+        when, ok = self.last_refresh
+        age = f"{int(now - when)} 秒前" if when else "尚未进行"
+        paused = sum(e.cooldown > now for e in self.exits.values())
+        return (
+            f"气象代理池暂无可用出口（候选 {len(self.nodes)}、"
+            f"可用出口 {self.ready_exits(now)}、冷却中 {paused}；"
+            f"上次列表刷新{age}{'成功' if ok else '失败'}），请稍后重试"
+        )
+
     async def get(self, url: str, *, background: bool = False, **kwargs) -> httpx.Response:
         try:
             async with asyncio.timeout(settings.weather_proxy_deadline):
@@ -735,7 +762,7 @@ class ProxyPool:
                     self._check_pause()
                 node = self._pick(cost, time.time(), skip, skip_exits)
                 if node is None:
-                    raise UpstreamUnavailable("气象代理池暂无可用出口，请稍后重试")
+                    raise UpstreamUnavailable(self._empty_reason())
                 skip.add(node.proxy)
                 skip_exits.add(node.exit_ip)
                 self.exits[node.exit_ip].charge(cost, time.time())
