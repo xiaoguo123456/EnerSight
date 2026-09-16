@@ -71,6 +71,10 @@ AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志�
 - 走代理池时归属由池按出口处理，Provider 与后台任务**不再**各设一次全局冷却，
   否则一个出口的分钟限流会停掉整池。
 
+自建 Open-Meteo 以摆脱额度与商用限制的评估见[自建评估](./2026-09-16-open-meteo-self-host.md)，运行手册见 `deploy/open-meteo/`。2026-09-16 已在生产 ECS 上实测一轮：接口与 15 个字段完全正确，但北京到 us-west-2 单流只有 20–36 KB/s、16 并发 294 KB/s，20 个坐标的全字段请求 1,800 秒超时未取完，**这台机器不可用，瓶颈是带宽不是内存**（容器峰值 60 MB）。验证容器在 `/opt/open-meteo`，已 stop、未接流量、未改应用配置。另实测到数据桶按变量分别更新、同一响应会混两个起报批次（同 chunk 各变量 Last-Modified 跨度约 30 分钟），换机器也要处理。
+
+自建实例已于同日部署在 Buffalo 的 `192.236.166.152`（`/opt/open-meteo`，仅监听回环 8090）：到 us-west-2 单流 8.2 MB/s，全冷单坐标 5.6 秒、热缓存 12 ms、100 坐标一次 334 秒，15 个字段与官方逐点最大绝对差 0.0000。**尚未对外暴露、尚未切流量**，暴露方案与批次错位处理见评估文档第九节。
+
 **2026-09-15 移除 Cloudflare 气象转发**：按用户要求删除 `deploy/weather-relay` Worker 代码与
 `ENERSIGHT_WEATHER_RELAY_BASE / _TOKEN` 配置项。Cloudflare 控制台上的 `enersight-weather-test`、
 `enersight-weather-prod` Worker 及 `weather-test.weishenai.cn`、`weather.weishenai.cn` 域名需另行停用或删除。

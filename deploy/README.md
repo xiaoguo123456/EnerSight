@@ -7,6 +7,7 @@
 - `scripts/deploy.sh`：固定摘要镜像发布、数据库就绪检查、失败恢复上一镜像。
 - `scripts/rollback.sh`：回滚应用，保留数据库。
 - `gateway/`：独立的 platform 域名共享 Nginx，根路径保留现有 New API，业务按前缀路由。
+- `open-meteo/`：自建气象 API 的 Compose 与运行手册，独立 Compose 项目。生产机已实测过一轮并停掉 —— **北京带宽不够，不要装在这台机器上**，见 [自建评估](../docs/2026-09-16-open-meteo-self-host.md) 第八节。
 - `../.github/workflows/prod.yml`：手动选择 main 中的提交，经检查后构建镜像、推送 ACR、部署 ECS。
 
 完整配置、Secrets、首次切换和实施状态见 [部署说明](../docs/10-deployment.md)。

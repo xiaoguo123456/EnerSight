@@ -10,6 +10,7 @@
 - fleet_prediction       每日 0/12 点 预热全目录汇总
 - fleet_history          每 10 分钟   归档全目录日快照
 - model_resolution       每日一次    复核自动选择模型是否仍等于 ECMWF IFS（docs/17 §二）
+- weather_upstream       每 5 分钟    探自建气象实例，熔断/恢复写日志（仅配了兜底时注册）
 """
 
 import asyncio
@@ -282,9 +283,36 @@ def _make_backfill_address(app: FastAPI):
 
 
 def start(app: FastAPI) -> AsyncIOScheduler | None:
-    if not settings.enable_scheduler and not settings.map_scheduler_enabled:
+    if not (
+        settings.enable_scheduler
+        or settings.map_scheduler_enabled
+        or settings.open_meteo_fallback_base
+    ):
         return None
     sched = AsyncIOScheduler(timezone="UTC")
+    if settings.open_meteo_fallback_base:
+        # 自建气象实例的健康探测。放在总开关之前：关了定时任务的实例（测试环境）
+        # 也要能看出主源挂了，否则只能等用户面报错才发现。
+        # 熔断状态是进程内的，所以每个实例各探各的。
+        from app.providers import weather_transport
+
+        async def probe_weather():
+            ok = await weather_transport.probe(app.state.http)
+            log.log(
+                logging.INFO if ok else logging.WARNING,
+                "weather_upstream: %s",
+                weather_transport.status(),
+            )
+
+        sched.add_job(
+            probe_weather,
+            "interval",
+            minutes=5,
+            id="weather_upstream",
+            next_run_time=datetime.now(UTC) + timedelta(seconds=20),
+            max_instances=1,
+            coalesce=True,
+        )
     if settings.map_scheduler_enabled:
         from app.jobs import map_prepare
 
