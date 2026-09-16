@@ -114,7 +114,7 @@ async def test_首次入池同一轮里连两次确认出口(pool, monkeypatch):
     """两次独立连接，但在同一轮完成 —— 等下一轮确认会让冷启动空窗一个刷新周期。"""
     node = Node("http://8.8.4.4:8080")
     pool.nodes[node.proxy] = node
-    calls = mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": EXITS[0]}))
+    calls = mock_clients(monkeypatch, lambda *_: httpx.Response(200, text=EXITS[0]))
     assert await pool._observe_exit(node)
     assert node.exit_ip == EXITS[0]
     assert len(calls) == 2  # 两条独立连接
@@ -124,7 +124,7 @@ async def test_出口两次不一致不入池(pool, monkeypatch):
     node = Node("http://8.8.4.4:8080")
     pool.nodes[node.proxy] = node
     seen = iter([EXITS[0], EXITS[1]])
-    mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": next(seen)}))
+    mock_clients(monkeypatch, lambda *_: httpx.Response(200, text=next(seen)))
     assert not await pool._observe_exit(node)
     assert node.exit_ip == ""
 
@@ -148,7 +148,7 @@ async def test_出口变化时保留旧出口账本(pool, monkeypatch):
     node = pool.nodes[PROXIES[0]]
     pool.exits[EXITS[0]].charge(30, time.time())
     node.exit_checked_at = 0  # 观测过期，强制复核
-    mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": "45.67.89.10"}))
+    mock_clients(monkeypatch, lambda *_: httpx.Response(200, text="45.67.89.10"))
     assert await pool._observe_exit(node)
     assert node.exit_ip == "45.67.89.10"
     assert pool.exits[EXITS[0]].minute.used(time.time()) == 30  # 旧账不清零
@@ -418,6 +418,38 @@ def test_启动候选必须经过检测(pool):
 # ---- 后台维护 ----
 
 
+@pytest.mark.parametrize(
+    ("body", "want"),
+    [
+        ('{"proxies": [{"proxy": "http://8.8.8.8:8080", "ssl": true}]}', ["http://8.8.8.8:8080"]),
+        (
+            '{"data": [{"ip": "8.8.8.8", "port": "8080", "protocols": ["http"]}]}',
+            ["http://8.8.8.8:8080"],
+        ),
+        ("8.8.8.8:8080\n\n1.1.1.1:3128\n", ["http://8.8.8.8:8080", "http://1.1.1.1:3128"]),
+        ('["8.8.8.8:8080"]', ["http://8.8.8.8:8080"]),
+        ("10.0.0.1:8080\n127.0.0.1:1", []),  # 内网一律过滤
+    ],
+)
+def test_列表源三种格式都能解析(body, want):
+    """换源只改配置 —— 默认源在境内拉不通就是这么发现的。"""
+    assert sorted(module.candidate_proxies(body)) == sorted(want)
+
+
+@pytest.mark.parametrize(
+    ("body", "want"),
+    [
+        ("103.237.102.191\n", "103.237.102.191"),
+        ('{"ip": "103.237.102.191"}', "103.237.102.191"),
+        ("fl=471f344\nh=www.cloudflare.com\nip=103.237.102.191\n", "103.237.102.191"),
+        ("<html>nope</html>", None),
+        ("10.0.0.1", None),
+    ],
+)
+def test_出口探测三种返回都能解析(body, want):
+    assert module.parse_exit(body) == want
+
+
 async def test_后台列表过滤与探测计预算(pool, monkeypatch):
     pool.nodes.clear()
     pool.exits.clear()
@@ -435,13 +467,12 @@ async def test_后台列表过滤与探测计预算(pool, monkeypatch):
             )
         assert proxy == PROXIES[0]
         if str(req.url).startswith(module.EXIT_PROBE):
-            return httpx.Response(200, json={"ip": EXITS[0]})
+            return httpx.Response(200, text=EXITS[0])
         assert str(req.url) == module.PROBE
         return httpx.Response(200, json={"last_run_initialisation_time": 12345})
 
     mock_clients(monkeypatch, handler)
-    await pool.refresh()  # 第一轮只确认出口
-    await pool.refresh()  # 第二轮出口一致才验证气象
+    await pool.refresh()
     assert list(pool.nodes) == [PROXIES[0]]
     assert pool.nodes[PROXIES[0]].exit_ip == EXITS[0]
     assert pool.ready_exits(time.time()) == 1

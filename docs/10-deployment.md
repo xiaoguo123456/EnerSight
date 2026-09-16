@@ -125,10 +125,35 @@ JSON，始终验证目标证书，不发送业务身份信息；统一入口仍�
 | `WEATHER_PROXY_LEDGER_RECOVER_SECONDS` | 3,600 | 账本损坏或缺失时该出口的暂停时长 |
 | `WEATHER_PROXY_DIRECT_FALLBACK` | true | 池子给不出出口时退回直连 |
 | `WEATHER_PROXY_DIRECT_UNITS_PER_MINUTE/_HOUR/_DAY` | 480 / 4,000 / 8,000 | 直连出口额度，免费层上限各留两成余量 |
-| `WEATHER_PROXY_SOURCE` / `_EXIT_PROBE` | 空 | 覆盖免费列表与出口探测地址，留空用代码默认 |
+| `WEATHER_PROXY_SOURCE` / `_EXIT_PROBE` | 空 | 覆盖免费列表与出口探测地址，留空用代码默认（见下「源与探测点的选型」） |
+| `WEATHER_PROXY_SEED_MAX_AGE` | 7 天 | 种子文件多久算过期 |
 
 调用方那边还有一个相关旋钮：`FLEET_COORDS_PER_REQUEST`（默认 100）必须小于
 `EXIT_UNITS_PER_MINUTE`，否则单批成本超过出口分钟额度，池会直接报「请拆批」而不是静默超发。
+
+### 源与探测点的选型（2026-09-16 测试机实测）
+
+默认值不是随便挑的，是在测试机（北京 ECS）上按可达性选出来的：
+
+| 列表源 | 结果 |
+| --- | --- |
+| `api.proxyscrape.com`（原默认） | **直连超时拉不到**，池子因此永远是空的 |
+| `proxylist.geonode.com`（现默认） | 200 / 0.75 s，JSON 带 `ip`/`port`/`lastChecked` |
+| `cdn.jsdelivr.net` 的 TheSpeedX/PROXY-List 纯文本镜像 | 200 / 1.55 s，2,973 行 `ip:port` |
+
+解析器三种格式都吃（ProxyScrape 的 `proxies[]`、geonode 的 `data[]`、纯文本每行 `ip:port`），
+换源只改配置。纯文本镜像有几千行且长期不变，入池前会打乱顺序 —— 固定取前 N 个等于所有人
+都在用同一批死代理。
+
+出口探测点要选**代理能访问到**的，不是我们能访问到的。同一批代理实测：
+
+| 探测点 | 通过率 |
+| --- | --- |
+| `api.ipify.org`（原默认） | 3/5 |
+| `checkip.amazonaws.com`（现默认）、`icanhazip.com`、`cloudflare.com/cdn-cgi/trace`、`ifconfig.me/ip` | 5/5 |
+
+用 ipify 会把四成本来能连上游的代理挡在池外 —— 12 个种子代理里 5 个能连 Open-Meteo，
+只有 2 个能过 ipify。出口解析同时支持纯文本 IP、JSON 与 `ip=` 这种 key=value 行。
 
 ### 运行时行为
 

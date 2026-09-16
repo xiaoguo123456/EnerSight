@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     weather_proxy_refresh_seconds: int = 900
     weather_proxy_topup_seconds: int = 300
     weather_proxy_drop_streak: int = 5
+    # 种子文件多久算过期。实测 31 小时前的种子仍有四成能连上游，候选反正都要实测，
+    # 24 小时一刀切只会让升级后无从引导。
+    weather_proxy_seed_max_age: int = 7 * 86400
     # 出口观测有效期与气象健康有效期：过期的节点先复核再承接业务
     weather_proxy_exit_ttl: int = 900
     weather_proxy_health_ttl: int = 1800

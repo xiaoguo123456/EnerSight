@@ -33,9 +33,16 @@ from app.providers.budget import request_cost, retry_seconds, scope_of, shared
 log = logging.getLogger(__name__)
 
 # 免费列表与两个探测目标。都可用配置覆盖，便于换源或在测试里指向本地桩。
-SOURCE = "https://api.proxyscrape.com/v4/free-proxy-list/get"
+#
+# 选型依据是 2026-09-16 在测试机（北京 ECS）上的实测，见 docs/10「气象代理池」：
+# ProxyScrape 直连超时拉不到列表；geonode 0.75 秒返回，`cdn.jsdelivr.net` 的
+# TheSpeedX/PROXY-List 纯文本镜像 1.55 秒返回，两种格式都支持，换源只改配置。
+SOURCE = "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&protocols=http"
 PROBE = "https://api.open-meteo.com/data/dwd_icon/static/meta.json"
-EXIT_PROBE = "https://api.ipify.org"
+# 出口探测点要「代理能访问到」，不是「我们能访问到」。同样一批代理实测：
+# checkip / icanhazip / cloudflare-trace / ifconfig 都是 5/5，api.ipify.org 只有 3/5 ——
+# 用 ipify 会把四成本来能干活的代理挡在池外。返回纯文本 IP，解析见 _exit_ip。
+EXIT_PROBE = "https://checkip.amazonaws.com"
 ALLOWED_HOSTS = ("api.open-meteo.com", "archive-api.open-meteo.com")
 # 直连在账本里也是一个出口：服务器自己的 IP。兜底不记账就等于回到最初那个问题 ——
 # 悄悄把这个 IP 的日额度烧完，而且看不见是谁烧的。
@@ -72,6 +79,59 @@ def public_proxy(value: str) -> bool:
         )
     except (ValueError, TypeError):
         return False
+
+
+def parse_exit(body: str) -> str | None:
+    """出口探测的返回：纯文本 IP、JSON，或 cloudflare trace 那种 key=value 行。"""
+    body = body.strip()[:2000]
+    direct = public_ip(body)
+    if direct:
+        return direct
+    with suppress(ValueError, TypeError):
+        raw = json.loads(body)
+        found = public_ip(raw.get("ip") if isinstance(raw, dict) else raw)
+        if found:
+            return found
+    for line in body.splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "ip":
+            return public_ip(value)
+    return None
+
+
+def candidate_proxies(body: str) -> list[str]:
+    """把列表源的返回归一成代理 URL。
+
+    三种格式：ProxyScrape 的 {"proxies":[{"proxy":..}]}、geonode 的
+    {"data":[{"ip":..,"port":..}]}、以及纯文本镜像的每行 ip:port。
+    换源只改配置，不用改代码 —— 上一次换源就是因为默认源在境内拉不通。
+    """
+
+    def one(row: object) -> str | None:
+        if isinstance(row, str):
+            value = row.strip()
+            value = value if "://" in value else f"http://{value}"
+            return value if public_proxy(value) else None
+        if not isinstance(row, dict):
+            return None
+        if row.get("proxy"):
+            return one(str(row["proxy"]))
+        if row.get("ip") and row.get("port"):
+            return one(f"{row['ip']}:{row['port']}")
+        return None
+
+    rows: list = []
+    with suppress(ValueError, TypeError):
+        raw = json.loads(body)
+        if isinstance(raw, dict):
+            rows = raw.get("proxies") or raw.get("data") or []
+        elif isinstance(raw, list):
+            rows = raw
+    if not rows:
+        rows = [line for line in body.splitlines() if line.strip()]
+    if not isinstance(rows, list):
+        raise ValueError("代理列表格式错误")
+    return [v for v in (one(r) for r in rows) if v]
 
 
 def public_ip(value: object) -> str | None:
@@ -316,7 +376,7 @@ class ProxyPool:
         """首次部署可带入官方列表快照，仅作未验证候选；绝不直接标记可用。"""
         seed = self.state.with_name("weather-proxy-seeds.json")
         try:
-            if time.time() - seed.stat().st_mtime > 86400:
+            if time.time() - seed.stat().st_mtime > settings.weather_proxy_seed_max_age:
                 return
             for proxy in json.loads(seed.read_text()):
                 if len(self.nodes) >= settings.weather_proxy_candidates:
@@ -413,33 +473,33 @@ class ProxyPool:
                 next_refresh = time.monotonic() + 60
             await asyncio.sleep(30)
 
-    async def _fetch_rows(self, proxy=None):
+    async def _fetch_rows(self, proxy=None) -> list[str]:
+        url = settings.weather_proxy_source or SOURCE
+        params = None
+        if "proxyscrape.com" in urlsplit(url).hostname or "":
+            params = {
+                "request": "display_proxies",
+                "protocol": "http",
+                "format": "json",
+                "proxy_format": "protocolipport",
+                "timeout": 3000,
+                "ssl": "yes",
+                "anonymity": "elite",
+                "limit": settings.weather_proxy_candidates,
+            }
         async with httpx.AsyncClient(  # noqa: SIM117
-            proxy=proxy, timeout=6, trust_env=False, verify=True, follow_redirects=False
+            proxy=proxy, timeout=8, trust_env=False, verify=True, follow_redirects=True
         ) as client:
-            async with client.stream(
-                "GET",
-                settings.weather_proxy_source or SOURCE,
-                params={
-                    "request": "display_proxies",
-                    "protocol": "http",
-                    "format": "json",
-                    "proxy_format": "protocolipport",
-                    "timeout": 3000,
-                    "ssl": "yes",
-                    "anonymity": "elite",
-                    "limit": settings.weather_proxy_candidates,
-                },
-            ) as response:
+            async with client.stream("GET", url, params=params) as response:
                 response.raise_for_status()
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
                     body.extend(chunk)
-                    if len(body) > 2_000_000:
+                    if len(body) > 4_000_000:
                         raise ValueError("代理列表过大")
-        rows = json.loads(body).get("proxies", [])
-        if not isinstance(rows, list):
-            raise ValueError("代理列表格式错误")
+        rows = candidate_proxies(body.decode("utf8", "replace"))
+        # 纯文本镜像有几千行且长期不变，固定取前 N 个等于所有人都用同一批死代理。
+        random.shuffle(rows)
         return rows
 
     async def refresh(self) -> bool:
@@ -461,11 +521,10 @@ class ProxyPool:
                 log.info("代理列表获取失败 route=%s", route or "direct")
         self.last_refresh = (time.time(), refreshed)
         self._prune(refreshed)
-        for row in rows:
+        for proxy in rows:
             if len(self.nodes) >= settings.weather_proxy_candidates:
                 break
-            if isinstance(row, dict) and row.get("ssl") is True and public_proxy(row.get("proxy")):
-                self.nodes.setdefault(row["proxy"], Node(row["proxy"]))
+            self.nodes.setdefault(proxy, Node(proxy))
         await self._probe_round()
         self.report()
         return refreshed
@@ -599,8 +658,7 @@ class ProxyPool:
                     res = await client.get(url, params={"format": "json"})
             if res.status_code != 200:
                 return None
-            raw = res.json()
-            return public_ip(raw.get("ip") if isinstance(raw, dict) else raw)
+            return parse_exit(res.text)
         except (httpx.HTTPError, TimeoutError, ValueError, TypeError):
             return None
 
