@@ -37,6 +37,17 @@ SOURCE = "https://api.proxyscrape.com/v4/free-proxy-list/get"
 PROBE = "https://api.open-meteo.com/data/dwd_icon/static/meta.json"
 EXIT_PROBE = "https://api.ipify.org"
 ALLOWED_HOSTS = ("api.open-meteo.com", "archive-api.open-meteo.com")
+# 直连在账本里也是一个出口：服务器自己的 IP。兜底不记账就等于回到最初那个问题 ——
+# 悄悄把这个 IP 的日额度烧完，而且看不见是谁烧的。
+DIRECT = "direct"
+
+
+class PoolExhausted(UpstreamUnavailable):
+    """池子给不出出口（空池、全冷却、无余额，或几次尝试全是传输错误）。
+
+    只有这一种失败才允许退回直连：上游已经回答过的 429、坏响应、400 都不算，
+    换条线路出去只会多烧一份额度。
+    """
 
 
 class ExitLimited(Exception):
@@ -108,6 +119,14 @@ class Exit:
     busy: int = 0
 
     def windows(self) -> tuple[tuple[Window, float], ...]:
+        # 直连出口是服务器自己的 IP，额度已知（免费层 600/分、5,000/小时、10,000/天），
+        # 默认留两成余量；免费代理的额度不知道，只能给保守得多的自设阈值。
+        if self.ip == DIRECT:
+            return (
+                (self.minute, settings.weather_proxy_direct_units_per_minute),
+                (self.hour, settings.weather_proxy_direct_units_per_hour),
+                (self.day, settings.weather_proxy_direct_units_per_day),
+            )
         return (
             (self.minute, settings.weather_proxy_exit_units_per_minute),
             (self.hour, settings.weather_proxy_exit_units_per_hour),
@@ -227,7 +246,7 @@ class ProxyPool:
         # 出口账本缺失时不能当成零用量重新开张 —— 上游的小时与日窗口不会因为我们重启而清零。
         now = time.time()
         for node in self.nodes.values():
-            if node.exit_ip and node.exit_ip not in self.exits:
+            if node.exit_ip and node.exit_ip != DIRECT and node.exit_ip not in self.exits:
                 self.exits[node.exit_ip] = Exit(node.exit_ip)
                 self.exits[node.exit_ip].pause(
                     settings.weather_proxy_ledger_recover_seconds, "账本缺失，待复核", now
@@ -260,7 +279,9 @@ class ProxyPool:
         return node
 
     def _exit_from(self, row: object, saved_at: float) -> None:
-        if not isinstance(row, dict) or public_ip(row.get("ip")) is None:
+        if not isinstance(row, dict) or (
+            row.get("ip") != DIRECT and public_ip(row.get("ip")) is None
+        ):
             return
         item = Exit(str(row["ip"]))
         broken = False
@@ -364,7 +385,7 @@ class ProxyPool:
             n.exit_ip
             for n in self.nodes.values()
             if n.exit_fresh(now) and n.healthy(now) and n.cooldown <= now
-        }
+        } - {DIRECT}
         return sum(1 for ip in ips if ip in self.exits and self.exits[ip].cooldown <= now)
 
     # ---- 后台维护 ----
@@ -488,7 +509,7 @@ class ProxyPool:
         self.exits = {
             ip: e
             for ip, e in self.exits.items()
-            if ip in alive or e.cooldown > now or e.day.used(now)
+            if ip == DIRECT or ip in alive or e.cooldown > now or e.day.used(now)
         }
 
     async def _probe_round(self):
@@ -722,6 +743,31 @@ class ProxyPool:
             f"上次列表刷新{age}{'成功' if ok else '失败'}），请稍后重试"
         )
 
+    def direct(self) -> Exit:
+        """直连出口的账本，常驻。"""
+        return self.exits.setdefault(DIRECT, Exit(DIRECT))
+
+    def direct_ready(self, cost: float) -> bool:
+        """能不能退回直连：开关打开、不在冷却、三个窗口都还有余额。
+
+        共享预算处于冷却时**不**兜底 —— 那是刻意设的保护，绕过去就没有意义了。
+        """
+        if not settings.weather_proxy_direct_fallback:
+            return False
+        if self.paused_until > time.time() or shared.paused_until > time.monotonic():
+            return False
+        now = time.time()
+        item = self.direct()
+        return item.cooldown <= now and item.room(cost, now)
+
+    def charge_direct(self, cost: float) -> None:
+        self.direct().charge(cost, time.time())
+
+    def limit_direct(self, res: httpx.Response) -> str:
+        """直连撞 429：按窗口停直连出口，与代理出口同一套归属规则。"""
+        node = Node(DIRECT, exit_ip=DIRECT, exit_checked_at=time.time())
+        return self._limited(node, res)
+
     async def get(self, url: str, *, background: bool = False, **kwargs) -> httpx.Response:
         try:
             async with asyncio.timeout(settings.weather_proxy_deadline):
@@ -762,7 +808,7 @@ class ProxyPool:
                     self._check_pause()
                 node = self._pick(cost, time.time(), skip, skip_exits)
                 if node is None:
-                    raise UpstreamUnavailable(self._empty_reason())
+                    raise PoolExhausted(self._empty_reason())
                 skip.add(node.proxy)
                 skip_exits.add(node.exit_ip)
                 self.exits[node.exit_ip].charge(cost, time.time())
@@ -783,7 +829,7 @@ class ProxyPool:
             if limited is not None:
                 return limited
             # 抛业务异常，避免 Provider 再乘以 upstream_retries。
-            raise UpstreamUnavailable("气象代理连接失败，请稍后重试")
+            raise PoolExhausted("气象代理连接失败，请稍后重试")
 
 
 class _null:

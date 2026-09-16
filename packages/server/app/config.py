@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     weather_proxy_exit_units_per_day: float = 5000
     # 出口账本读不回来时的暂停时长：不能假定小时与日额度为零使用
     weather_proxy_ledger_recover_seconds: int = 3600
+    # 代理池给不出出口时退回直连。直连在池的账本里也是一个出口，额度与 429 归属照记；
+    # 关掉则池子一空整个气象层就不可用。docs/10「气象代理池」
+    weather_proxy_direct_fallback: bool = True
+    # 直连出口的额度。服务器 IP 走免费层，上限 600/分钟、5,000/小时、10,000/天，
+    # 这里各留两成余量 —— 兜底把日额度打满，就回到了当初上代理池要解决的问题。
+    weather_proxy_direct_units_per_minute: float = 480
+    weather_proxy_direct_units_per_hour: float = 4000
+    weather_proxy_direct_units_per_day: float = 8000
 
     ttl_model_meta: int = 300
 

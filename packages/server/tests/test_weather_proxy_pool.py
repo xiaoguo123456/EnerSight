@@ -48,6 +48,8 @@ def pool(tmp_path, monkeypatch):
     monkeypatch.setattr(shared, "marks", deque())
     monkeypatch.setattr(shared, "paused_until", 0)
     monkeypatch.setattr(settings, "weather_proxy_pool_enabled", True)
+    # 这个文件只测池子本身；退回直连另有 test_weather_transport 覆盖
+    monkeypatch.setattr(settings, "weather_proxy_direct_fallback", False)
     return value
 
 
