@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 import httpx
 
 from app.config import settings
-from app.providers.budget import shared
 from app.providers.open_meteo import META_SLUGS
 from app.providers.weather_transport import weather_get
 
@@ -53,7 +52,6 @@ async def check(http: httpx.AsyncClient) -> bool:
         series: dict[str, dict] = {}
         for model in ("best_match", ASSUMED):
             try:
-                await shared.take(1)
                 res = await weather_get(
                     http,
                     f"{settings.open_meteo_base}/forecast",
@@ -67,9 +65,7 @@ async def check(http: httpx.AsyncClient) -> bool:
                         "models": model,
                     },
                 )
-                if res.status_code == 429:
-                    shared.retry_after(res.headers.get("Retry-After"))
-                res.raise_for_status()
+                res.raise_for_status()  # 429 的冷却已由 weather_transport 处理
                 series[model] = res.json()["minutely_15"]
             except Exception:  # noqa: BLE001
                 log.warning("model_resolution: 复核请求失败 %s %s", model, (lat, lon))

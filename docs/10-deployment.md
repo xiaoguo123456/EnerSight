@@ -56,7 +56,20 @@ AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志�
 
 ## 气象出网
 
-后端的 Open-Meteo 点预报、历史小时资料和模型元数据统一经 `app/providers/weather_transport.weather_get` 出网：默认直连；测试环境开启免费代理池试验（下节）时经代理池请求，失败不退回直连。直连受 Open-Meteo 对服务器出口 IP 的额度限制。原生地图栅格（`openmeteo.s3.amazonaws.com`）下载不经此入口。
+后端的 Open-Meteo 点预报、历史小时资料、云量降级网格和模型元数据统一经
+`app/providers/weather_transport.weather_get` 出网：默认直连；开启代理池（下节）时经代理池请求，
+失败不退回直连。直连受 Open-Meteo 对服务器出口 IP 的额度限制。原生地图栅格
+（`openmeteo.s3.amazonaws.com`）下载不经此入口。
+
+这个入口同时是**唯一**处理预算与限流归属的地方（2026-09-16）：
+
+- 项目总预算 `shared.take` 在这里统一计一次，调用方不再各自计费。此前 Provider、全目录、
+  模型复核各计各的，而云量降级网格（每个 4° 块 25 个坐标、每小时刷新）整条链路从未计过费。
+- 429 的冷却时长按上游正文里的窗口决定：`Minutely / Hourly / Daily API request limit exceeded`
+  分别对应 60 / 3,600 / 86,400 秒，并把原因写进日志（`气象上游限流 scope=... reason=...`）。
+  以前一律按 60 秒恢复，日额度耗尽时等于每分钟再去撞一次，且事后查不出撞的是哪个桶。
+- 走代理池时归属由池按出口处理，Provider 与后台任务**不再**各设一次全局冷却，
+  否则一个出口的分钟限流会停掉整池。
 
 **2026-09-15 移除 Cloudflare 气象转发**：按用户要求删除 `deploy/weather-relay` Worker 代码与
 `ENERSIGHT_WEATHER_RELAY_BASE / _TOKEN` 配置项。Cloudflare 控制台上的 `enersight-weather-test`、
@@ -76,33 +89,71 @@ AppSecret 只放服务器 `.env`，禁止写进小程序、Git、Actions 日志�
 
 `.env` 由 Compose 在创建容器时读入，修改后需重建：`set -a && . ./.release.env && set +a && docker compose up -d --no-deps api`。
 
-## 测试环境免费代理池试验
+## 气象代理池
 
-下一阶段维护策略见 [气象代理池维护策略](./2026-09-15-weather-proxy-pool-strategy.md)；
-该方案尚未实施，以下记录当前已部署行为与实验结果。
+策略与验收口径见[气象代理池维护策略](./2026-09-15-weather-proxy-pool-strategy.md)（2026-09-16 已实施，
+未部署）。开关 `ENERSIGHT_WEATHER_PROXY_POOL_ENABLED`，默认关闭。通过 HTTPS CONNECT 获取公开气象
+JSON，始终验证目标证书，不发送业务身份信息；统一入口仍为 `weather_transport.weather_get`，
+天气缓存、坐标预算与数据时效不变。
 
-2026-09-15 按用户要求，仅测试环境启用 ProxyScrape 免费 HTTP 代理池。开关
-`ENERSIGHT_WEATHER_PROXY_POOL_ENABLED=true`，默认关闭。
-通过 HTTPS CONNECT 获取公开气象 JSON，始终验证目标证书，不发送业务身份信息。
-统一入口仍为 `weather_transport.weather_get`，天气缓存、坐标预算与数据时效不变。
+**按实测出口记账，不按代理地址。** 实测 `202.141.161.52:10808` 的出口是 `134.185.103.14`；
+按代理地址记额度会把同一个出口算成两份。因此节点入池要用两次独立连接确认出口一致，
+同出口的多个节点共用一本额度账，出口变化时旧账不清零。
 
-- 后台每 15 分钟增量拉取官方列表，最多保留 40 个候选、目标 20 个可用代理；每轮最多检测
-  20 个，检测并发 2。检测模型元数据也计入共享请求预算，不额外拉整份预报。
-- 官方列表优先直连，失败后最多用两个已有代理获取同一 HTTPS 地址。首次部署可写入
-  `data/weather-proxy-seeds.json`（公网代理 URL 数组、一天内的官方列表快照）；候选必须
-  实测通过才能承接业务。列表全失败时保留并复检已有条目，五分钟后再尝试更新。
-- 请求优先选择空闲、近期成功且延迟较低的代理；业务并发最多 4，每次传输最多 6 秒。
-  仅传输错误可换一个代理重试，第二次也计预算；连同排队最多 14 秒，耗尽后抛出业务异常，
+**候选数不等于额度宽度。** 100 是候选节点上限；真正决定宽度的是实测独立出口数，日志里是
+`代理池 ... ready_exits=N`，低于 `MIN_EXITS` 会单独记一条 `代理池可用出口不足` 的降级事件。
+免费列表的通过率通常只有一到三成，所以候选要远多于目标出口。
+
+### 可调参数
+
+全部前缀 `ENERSIGHT_`，默认值见 `app/config.py` 的 `weather_proxy_*`。
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `WEATHER_PROXY_POOL_ENABLED` | false | 总开关；关闭即直连 |
+| `WEATHER_PROXY_CANDIDATES` | 100 | 候选节点上限 |
+| `WEATHER_PROXY_TARGET_EXITS` / `_MIN_EXITS` | 20 / 5 | 可用独立出口的目标与低水位线 |
+| `WEATHER_PROXY_NODES_PER_EXIT` | 2 | 同出口保留几个节点作连接备用 |
+| `WEATHER_PROXY_EXIT_UNITS_PER_MINUTE/_HOUR/_DAY` | 300 / 2,000 / 5,000 | 每出口自设保守阈值，按坐标数计，不是上游承诺额度 |
+| `WEATHER_PROXY_SLOTS` / `_BACKGROUND_SLOTS` | 4 / 2 | 全局并发与后台任务名额（每出口并发恒为 1） |
+| `WEATHER_PROXY_ATTEMPTS` / `_DEADLINE` | 2 / 14 秒 | 一个用户请求最多几次实际访问、总时间 |
+| `WEATHER_PROXY_REQUEST_TIMEOUT` / `_PROBE_TIMEOUT` / `_EXIT_TIMEOUT` | 6 / 4 / 4 秒 | 单次传输、气象探测、出口探测超时 |
+| `WEATHER_PROXY_REFRESH_SECONDS` / `_TOPUP_SECONDS` | 900 / 300 | 列表刷新间隔、低水位补充的最小间隔 |
+| `WEATHER_PROXY_PROBE_PER_ROUND` / `_PROBE_CONCURRENCY` | 20 / 2 | 每轮检测的候选数与并发 |
+| `WEATHER_PROXY_EXIT_TTL` / `_HEALTH_TTL` | 900 / 1,800 秒 | 出口观测有效期、气象健康有效期 |
+| `WEATHER_PROXY_DROP_STREAK` | 5 | 连续失败几次退出活跃池 |
+| `WEATHER_PROXY_LEDGER_RECOVER_SECONDS` | 3,600 | 账本损坏或缺失时该出口的暂停时长 |
+| `WEATHER_PROXY_SOURCE` / `_EXIT_PROBE` | 空 | 覆盖免费列表与出口探测地址，留空用代码默认 |
+
+调用方那边还有一个相关旋钮：`FLEET_COORDS_PER_REQUEST`（默认 100）必须小于
+`EXIT_UNITS_PER_MINUTE`，否则单批成本超过出口分钟额度，池会直接报「请拆批」而不是静默超发。
+
+### 运行时行为
+
+- 后台按 `REFRESH_SECONDS` 增量拉取官方列表（附少量随机延迟），可用出口低于 `MIN_EXITS`
+  时提前补充。列表优先直连，失败后最多用两个已有节点获取同一 HTTPS 列表；全失败则保留
+  并复检已有条目，五分钟后再试。首次部署可写入 `data/weather-proxy-seeds.json`
+  （公网代理 URL 数组、一天内的官方列表快照）；候选必须实测通过才能承接业务。
+- 入池两步：先查实际出口（两次一致才认，动态出口不入池），再取一次模型元数据验证目标可用；
+  元数据探测计入项目预算与该出口额度，出口探测不计。
+- 请求先按出口「最近最少使用」分散，再在其中选稳定且较快的节点，避免全部流量压到最快的一个。
+  仅传输错误可换**另一个出口**再试一次，第二次也计预算；超出 `DEADLINE` 抛业务异常，
   阻止外层重试叠加。
-- 429 原样交给原调用方，并立即设置共享冷却、代理冷却与可持久化的池冷却；遵守
-  `Retry-After`，缺省 60 秒，不因更换代理绕过冷却。400 不换代理，5xx 不在池内重试。
-- 网络失败按次数指数退避（60 秒起、最多 1 小时）；只接受可解析的 JSON，现有 Provider
-  继续校验业务字段。空池立即报上游不可用，不在页面请求中拉列表、不自动直连。
-- 状态每 30 秒写入 `data/weather-proxies.json`（原子替换），包括成功/失败次数、延迟、
-  最近状态码、冷却与验证时间。重启只复用半小时内成功的条目；超过一天未成功的条目淘汰。
-  日志只包含代理地址、路径、状态、耗时与汇总，不包含业务参数或凭据。
-- 试验基于原测试镜像派生，只复制本次涉及的 Python 文件，不升级依赖、不迁移数据库；
-  切换前备份 `.env` 与 `.release.env`，失败恢复这两个文件并重建原 API。
+- 429 按窗口归属：认得出分钟/小时/日就只停该出口及其关联节点，其余出口照常服务；
+  认不出则整池按共享冷却处理，并把原文记进日志，不靠换 IP 推断已解除限制。
+  **分钟**限流允许换一个有余额的出口再试一次（仍受 `ATTEMPTS` 约束）；小时与日限流不换，
+  换了也救不了当前这次请求，只会多烧一份额度。
+- 网络失败按次数指数退避（60 秒起、最多 1 小时）；只接受可解析的 JSON，Provider 继续校验业务字段。
+  空池、全部冷却、列表失败一律立即降级为上游不可用，不会隐式直连。
+- 状态每 30 秒原子写入 `data/weather-proxies.json`（`version: 2`），包含节点统计、出口关联、
+  三个窗口的用量明细与冷却。重启按最后一次落盘时间补一个分钟窗口的等待；账本缺失或损坏的
+  出口先暂停 `LEDGER_RECOVER_SECONDS`，不假定小时与日额度为零使用。日志只有代理地址、出口、
+  路径、状态、耗时与汇总，不含业务参数或凭据。
+
+### 试验记录（2026-09-15，旧实现）
+
+以下为按出口分账之前的试验，结论仍然成立（分钟限额按出口独立），实现细节已被上面一节取代。
+当时的行为是：最多 40 个候选、目标 20 个可用，429 执行整池冷却。
 
 #### 首次上线验证（2026-09-15）
 

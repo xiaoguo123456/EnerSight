@@ -60,8 +60,44 @@ class Settings(BaseSettings):
     open_meteo_archive_base: str = "https://archive-api.open-meteo.com/v1"
     # 各模型元数据（起报时刻、可用时刻）：{meta_base}/{slug}/static/meta.json。docs/17 §二
     open_meteo_meta_base: str = "https://api.open-meteo.com/data"
-    # 仅测试环境试验，默认关闭：开启后统一出网入口经免费代理池请求。docs/10「气象出网」
+    # 默认关闭：开启后统一出网入口经代理池请求，按实测出口分账。docs/10「气象代理池」
     weather_proxy_pool_enabled: bool = False
+    # 代理池全部参数可调，默认值取自 docs/2026-09-15-weather-proxy-pool-strategy.md §三、§四。
+    # 免费列表与出口探测地址；留空用代码里的默认源。
+    weather_proxy_source: str = ""
+    weather_proxy_exit_probe: str = ""
+    # 候选节点上限。真正决定额度宽度的是**实测独立出口数**，不是候选数 ——
+    # 免费列表里能连通并测出独立出口的通常只有一到三成，所以候选要远多于目标出口。
+    weather_proxy_candidates: int = 100
+    weather_proxy_target_exits: int = 20
+    weather_proxy_min_exits: int = 5
+    # 同一出口最多留几个节点作连接备用；多出来的不再算独立额度，见代理池 _observe_exit
+    weather_proxy_nodes_per_exit: int = 2
+    # 后台检测：每轮候选数、并发、列表刷新间隔、低水位补充的最小间隔
+    weather_proxy_probe_per_round: int = 20
+    weather_proxy_probe_concurrency: int = 2
+    weather_proxy_refresh_seconds: int = 900
+    weather_proxy_topup_seconds: int = 300
+    weather_proxy_drop_streak: int = 5
+    # 出口观测有效期与气象健康有效期：过期的节点先复核再承接业务
+    weather_proxy_exit_ttl: int = 900
+    weather_proxy_health_ttl: int = 1800
+    # 单次传输超时与整个用户请求的截止时间（含排队与换出口），以及最多几次实际访问
+    weather_proxy_exit_timeout: float = 4
+    weather_proxy_probe_timeout: float = 4
+    weather_proxy_request_timeout: float = 6
+    weather_proxy_deadline: float = 14
+    weather_proxy_attempts: int = 2
+    # 并发：全局名额与后台任务名额，后台不能把出口占满让页面排不上
+    weather_proxy_slots: int = 4
+    weather_proxy_background_slots: int = 2
+    # 每出口的自设保守阈值，单位与 upstream_units_per_minute 一致（按坐标数计）。
+    # 这不是上游承诺的额度，免费出口还可能被其他人占用，所以要留足余量。
+    weather_proxy_exit_units_per_minute: float = 300
+    weather_proxy_exit_units_per_hour: float = 2000
+    weather_proxy_exit_units_per_day: float = 5000
+    # 出口账本读不回来时的暂停时长：不能假定小时与日额度为零使用
+    weather_proxy_ledger_recover_seconds: int = 3600
 
     ttl_model_meta: int = 300
 

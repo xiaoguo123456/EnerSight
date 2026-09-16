@@ -1,5 +1,9 @@
-"""免费代理池的限额、失败隔离、持久化与出网边界。"""
+"""代理池：出口分组计额、限流按窗口归属、失败隔离、持久化与出网边界。
 
+对应 docs/2026-09-15-weather-proxy-pool-strategy.md §七「必须覆盖的自动化场景」。
+"""
+
+import asyncio
 import time
 from collections import deque
 
@@ -11,17 +15,34 @@ from app.errors import UpstreamRateLimited, UpstreamUnavailable
 from app.providers import weather_proxy_pool as module
 from app.providers.budget import shared
 from app.providers.open_meteo import OpenMeteoProvider
-from app.providers.weather_proxy_pool import Entry, ProxyPool, public_proxy
+from app.providers.weather_proxy_pool import Exit, Node, ProxyPool, public_proxy
 from app.providers.weather_transport import weather_get
 
 URL = "https://api.open-meteo.com/v1/forecast"
 PROXIES = ["http://8.8.8.8:8080", "http://1.1.1.1:8080", "http://9.9.9.9:8080"]
+# 取 docs/10 实测记录里的真实出口地址；文档保留段（203.0.113.x）不是公网 IP，会被过滤
+EXITS = ["103.237.102.191", "134.185.103.14", "153.80.240.2"]
+
+
+def ready(proxy: str, exit_ip: str, latency: float = 1.0) -> Node:
+    now = time.time()
+    return Node(
+        proxy,
+        exit_ip=exit_ip,
+        exit_seen=exit_ip,
+        exit_checked_at=now,
+        last_ok=now,
+        latency=latency,
+        successes=1,
+    )
 
 
 @pytest.fixture
 def pool(tmp_path, monkeypatch):
     value = ProxyPool(tmp_path / "state.json")
-    value.entries = {p: Entry(p, last_ok=time.time(), latency=i + 1) for i, p in enumerate(PROXIES)}
+    for i, (proxy, exit_ip) in enumerate(zip(PROXIES, EXITS, strict=True)):
+        value.nodes[proxy] = ready(proxy, exit_ip, latency=i + 1)
+        value.exits[exit_ip] = Exit(exit_ip)
     monkeypatch.setattr(module, "pool", value)
     monkeypatch.setattr(settings, "upstream_units_per_minute", 480)
     monkeypatch.setattr(shared, "marks", deque())
@@ -31,16 +52,29 @@ def pool(tmp_path, monkeypatch):
 
 
 def mock_clients(monkeypatch, handler):
+    """替换代理池自己建的客户端；出口探测与业务请求都走这里。"""
     original = httpx.AsyncClient
     calls = []
 
     def factory(**kwargs):
-        proxy = kwargs.get("proxy")
         calls.append(kwargs)
-        return original(transport=httpx.MockTransport(lambda req: handler(proxy, req)))
+        return original(
+            transport=httpx.MockTransport(lambda req: handler(kwargs.get("proxy"), req))
+        )
 
     monkeypatch.setattr(module.httpx, "AsyncClient", factory)
     return calls
+
+
+def weather(_proxy, _request):
+    return httpx.Response(200, json={"minutely_15": {"time": ["t"]}})
+
+
+def limited(reason: str, **headers):
+    def handler(_proxy, _request):
+        return httpx.Response(429, json={"error": True, "reason": reason}, headers=headers)
+
+    return handler
 
 
 @pytest.mark.parametrize(
@@ -62,13 +96,142 @@ def test_拒绝非公网代理和异常地址(address):
     assert not public_proxy(address)
 
 
-async def test_网络失败换一次且额外尝试计预算(pool, monkeypatch):
+# ---- 出口识别与分组 ----
+
+
+async def test_出口未确认的节点不承接业务(pool, monkeypatch):
+    for node in pool.nodes.values():
+        node.exit_ip = ""
+    calls = mock_clients(monkeypatch, lambda *_: pytest.fail("不应请求网络"))
+    with pytest.raises(UpstreamUnavailable):
+        await pool.get(URL)
+    assert not calls
+
+
+async def test_首次入池要两次一致的出口(pool, monkeypatch):
+    node = Node("http://8.8.4.4:8080")
+    pool.nodes[node.proxy] = node
+    seen = iter([EXITS[0], EXITS[0]])
+    mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": next(seen)}))
+    assert not await pool._observe_exit(node)  # 第一次只记录，不入池
+    assert node.exit_ip == ""
+    assert await pool._observe_exit(node)
+    assert node.exit_ip == EXITS[0]
+
+
+async def test_出口变化时保留旧出口账本(pool, monkeypatch):
+    node = pool.nodes[PROXIES[0]]
+    pool.exits[EXITS[0]].charge(30, time.time())
+    node.exit_checked_at = 0  # 观测过期，强制复核
+    mock_clients(monkeypatch, lambda *_: httpx.Response(200, json={"ip": "45.67.89.10"}))
+    assert await pool._observe_exit(node)
+    assert node.exit_ip == "45.67.89.10"
+    assert pool.exits[EXITS[0]].minute.used(time.time()) == 30  # 旧账不清零
+
+
+async def test_同出口多节点共享额度(pool, monkeypatch):
+    """同一出口换个端口不会多一份额度 —— 代理地址不等于出口地址。"""
+    monkeypatch.setattr(settings, "weather_proxy_exit_units_per_minute", 10)
+    pool.nodes = {p: ready(p, EXITS[0]) for p in PROXIES[:2]}
+    pool.exits = {EXITS[0]: Exit(EXITS[0])}
+    calls = mock_clients(monkeypatch, weather)
+    await pool.get(URL, params={"latitude": ",".join("1" * 9)})
+    with pytest.raises(UpstreamUnavailable):  # 第二个节点没有自己的额度
+        await pool.get(URL, params={"latitude": ",".join("1" * 9)})
+    assert len(calls) == 1
+
+
+async def test_额度用尽前完成预留(pool, monkeypatch):
+    monkeypatch.setattr(settings, "weather_proxy_exit_units_per_minute", 10)
+    mock_clients(monkeypatch, weather)
+    for _ in range(3):  # 每次 3 个坐标，三个出口各记一次
+        await pool.get(URL, params={"latitude": "1,2,3"})
+    assert [round(e.minute.used(time.time())) for e in pool.exits.values()] == [3, 3, 3]
+
+
+async def test_单批超过出口分钟额度直接报错(pool, monkeypatch):
+    monkeypatch.setattr(settings, "weather_proxy_exit_units_per_minute", 10)
+    calls = mock_clients(monkeypatch, weather)
+    with pytest.raises(UpstreamUnavailable, match="拆批"):
+        await pool.get(URL, params={"latitude": ",".join("1" * 40)})
+    assert not calls
+
+
+# ---- 限流归属 ----
+
+
+async def test_分钟限流只停该出口(pool, monkeypatch):
+    """实测：A 出口 429 的同一分钟，B 出口的请求仍然成功。"""
+    calls = mock_clients(
+        monkeypatch,
+        lambda proxy, req: (
+            limited("Minutely API request limit exceeded.")(proxy, req)
+            if proxy == PROXIES[0]
+            else weather(proxy, req)
+        ),
+    )
+    assert (await pool.get(URL)).status_code == 200  # 换到有余额的出口完成
+    assert pool.exits[EXITS[0]].cooldown > time.time()
+    assert shared.paused_until == 0  # 不误伤整池
+    assert len(calls) == 2
+    assert calls[1]["proxy"] != PROXIES[0]
+    assert (await pool.get(URL)).status_code == 200  # 后续请求绕开冷却中的出口
+    assert calls[2]["proxy"] != PROXIES[0]
+
+
+@pytest.mark.parametrize(
+    ("reason", "least"),
+    [("Hourly API request limit exceeded.", 3600), ("Daily API request limit exceeded.", 86400)],
+)
+async def test_小时与日限流按窗口冷却(pool, monkeypatch, reason, least):
+    mock_clients(monkeypatch, limited(reason))
+    await pool.get(URL)
+    assert pool.exits[EXITS[0]].cooldown - time.time() >= least - 1
+
+
+async def test_来源不明的限流仍停整池(pool, monkeypatch):
+    mock_clients(monkeypatch, lambda *_: httpx.Response(429, text="slow down"))
+    assert (await pool.get(URL)).status_code == 429
+    assert pool.paused_until > time.time()
+    with pytest.raises(UpstreamRateLimited):
+        await pool.get(URL)
+    # 跨重启保持冷却，不因重启放出积压请求
+    other = ProxyPool(pool.state)
+    other.load()
+    monkeypatch.setattr(shared, "paused_until", 0)
+    assert other.paused_until > time.time()
+    with pytest.raises(UpstreamRateLimited):
+        await other.get(URL)
+
+
+async def test_分钟限流最多换一个出口再试(pool, monkeypatch):
+    """换出口只允许一次；不能靠一路换 IP 把上限试出来。"""
+    calls = mock_clients(monkeypatch, limited("Minutely API request limit exceeded."))
+    assert (await pool.get(URL)).status_code == 429
+    assert len(calls) == settings.weather_proxy_attempts == 2
+    assert calls[0]["proxy"] != calls[1]["proxy"]
+
+
+@pytest.mark.parametrize(
+    "reason", ["Hourly API request limit exceeded.", "Daily API request limit exceeded."]
+)
+async def test_小时与日限流不换出口(pool, monkeypatch, reason):
+    """换出口救不了当前这次请求，只会多烧一份额度。"""
+    calls = mock_clients(monkeypatch, limited(reason))
+    assert (await pool.get(URL)).status_code == 429
+    assert len(calls) == 1
+
+
+# ---- 失败与降级 ----
+
+
+async def test_网络失败换一个出口且额外尝试计预算(pool, monkeypatch):
     def handler(proxy, request):
         if proxy == PROXIES[0]:
             raise httpx.ConnectError("测试连接失败", request=request)
         assert "authorization" not in request.headers
         assert "cookie" not in request.headers
-        return httpx.Response(200, json={"minutely_15": {"time": ["t"]}})
+        return weather(proxy, request)
 
     calls = mock_clients(monkeypatch, handler)
     res = await pool.get(
@@ -76,8 +239,9 @@ async def test_网络失败换一次且额外尝试计预算(pool, monkeypatch):
     )
     assert res.status_code == 200
     assert len(calls) == 2
-    assert sum(v for _, v in shared.marks) == 2
-    assert pool.entries[PROXIES[0]].cooldown > time.time()
+    assert calls[0]["proxy"] != calls[1]["proxy"]
+    assert sum(v for _, v in shared.marks) == 2  # 第二次尝试也计项目预算
+    assert pool.nodes[PROXIES[0]].cooldown > time.time()
     assert all(c["trust_env"] is False and c["verify"] is True for c in calls)
     assert all(c["follow_redirects"] is False for c in calls)
 
@@ -92,25 +256,17 @@ async def test_失败不与Provider重试相乘(pool, monkeypatch):
     assert len(calls) == 2
 
 
-async def test_429不换代理并跨重启保持冷却(pool, monkeypatch):
-    calls = mock_clients(
-        monkeypatch, lambda *_: httpx.Response(429, headers={"Retry-After": "120"})
-    )
-    res = await pool.get(URL)
-    assert res.status_code == 429
-    with pytest.raises(UpstreamRateLimited):
-        await pool.get(URL)
-    assert len(calls) == 1
-    other = ProxyPool(pool.state)
-    other.load()
-    monkeypatch.setattr(shared, "paused_until", 0)
-    assert other.paused_until > time.time() + 110
-    with pytest.raises(UpstreamRateLimited):
-        await other.get(URL)
-
-
 async def test_空池立即失败且不直连(pool, monkeypatch):
-    pool.entries.clear()
+    pool.nodes.clear()
+    calls = mock_clients(monkeypatch, lambda *_: pytest.fail("不应请求网络"))
+    with pytest.raises(UpstreamUnavailable):
+        await pool.get(URL)
+    assert not calls
+
+
+async def test_全部出口冷却时降级(pool, monkeypatch):
+    for item in pool.exits.values():
+        item.pause(600, "测试", time.time())
     calls = mock_clients(monkeypatch, lambda *_: pytest.fail("不应请求网络"))
     with pytest.raises(UpstreamUnavailable):
         await pool.get(URL)
@@ -136,7 +292,7 @@ async def test_400透传不惩罚代理(pool, monkeypatch):
     calls = mock_clients(monkeypatch, lambda *_: httpx.Response(400, json={"error": True}))
     assert (await pool.get(URL)).status_code == 400
     assert len(calls) == 1
-    assert pool.entries[PROXIES[0]].failures == 0
+    assert all(n.failures == 0 for n in pool.nodes.values())
 
 
 async def test_统一入口拒绝非气象目标(pool):
@@ -144,20 +300,99 @@ async def test_统一入口拒绝非气象目标(pool):
         await weather_get(None, "https://example.com/secret")
 
 
-def test_状态恢复保留统计但不复用过期代理(pool):
-    pool.entries[PROXIES[0]].last_ok = time.time() - 1900
-    pool.entries[PROXIES[1]].successes = 7
-    pool.entries[PROXIES[1]].busy = 1
+async def test_调用方的超时只能收紧(pool, monkeypatch):
+    monkeypatch.setattr(settings, "weather_proxy_request_timeout", 6)
+    calls = mock_clients(monkeypatch, weather)
+    await pool.get(URL, timeout=40)
+    assert calls[0]["timeout"] == 6
+
+
+async def test_后台任务不占满前台名额(pool, monkeypatch):
+    """后台批量任务单独限名额，页面请求不跟它抢。"""
+    monkeypatch.setattr(settings, "weather_proxy_background_slots", 1)
+    monkeypatch.setattr(settings, "weather_proxy_slots", 4)
+    hold, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(proxy, request):
+        if proxy == PROXIES[0]:
+            hold.set()
+            await release.wait()
+        return weather(proxy, request)
+
+    original = httpx.AsyncClient
+
+    def factory(**kwargs):
+        return original(transport=httpx.MockTransport(lambda req: slow(kwargs.get("proxy"), req)))
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", factory)
+    first = asyncio.create_task(pool.get(URL, background=True))
+    await asyncio.wait_for(hold.wait(), 1)
+    second = asyncio.create_task(pool.get(URL, background=True))
+    await asyncio.sleep(0)
+    assert not second.done()  # 后台名额已满，排队
+    assert (await pool.get(URL)).status_code == 200  # 前台照常
+    release.set()
+    assert (await first).status_code == 200
+    assert (await second).status_code == 200
+
+
+# ---- 持久化与恢复 ----
+
+
+def test_重启恢复用量与冷却(pool):
+    now = time.time()
+    pool.exits[EXITS[0]].charge(120, now)
+    pool.exits[EXITS[1]].pause(900, "daily 429", now)
     pool.save()
     other = ProxyPool(pool.state)
     other.load()
-    assert not other.entries[PROXIES[0]].available()
-    assert other.entries[PROXIES[1]].available()
-    assert other.entries[PROXIES[1]].successes == 7
+    assert round(other.exits[EXITS[0]].day.used(now)) == 120
+    assert other.exits[EXITS[1]].cooldown > now + 800
+    # 最后一次落盘之后的用量没记上，先过完一个分钟窗口再用
+    assert other.exits[EXITS[0]].cooldown > now
+
+
+def test_账本损坏的出口先暂停而不是清零(pool, monkeypatch):
+    import json
+
+    monkeypatch.setattr(settings, "weather_proxy_ledger_recover_seconds", 1800)
+    pool.save()
+    raw = json.loads(pool.state.read_text())
+    raw["exits"][0]["day"] = "坏了"
+    pool.state.write_text(json.dumps(raw))
+    other = ProxyPool(pool.state)
+    other.load()
+    assert other.exits[EXITS[0]].cooldown > time.time() + 1700
+
+
+def test_状态恢复保留统计但不复用过期节点(pool):
+    pool.nodes[PROXIES[0]].last_ok = time.time() - settings.weather_proxy_health_ttl - 10
+    pool.nodes[PROXIES[1]].successes = 7
+    pool.save()
+    other = ProxyPool(pool.state)
+    other.load()
+    now = time.time()
+    assert not other.nodes[PROXIES[0]].usable(now)
+    assert other.nodes[PROXIES[1]].successes == 7
+
+
+def test_启动候选必须经过检测(pool):
+    import json
+
+    pool.nodes.clear()
+    pool.state.with_name("weather-proxy-seeds.json").write_text(json.dumps(PROXIES))
+    other = ProxyPool(pool.state)
+    other.load()
+    assert len(other.nodes) == 3
+    assert not any(n.usable(time.time()) for n in other.nodes.values())
+
+
+# ---- 后台维护 ----
 
 
 async def test_后台列表过滤与探测计预算(pool, monkeypatch):
-    pool.entries.clear()
+    pool.nodes.clear()
+    pool.exits.clear()
 
     def handler(proxy, req):
         if proxy is None:
@@ -171,15 +406,18 @@ async def test_后台列表过滤与探测计预算(pool, monkeypatch):
                 },
             )
         assert proxy == PROXIES[0]
+        if str(req.url).startswith(module.EXIT_PROBE):
+            return httpx.Response(200, json={"ip": EXITS[0]})
         assert str(req.url) == module.PROBE
         return httpx.Response(200, json={"last_run_initialisation_time": 12345})
 
-    calls = mock_clients(monkeypatch, handler)
-    await pool.refresh()
-    assert len(calls) == 2
-    assert list(pool.entries) == [PROXIES[0]]
-    assert pool.entries[PROXIES[0]].available()
-    assert sum(v for _, v in shared.marks) == 1
+    mock_clients(monkeypatch, handler)
+    await pool.refresh()  # 第一轮只确认出口
+    await pool.refresh()  # 第二轮出口一致才验证气象
+    assert list(pool.nodes) == [PROXIES[0]]
+    assert pool.nodes[PROXIES[0]].exit_ip == EXITS[0]
+    assert pool.ready_exits(time.time()) == 1
+    assert sum(v for _, v in shared.marks) == 1  # 元数据探测计一次，出口探测不计
 
 
 async def test_列表直连失败通过已有代理更新(pool, monkeypatch):
@@ -190,25 +428,11 @@ async def test_列表直连失败通过已有代理更新(pool, monkeypatch):
 
     calls = mock_clients(monkeypatch, handler)
     assert await pool.refresh()
-    assert len(calls) == 2
     assert calls[1]["proxy"] in PROXIES
-    assert len(pool.entries) == 3
+    assert len(pool.nodes) == 3
 
 
-def test_启动候选必须经过检测(pool):
-    import json
-
-    pool.state.with_name("weather-proxy-seeds.json").write_text(json.dumps(PROXIES))
-    other = ProxyPool(pool.state)
-    other.load()
-    assert len(other.entries) == 3
-    assert not any(e.available() for e in other.entries.values())
-
-
-async def test_列表全部失败仍验证已有候选(pool, monkeypatch):
-    for e in pool.entries.values():
-        e.last_ok = 0
-
+async def test_列表全部失败不淘汰已有节点(pool, monkeypatch):
     def handler(proxy, req):
         if str(req.url).startswith(module.SOURCE):
             raise httpx.ConnectError("列表不可达", request=req)
@@ -216,4 +440,19 @@ async def test_列表全部失败仍验证已有候选(pool, monkeypatch):
 
     mock_clients(monkeypatch, handler)
     assert not await pool.refresh()
-    assert all(e.available() for e in pool.entries.values())
+    assert len(pool.nodes) == 3
+    assert pool.ready_exits(time.time()) == 3
+
+
+async def test_候选上限可配置(pool, monkeypatch):
+    monkeypatch.setattr(settings, "weather_proxy_candidates", 4)
+    rows = [{"proxy": f"http://8.8.8.{i}:8080", "ssl": True} for i in range(1, 20)]
+
+    def handler(proxy, req):
+        if str(req.url).startswith(module.SOURCE):
+            return httpx.Response(200, json={"proxies": rows})
+        raise httpx.ConnectError("不测", request=req)
+
+    mock_clients(monkeypatch, handler)
+    await pool.refresh()
+    assert len(pool.nodes) == 4

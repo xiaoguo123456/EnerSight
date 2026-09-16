@@ -18,7 +18,6 @@ from app.config import settings
 from app.db import SessionLocal
 from app.metrics import wind
 from app.models import CatalogPlant, Station
-from app.providers.budget import shared
 from app.providers.weather_transport import weather_get
 from app.render import tiles
 from app.schemas.prediction import (
@@ -461,12 +460,15 @@ async def build(http, model: str, day: str, plants) -> None:
                 if selection:
                     params["cell_selection"] = selection
                 try:
-                    await shared.take(len(coords))
                     r = await weather_get(
-                        http, f"{settings.open_meteo_base}/forecast", params=params, timeout=40
+                        http,
+                        f"{settings.open_meteo_base}/forecast",
+                        params=params,
+                        timeout=40,
+                        background=True,
                     )
                     if r.status_code == 429:
-                        shared.retry_after(r.headers.get("Retry-After"))
+                        # 冷却范围由 weather_transport / 代理池按限流窗口归属，这里只停本轮。
                         out.message = "气象服务限流，已保存当前覆盖结果，稍后继续"
                         stop = True
                         break

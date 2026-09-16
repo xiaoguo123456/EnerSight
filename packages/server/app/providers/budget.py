@@ -1,13 +1,43 @@
-"""同进程所有 Open-Meteo 请求共享滑动窗口预算，缓存命中不计费。"""
+"""同进程所有 Open-Meteo 请求共享滑动窗口预算，缓存命中不计费。
+
+限流归属也在这一层定义：上游 429 的正文写明了窗口（分钟 / 小时 / 日），
+差了三个数量级，冷却时长必须跟着窗口走，不能一律 60 秒再去撞一次。
+"""
 
 import asyncio
 import time
 from collections import deque
+from contextlib import suppress
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 from app.config import settings
 from app.errors import UpstreamRateLimited
+
+# Open-Meteo 的 429 正文，例如
+# `Minutely API request limit exceeded. Please try again in one minute.`
+SCOPES = (("minutely", "minute", 60), ("hourly", "hour", 3600), ("daily", "day", 86400))
+
+
+def scope_of(body: str) -> tuple[str, int] | None:
+    """从 429 正文认出限流窗口；认不出返回 None，由调用方按最保守的方式处理。"""
+    lowered = body.lower()
+    for word, name, seconds in SCOPES:
+        if word in lowered:
+            return name, seconds
+    return None
+
+
+def retry_seconds(value: str | None, default: float = 60.0) -> float:
+    """Retry-After 支持秒数与 HTTP 日期；缺省按窗口给保守值。"""
+    if not value:
+        return default
+    try:
+        return max(1.0, float(value))
+    except ValueError:
+        with suppress(ValueError, TypeError):
+            return max(1.0, (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds())
+    return default
 
 
 class RequestBudget:
@@ -39,15 +69,10 @@ class RequestBudget:
                     continue
             await asyncio.sleep(delay)
 
-    def retry_after(self, value: str | None):
-        try:
-            seconds = float(value) if value else 60.0
-        except ValueError:
-            try:
-                seconds = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
-            except (ValueError, TypeError):
-                seconds = 60.0
-        self.paused_until = max(self.paused_until, time.monotonic() + max(1, seconds))
+    def retry_after(self, value: str | None, default: float = 60.0):
+        self.paused_until = max(
+            self.paused_until, time.monotonic() + max(1, retry_seconds(value, default))
+        )
 
 
 shared = RequestBudget()

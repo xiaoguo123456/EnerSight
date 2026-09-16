@@ -1,24 +1,50 @@
-"""测试用免费代理池：后台补充，有限重试，429 共享冷却。部署约定见 docs/10。"""
+"""免费代理池：按实际出口分组计额、按故障范围冷却。
+
+策略见 docs/2026-09-15-weather-proxy-pool-strategy.md，部署约定见 docs/10「气象出网」。
+
+三层对象各管一件事，不要合并：
+
+    节点 Node   能不能连通、走哪条连接
+    出口 Exit   额度账本与限流状态 —— 同出口的多个节点共享一本账
+    项目预算    providers/budget.shared，控制项目总负载
+
+代理地址不等于出口地址：实测 ``202.141.161.52:10808`` 的出口是 ``134.185.103.14``。
+按代理地址记额度会把同一个出口的额度算成两份，所以入池必须实测出口并按出口去重。
+"""
 
 import asyncio
 import ipaddress
 import json
 import logging
 import math
+import random
 import time
 from contextlib import suppress
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
 
+from app.config import settings
 from app.errors import UpstreamRateLimited, UpstreamUnavailable
-from app.providers.budget import request_cost, shared
+from app.providers.budget import request_cost, retry_seconds, scope_of, shared
 
 log = logging.getLogger(__name__)
+
+# 免费列表与两个探测目标。都可用配置覆盖，便于换源或在测试里指向本地桩。
 SOURCE = "https://api.proxyscrape.com/v4/free-proxy-list/get"
 PROBE = "https://api.open-meteo.com/data/dwd_icon/static/meta.json"
+EXIT_PROBE = "https://api.ipify.org"
+ALLOWED_HOSTS = ("api.open-meteo.com", "archive-api.open-meteo.com")
+
+
+class ExitLimited(Exception):
+    """该出口撞了分钟限流。允许换一个有余额的出口再试一次，不是最终结果。"""
+
+    def __init__(self, response: httpx.Response) -> None:
+        self.response = response
+        super().__init__("exit minute limited")
 
 
 def public_proxy(value: str) -> bool:
@@ -37,9 +63,83 @@ def public_proxy(value: str) -> bool:
         return False
 
 
+def public_ip(value: object) -> str | None:
+    """出口探测的返回值：必须是公网 IPv4 字面量，否则当没测到。"""
+    try:
+        address = ipaddress.ip_address(str(value).strip())
+    except (ValueError, TypeError):
+        return None
+    return str(address) if address.version == 4 and address.is_global else None
+
+
 @dataclass
-class Entry:
+class Window:
+    """滑动窗口账本。整点一次性释放会让一分钟内打满，所以按时间戳逐条淘汰。"""
+
+    seconds: int
+    marks: list[list[float]] = field(default_factory=list)
+
+    def trim(self, now: float) -> None:
+        self.marks = [m for m in self.marks if m[0] > now - self.seconds]
+
+    def used(self, now: float) -> float:
+        self.trim(now)
+        return sum(m[1] for m in self.marks)
+
+    def room(self, cost: float, limit: float, now: float) -> bool:
+        return limit <= 0 or self.used(now) + cost <= limit
+
+    def add(self, cost: float, now: float) -> None:
+        self.marks.append([now, cost])
+        self.trim(now)
+
+
+@dataclass
+class Exit:
+    """一个实测出口：额度账本、冷却与并发。同出口的多个节点共用这一份。"""
+
+    ip: str
+    minute: Window = field(default_factory=lambda: Window(60))
+    hour: Window = field(default_factory=lambda: Window(3600))
+    day: Window = field(default_factory=lambda: Window(86400))
+    cooldown: float = 0.0
+    reason: str = ""
+    last_used: float = 0.0
+    busy: int = 0
+
+    def windows(self) -> tuple[tuple[Window, float], ...]:
+        return (
+            (self.minute, settings.weather_proxy_exit_units_per_minute),
+            (self.hour, settings.weather_proxy_exit_units_per_hour),
+            (self.day, settings.weather_proxy_exit_units_per_day),
+        )
+
+    def free(self, now: float) -> bool:
+        """出口本身可用：不在冷却、没有在途请求（每出口并发 1）。"""
+        return self.cooldown <= now and not self.busy
+
+    def room(self, cost: float, now: float) -> bool:
+        return all(w.room(cost, limit, now) for w, limit in self.windows())
+
+    def charge(self, cost: float, now: float) -> None:
+        """预留与记账是同一步：先扣再发，超时也不退，请求可能已经到达上游。"""
+        for w, _ in self.windows():
+            w.add(cost, now)
+        self.last_used = now
+
+    def pause(self, seconds: float, reason: str, now: float) -> None:
+        self.cooldown = max(self.cooldown, now + seconds)
+        self.reason = reason
+
+
+@dataclass
+class Node:
+    """一条代理连接。exit_ip 是实测出口，未确认前不承接业务。"""
+
     proxy: str
+    exit_ip: str = ""
+    exit_seen: str = ""  # 首次观测，待第二次连接确认
+    exit_checked_at: float = 0.0
     successes: int = 0
     failures: int = 0
     streak: int = 0
@@ -49,18 +149,31 @@ class Entry:
     status: int | None = None
     busy: int = 0
 
-    def available(self) -> bool:
-        now = time.time()
-        return self.cooldown <= now and now - self.last_ok < 1800 and not self.busy
+    def exit_fresh(self, now: float) -> bool:
+        return bool(self.exit_ip) and now - self.exit_checked_at < settings.weather_proxy_exit_ttl
+
+    def healthy(self, now: float) -> bool:
+        return now - self.last_ok < settings.weather_proxy_health_ttl
+
+    def usable(self, now: float) -> bool:
+        return self.cooldown <= now and not self.busy and self.exit_fresh(now) and self.healthy(now)
+
+    def score(self) -> tuple[float, float]:
+        return self.failures / max(1, self.successes + self.failures), self.latency
 
 
 class ProxyPool:
     def __init__(self, state: Path = Path("data/weather-proxies.json")):
         self.state = state
-        self.entries: dict[str, Entry] = {}
-        self.paused_until = 0.0
+        self.nodes: dict[str, Node] = {}
+        self.exits: dict[str, Exit] = {}
+        self.paused_until = 0.0  # 来源不明的 429：整池保守冷却
         self.task: asyncio.Task | None = None
-        self.slots = asyncio.Semaphore(4)
+        self._slots: asyncio.Semaphore | None = None
+        self._background: asyncio.Semaphore | None = None
+        self._topped_up = 0.0
+
+    # ---- 生命周期 ----
 
     def start(self):
         if self.task is None:
@@ -74,30 +187,114 @@ class ProxyPool:
             self.task = None
             self.save()
 
+    def slots(self) -> asyncio.Semaphore:
+        if self._slots is None:
+            self._slots = asyncio.Semaphore(max(1, settings.weather_proxy_slots))
+        return self._slots
+
+    def background_slots(self) -> asyncio.Semaphore:
+        """后台任务单独限名额，别把出口全占满让页面请求排不上。"""
+        if self._background is None:
+            self._background = asyncio.Semaphore(max(1, settings.weather_proxy_background_slots))
+        return self._background
+
+    # ---- 状态持久化 ----
+
     def load(self):
+        raw: dict = {}
         try:
             raw = json.loads(self.state.read_text())
-            pause = float(raw.get("paused_until", 0))
-            if math.isfinite(pause):
-                self.paused_until = pause
-            for row in raw.get("entries", [])[:40]:
-                entry = Entry(**row)
-                if public_proxy(entry.proxy) and all(
-                    isinstance(v, int | float) and math.isfinite(v) and v >= 0
-                    for k, v in asdict(entry).items()
-                    if k not in ("proxy", "status")
-                ):
-                    entry.busy = 0
-                    self.entries[entry.proxy] = entry
-        except (OSError, ValueError, TypeError, AttributeError):
+        except (OSError, ValueError):
             log.info("代理池无可恢复状态，将后台重新检测")
-        # 首次部署带入官方列表快照，仅作为未验证候选；绝不直接标记可用。
+        saved_at = raw.get("saved_at")
+        saved_at = float(saved_at) if isinstance(saved_at, int | float) else 0.0
+        pause = raw.get("paused_until")
+        if isinstance(pause, int | float) and math.isfinite(pause):
+            self.paused_until = pause
+        for row in raw.get("nodes", [])[: settings.weather_proxy_candidates]:
+            node = self._node_from(row)
+            if node is not None:
+                self.nodes[node.proxy] = node
+        for row in raw.get("exits", [])[: settings.weather_proxy_candidates]:
+            self._exit_from(row, saved_at)
+        # 出口账本缺失时不能当成零用量重新开张 —— 上游的小时与日窗口不会因为我们重启而清零。
+        now = time.time()
+        for node in self.nodes.values():
+            if node.exit_ip and node.exit_ip not in self.exits:
+                self.exits[node.exit_ip] = Exit(node.exit_ip)
+                self.exits[node.exit_ip].pause(
+                    settings.weather_proxy_ledger_recover_seconds, "账本缺失，待复核", now
+                )
+        self._seed()
+
+    def _node_from(self, row: object) -> Node | None:
+        if not isinstance(row, dict):
+            return None
+        try:
+            node = Node(**{k: v for k, v in row.items() if k in Node.__dataclass_fields__})
+        except TypeError:
+            return None
+        numbers = (
+            node.successes,
+            node.failures,
+            node.streak,
+            node.latency,
+            node.last_ok,
+            node.cooldown,
+            node.exit_checked_at,
+        )
+        if not public_proxy(node.proxy) or not all(
+            isinstance(v, int | float) and math.isfinite(v) and v >= 0 for v in numbers
+        ):
+            return None
+        if node.exit_ip and public_ip(node.exit_ip) is None:
+            return None
+        node.busy = 0
+        return node
+
+    def _exit_from(self, row: object, saved_at: float) -> None:
+        if not isinstance(row, dict) or public_ip(row.get("ip")) is None:
+            return
+        item = Exit(str(row["ip"]))
+        broken = False
+        for name, window in (("minute", item.minute), ("hour", item.hour), ("day", item.day)):
+            marks = row.get(name)
+            if not isinstance(marks, list):
+                broken = True
+                continue
+            for mark in marks:
+                if (
+                    isinstance(mark, list)
+                    and len(mark) == 2
+                    and all(isinstance(v, int | float) and math.isfinite(v) for v in mark)
+                ):
+                    window.marks.append([float(mark[0]), float(mark[1])])
+                else:
+                    broken = True
+        cooldown = row.get("cooldown")
+        if isinstance(cooldown, int | float) and math.isfinite(cooldown):
+            item.cooldown = cooldown
+        item.reason = str(row.get("reason", ""))[:200]
+        now = time.time()
+        if broken:
+            # 长窗口账本读不回来就不能继续用这个出口，先暂停等复核。
+            item.pause(settings.weather_proxy_ledger_recover_seconds, "账本损坏，待复核", now)
+        elif saved_at:
+            # 最后一次落盘之后的用量没记上，等过完一个分钟窗口再用它。
+            item.cooldown = max(item.cooldown, min(saved_at + 60, now + 60))
+        self.exits[item.ip] = item
+
+    def _seed(self):
+        """首次部署可带入官方列表快照，仅作未验证候选；绝不直接标记可用。"""
         seed = self.state.with_name("weather-proxy-seeds.json")
         try:
-            if time.time() - seed.stat().st_mtime < 86400:
-                for proxy in json.loads(seed.read_text())[:40]:
-                    if public_proxy(proxy) and len(self.entries) < 40:
-                        self.entries.setdefault(proxy, Entry(proxy))
+            if time.time() - seed.stat().st_mtime > 86400:
+                return
+            for proxy in json.loads(seed.read_text()):
+                if len(self.nodes) >= settings.weather_proxy_candidates:
+                    break
+                if public_proxy(proxy):
+                    self.nodes.setdefault(proxy, Node(proxy))
         except (OSError, ValueError, TypeError):
             pass
 
@@ -105,146 +302,88 @@ class ProxyPool:
         try:
             self.state.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.state.with_suffix(".tmp")
-            tmp.write_text(
-                json.dumps(
-                    {
-                        "saved_at": time.time(),
-                        "paused_until": self.paused_until,
-                        "entries": [asdict(e) for e in self.entries.values()],
-                    }
-                )
-            )
+            tmp.write_text(json.dumps(self.snapshot()))
             tmp.replace(self.state)
         except OSError:
             log.exception("代理池状态保存失败")
+
+    def snapshot(self) -> dict:
+        now = time.time()
+        for item in self.exits.values():
+            for window, _ in item.windows():
+                window.trim(now)
+        return {
+            "version": 2,
+            "saved_at": now,
+            "paused_until": self.paused_until,
+            "nodes": [asdict(n) for n in self.nodes.values()],
+            "exits": [
+                {
+                    "ip": e.ip,
+                    "minute": e.minute.marks,
+                    "hour": e.hour.marks,
+                    "day": e.day.marks,
+                    "cooldown": e.cooldown,
+                    "reason": e.reason,
+                }
+                for e in self.exits.values()
+            ],
+        }
+
+    def stats(self) -> dict:
+        """观测用汇总，docs/10 §七。供排查与后续接口复用。"""
+        now = time.time()
+        return {
+            "nodes": len(self.nodes),
+            "ready_nodes": sum(n.usable(now) for n in self.nodes.values()),
+            "exits": len(self.exits),
+            "ready_exits": self.ready_exits(now),
+            "paused_exits": sum(e.cooldown > now for e in self.exits.values()),
+            "paused_until": self.paused_until,
+            "usage": {
+                e.ip: {
+                    "minute": round(e.minute.used(now), 1),
+                    "hour": round(e.hour.used(now), 1),
+                    "day": round(e.day.used(now), 1),
+                    "reason": e.reason,
+                }
+                for e in self.exits.values()
+            },
+        }
+
+    def ready_exits(self, now: float) -> int:
+        """可用独立出口数：有节点能连、出口已验证、不在冷却。这是真正的额度宽度。"""
+        ips = {
+            n.exit_ip
+            for n in self.nodes.values()
+            if n.exit_fresh(now) and n.healthy(now) and n.cooldown <= now
+        }
+        return sum(1 for ip in ips if ip in self.exits and self.exits[ip].cooldown <= now)
+
+    # ---- 后台维护 ----
 
     async def _run(self):
         self.load()
         next_refresh = 0.0
         while True:
             try:
-                if time.monotonic() >= next_refresh:
+                now = time.monotonic()
+                low = self.ready_exits(time.time()) < settings.weather_proxy_min_exits
+                # 低水位提前补充，但两轮至少隔 5 分钟，别把失败的列表源打成循环抓取。
+                due = now >= next_refresh or (
+                    low and now - self._topped_up >= settings.weather_proxy_topup_seconds
+                )
+                if due:
+                    self._topped_up = now
                     refreshed = await self.refresh()
-                    next_refresh = time.monotonic() + (900 if refreshed else 300)
+                    # 附少量随机延迟，多实例不要卡在同一秒抓同一个列表
+                    base = settings.weather_proxy_refresh_seconds if refreshed else 300
+                    next_refresh = now + base + random.uniform(0, base * 0.1)
                 self.save()
-            except Exception:  # 后台刷新故障不结束维护任务；不打印上游响应。
+            except Exception:  # 后台故障不结束维护任务；不打印上游响应。
                 log.exception("代理池刷新失败，保留已验证代理")
                 next_refresh = time.monotonic() + 60
             await asyncio.sleep(30)
-
-    def _check_pause(self):
-        if self.paused_until > time.time() or shared.paused_until > time.monotonic():
-            raise UpstreamRateLimited()
-
-    def _record(self, entry: Entry, status: int | None, elapsed: float, ok: bool):
-        entry.status = status
-        if ok:
-            entry.successes += 1
-            entry.streak = 0
-            entry.last_ok = time.time()
-            entry.latency = elapsed if entry.successes == 1 else entry.latency * 0.7 + elapsed * 0.3
-        else:
-            entry.failures += 1
-            entry.streak += 1
-            entry.cooldown = time.time() + min(3600, 60 * 2 ** min(entry.streak - 1, 6))
-        log.info("气象代理 proxy=%s status=%s seconds=%.2f ok=%s", entry.proxy, status, elapsed, ok)
-
-    async def _request(self, entry: Entry, url: str, *, probe=False, **kwargs):
-        start = time.monotonic()
-        entry.busy += 1
-        try:
-            async with asyncio.timeout(4 if probe else 6):
-                async with httpx.AsyncClient(
-                    proxy=entry.proxy,
-                    timeout=4 if probe else 6,
-                    trust_env=False,
-                    verify=True,
-                    follow_redirects=False,
-                ) as client:
-                    res = await client.get(url, **kwargs)
-            if res.status_code == 429:
-                shared.retry_after(res.headers.get("Retry-After"))
-                self.paused_until = max(
-                    self.paused_until, time.time() + shared.paused_until - time.monotonic()
-                )
-                self._record(entry, 429, time.monotonic() - start, False)
-                entry.cooldown = max(entry.cooldown, self.paused_until)
-                self.save()
-                return res
-            valid = False
-            if res.status_code == 200:
-                with suppress(ValueError):
-                    raw = res.json()
-                    valid = isinstance(raw, dict | list) and bool(raw)
-                    if probe:
-                        valid = isinstance(raw, dict) and isinstance(
-                            raw.get("last_run_initialisation_time"), int | float
-                        )
-                    elif isinstance(raw, dict) and raw.get("error"):
-                        valid = False
-            if res.status_code == 400:
-                entry.status = 400
-                log.info("气象代理 proxy=%s status=400，不重试", entry.proxy)
-                return res
-            self._record(entry, res.status_code, time.monotonic() - start, valid)
-            if not valid:
-                raise UpstreamUnavailable("气象代理未返回有效数据")
-            return res
-        except (httpx.TransportError, TimeoutError):
-            self._record(entry, None, time.monotonic() - start, False)
-            raise
-        finally:
-            entry.busy -= 1
-
-    async def get(self, url: str, **kwargs) -> httpx.Response:
-        try:
-            async with asyncio.timeout(14):
-                return await self._get(url, **kwargs)
-        except TimeoutError as exc:
-            raise UpstreamUnavailable("气象代理请求超时") from exc
-
-    async def _get(self, url: str, **kwargs) -> httpx.Response:
-        parsed = urlsplit(url)
-        if (
-            parsed.scheme != "https"
-            or parsed.hostname not in ("api.open-meteo.com", "archive-api.open-meteo.com")
-            or parsed.username
-            or parsed.password
-            or parsed.port not in (None, 443)
-        ):
-            raise UpstreamUnavailable("代理池只允许公开气象 HTTPS 地址")
-        # 与应用共享客户端隔离：代理请求不继承令牌、Cookie、认证或环境代理。
-        if set(kwargs) - {"params", "headers"}:
-            raise UpstreamUnavailable("代理池请求选项不受支持")
-        kwargs["headers"] = {"Accept": "application/json"}
-        self._check_pause()
-        async with self.slots:
-            used = set()
-            for attempt in range(2):
-                self._check_pause()
-                choices = [
-                    e for e in self.entries.values() if e.available() and e.proxy not in used
-                ]
-                if not choices:
-                    raise UpstreamUnavailable("气象代理池暂无可用连接，请稍后重试")
-                if attempt:
-                    await shared.take(request_cost(kwargs.get("params", {})))
-                    self._check_pause()
-                    choices = [e for e in choices if e.available()]
-                    if not choices:
-                        raise UpstreamUnavailable("气象代理池暂无可用连接，请稍后重试")
-                entry = min(
-                    choices,
-                    key=lambda e: (e.failures / max(1, e.successes + e.failures), e.latency),
-                )
-                used.add(entry.proxy)
-                try:
-                    log.info("气象代理请求 path=%s attempt=%s", parsed.path, attempt + 1)
-                    return await self._request(entry, url, **kwargs)
-                except (httpx.TransportError, TimeoutError):
-                    continue
-            # 抛业务异常，避免 Provider 再乘以 upstream_retries。
-            raise UpstreamUnavailable("气象代理连接失败，请稍后重试")
 
     async def _fetch_rows(self, proxy=None):
         async with httpx.AsyncClient(  # noqa: SIM117
@@ -252,7 +391,7 @@ class ProxyPool:
         ) as client:
             async with client.stream(
                 "GET",
-                SOURCE,
+                settings.weather_proxy_source or SOURCE,
                 params={
                     "request": "display_proxies",
                     "protocol": "http",
@@ -261,7 +400,7 @@ class ProxyPool:
                     "timeout": 3000,
                     "ssl": "yes",
                     "anonymity": "elite",
-                    "limit": 100,
+                    "limit": settings.weather_proxy_candidates,
                 },
             ) as response:
                 response.raise_for_status()
@@ -275,14 +414,14 @@ class ProxyPool:
             raise ValueError("代理列表格式错误")
         return rows
 
-    async def refresh(self):
+    async def refresh(self) -> bool:
         # 官方接口境内可能无法直连；通过已有公网代理获取同一 HTTPS 列表。
         routes = [None] + [
-            e.proxy
-            for e in sorted(self.entries.values(), key=lambda e: e.last_ok, reverse=True)
-            if not e.busy and e.cooldown <= time.time()
+            n.proxy
+            for n in sorted(self.nodes.values(), key=lambda n: n.last_ok, reverse=True)
+            if not n.busy and n.cooldown <= time.time()
         ][:2]
-        rows = []
+        rows: list = []
         refreshed = False
         for route in routes:
             try:
@@ -292,49 +431,342 @@ class ProxyPool:
                 break
             except (httpx.HTTPError, TimeoutError, ValueError):
                 log.info("代理列表获取失败 route=%s", route or "direct")
-        now = time.time()
-        self.entries = {
-            k: e
-            for k, e in self.entries.items()
-            if e.busy or now - e.last_ok < 86400 or e.cooldown > now or not refreshed
-        }
+        self._prune(refreshed)
         for row in rows:
-            if not isinstance(row, dict):
-                continue
-            proxy = row.get("proxy", "")
-            if len(self.entries) >= 40:
+            if len(self.nodes) >= settings.weather_proxy_candidates:
                 break
-            if row.get("ssl") is True and public_proxy(proxy):
-                self.entries.setdefault(proxy, Entry(proxy))
-        candidates = [
-            e
-            for e in sorted(self.entries.values(), key=lambda e: e.last_ok, reverse=True)
-            if not e.available() and not e.busy and e.cooldown <= time.time()
-        ][:20]
-        checked = 0
-
-        async def probe(entry):
-            nonlocal checked
-            try:
-                self._check_pause()
-                await shared.take(1)
-                self._check_pause()
-                checked += 1
-                await self._request(entry, PROBE, probe=True)
-            except (UpstreamRateLimited, httpx.HTTPError, TimeoutError, UpstreamUnavailable):
-                pass
-
-        for offset in range(0, len(candidates), 2):
-            if sum(e.available() for e in self.entries.values()) >= 20:
-                break
-            await asyncio.gather(*(probe(e) for e in candidates[offset : offset + 2]))
-        log.info(
-            "代理池刷新 candidates=%s available=%s checked=%s",
-            len(self.entries),
-            sum(e.available() for e in self.entries.values()),
-            checked,
-        )
+            if isinstance(row, dict) and row.get("ssl") is True and public_proxy(row.get("proxy")):
+                self.nodes.setdefault(row["proxy"], Node(row["proxy"]))
+        await self._probe_round()
+        self.report()
         return refreshed
+
+    def report(self) -> dict:
+        """每轮把可用宽度与各出口用量落日志：这是唯一能看出池子够不够用的地方。"""
+        stats = self.stats()
+        log.info(
+            "代理池 candidates=%s ready_nodes=%s ready_exits=%s paused_exits=%s usage=%s",
+            stats["nodes"],
+            stats["ready_nodes"],
+            stats["ready_exits"],
+            stats["paused_exits"],
+            {ip: u["day"] for ip, u in stats["usage"].items() if u["day"]},
+        )
+        if stats["ready_exits"] < settings.weather_proxy_min_exits:
+            # 降级事件要显式记一条，不能只体现为「偶尔 502」
+            log.warning(
+                "代理池可用出口不足 ready=%s target=%s candidates=%s",
+                stats["ready_exits"],
+                settings.weather_proxy_min_exits,
+                stats["nodes"],
+            )
+        return stats
+
+    def _prune(self, refreshed: bool):
+        """淘汰连续失败过多或一天没成功的节点；列表没更新时不动已有条目。"""
+        now = time.time()
+        keep = {}
+        for proxy, node in self.nodes.items():
+            if (
+                node.busy
+                or not refreshed
+                or node.streak < settings.weather_proxy_drop_streak
+                and (now - node.last_ok < 86400 or node.cooldown > now or not node.last_ok)
+            ):
+                keep[proxy] = node
+        self.nodes = keep
+        alive = {n.exit_ip for n in self.nodes.values() if n.exit_ip}
+        # 出口账本比节点活得久：同一个出口换个端口回来，不能借机清零用量。
+        self.exits = {
+            ip: e
+            for ip, e in self.exits.items()
+            if ip in alive or e.cooldown > now or e.day.used(now)
+        }
+
+    async def _probe_round(self):
+        """按预算检测候选：先测出口，再测目标服务。检测也计项目预算。"""
+        now = time.time()
+        candidates = [
+            n
+            for n in sorted(self.nodes.values(), key=lambda n: n.last_ok, reverse=True)
+            if not n.usable(now) and not n.busy and n.cooldown <= now
+        ][: settings.weather_proxy_probe_per_round]
+        width = max(1, settings.weather_proxy_probe_concurrency)
+        for offset in range(0, len(candidates), width):
+            if self.ready_exits(time.time()) >= settings.weather_proxy_target_exits:
+                break
+            await asyncio.gather(*(self._probe(n) for n in candidates[offset : offset + width]))
+
+    async def _probe(self, node: Node):
+        try:
+            self._check_pause()
+            if not await self._observe_exit(node):
+                return
+            item = self.exits.setdefault(node.exit_ip, Exit(node.exit_ip))
+            if not item.free(time.time()) or not item.room(1, time.time()):
+                return
+            await shared.take(1)
+            self._check_pause()
+            item.charge(1, time.time())
+            await self._request(node, PROBE, probe=True)
+        except (
+            UpstreamRateLimited,
+            UpstreamUnavailable,
+            ExitLimited,
+            httpx.HTTPError,
+            TimeoutError,
+        ):
+            pass
+
+    async def _observe_exit(self, node: Node) -> bool:
+        """查实际出口。首次入池要两次独立连接得到同一个 IP 才认。"""
+        now = time.time()
+        if node.exit_fresh(now):
+            return True
+        observed = await self._exit_ip(node)
+        if observed is None:
+            return False
+        if not node.exit_ip:
+            if node.exit_seen != observed:
+                # 第一次只记下来，下一轮再确认；动态出口不会两次给同一个 IP。
+                node.exit_seen = observed
+                return False
+            node.exit_ip = observed
+        elif node.exit_ip != observed:
+            # 出口换了：旧出口的计数和冷却留着，节点重新关联。
+            log.info("气象代理出口变化 proxy=%s %s -> %s", node.proxy, node.exit_ip, observed)
+            node.exit_ip = observed
+        node.exit_seen = observed
+        node.exit_checked_at = now
+        self.exits.setdefault(observed, Exit(observed))
+        # 同出口最多留几个节点作连接备用，多的不再算作独立额度。
+        same = [n for n in self.nodes.values() if n.exit_ip == observed]
+        if len(same) > settings.weather_proxy_nodes_per_exit:
+            for extra in sorted(same, key=lambda n: n.last_ok)[
+                : len(same) - settings.weather_proxy_nodes_per_exit
+            ]:
+                if extra.proxy != node.proxy and not extra.busy:
+                    self.nodes.pop(extra.proxy, None)
+        return True
+
+    async def _exit_ip(self, node: Node) -> str | None:
+        url = settings.weather_proxy_exit_probe or EXIT_PROBE
+        try:
+            async with asyncio.timeout(settings.weather_proxy_exit_timeout):
+                async with httpx.AsyncClient(
+                    proxy=node.proxy,
+                    timeout=settings.weather_proxy_exit_timeout,
+                    trust_env=False,
+                    verify=True,
+                    follow_redirects=False,
+                ) as client:
+                    res = await client.get(url, params={"format": "json"})
+            if res.status_code != 200:
+                return None
+            raw = res.json()
+            return public_ip(raw.get("ip") if isinstance(raw, dict) else raw)
+        except (httpx.HTTPError, TimeoutError, ValueError, TypeError):
+            return None
+
+    # ---- 出网 ----
+
+    def _check_pause(self):
+        if self.paused_until > time.time() or shared.paused_until > time.monotonic():
+            raise UpstreamRateLimited()
+
+    def _record(self, node: Node, status: int | None, elapsed: float, ok: bool):
+        node.status = status
+        if ok:
+            node.successes += 1
+            node.streak = 0
+            node.last_ok = time.time()
+            node.latency = elapsed if node.successes == 1 else node.latency * 0.7 + elapsed * 0.3
+        else:
+            node.failures += 1
+            node.streak += 1
+            node.cooldown = time.time() + min(3600, 60 * 2 ** min(node.streak - 1, 6))
+        log.info(
+            "气象代理 proxy=%s exit=%s status=%s seconds=%.2f ok=%s",
+            node.proxy,
+            node.exit_ip or "-",
+            status,
+            elapsed,
+            ok,
+        )
+
+    def _limited(self, node: Node, res: httpx.Response) -> str:
+        """按 429 的窗口决定冷却范围：认得出就只停这个出口，认不出停整池。
+
+        返回窗口名。分钟限流只是这个出口这一分钟满了，换个有余额的出口还能做；
+        小时 / 日限流换出口也救不了当前这次请求，直接把 429 交回去。
+        """
+        now = time.time()
+        body = res.text[:500]
+        scope = scope_of(body)
+        item = self.exits.get(node.exit_ip)
+        if scope and item is not None:
+            name, default = scope
+            seconds = retry_seconds(res.headers.get("Retry-After"), default)
+            item.pause(seconds, f"{name} 429", now)
+            node.cooldown = max(node.cooldown, item.cooldown)
+            log.warning(
+                "气象代理出口限流 exit=%s scope=%s seconds=%.0f", node.exit_ip, name, seconds
+            )
+        else:
+            # 来源不明：不靠换 IP 推断已解除，整池按共享冷却处理。
+            shared.retry_after(res.headers.get("Retry-After"))
+            self.paused_until = max(self.paused_until, now + shared.paused_until - time.monotonic())
+            if item is not None:
+                item.pause(self.paused_until - now, "429 来源不明", now)
+            log.warning("气象代理限流来源不明 exit=%s body=%s", node.exit_ip, body[:120])
+        self._record(node, 429, 0.0, False)
+        self.save()
+        return scope[0] if scope else "unknown"
+
+    async def _request(self, node: Node, url: str, *, probe=False, **kwargs):
+        timeout = settings.weather_proxy_probe_timeout if probe else self._timeout(kwargs)
+        start = time.monotonic()
+        node.busy += 1
+        item = self.exits.get(node.exit_ip)
+        if item is not None:
+            item.busy += 1
+        try:
+            async with asyncio.timeout(timeout):
+                async with httpx.AsyncClient(
+                    proxy=node.proxy,
+                    timeout=timeout,
+                    trust_env=False,
+                    verify=True,
+                    follow_redirects=False,
+                ) as client:
+                    res = await client.get(url, **kwargs)
+            if res.status_code == 429:
+                if self._limited(node, res) == "minute":
+                    raise ExitLimited(res)
+                return res
+            if res.status_code == 400:
+                node.status = 400
+                log.info("气象代理 proxy=%s status=400，不重试", node.proxy)
+                return res
+            valid = False
+            if res.status_code == 200:
+                with suppress(ValueError):
+                    raw = res.json()
+                    valid = isinstance(raw, dict | list) and bool(raw)
+                    if probe:
+                        valid = isinstance(raw, dict) and isinstance(
+                            raw.get("last_run_initialisation_time"), int | float
+                        )
+                    elif isinstance(raw, dict) and raw.get("error"):
+                        valid = False
+            self._record(node, res.status_code, time.monotonic() - start, valid)
+            if not valid:
+                raise UpstreamUnavailable("气象代理未返回有效数据")
+            return res
+        except (httpx.TransportError, TimeoutError):
+            self._record(node, None, time.monotonic() - start, False)
+            raise
+        finally:
+            node.busy -= 1
+            if item is not None:
+                item.busy -= 1
+
+    def _timeout(self, kwargs: dict) -> float:
+        """调用方给的 timeout 只能收紧不能放宽，池自己的截止时间说了算。"""
+        given = kwargs.pop("timeout", None)
+        limit = settings.weather_proxy_request_timeout
+        return min(float(given), limit) if isinstance(given, int | float) else limit
+
+    def _pick(self, cost: float, now: float, skip: set[str], skip_exits: set[str]) -> Node | None:
+        """出口先按最近最少使用挑，避免全部流量压在最快的一个出口上。"""
+        ready = [
+            n
+            for n in self.nodes.values()
+            if n.usable(now) and n.proxy not in skip and n.exit_ip not in skip_exits
+        ]
+        usable = [
+            n
+            for n in ready
+            if (item := self.exits.get(n.exit_ip)) is not None
+            and item.free(now)
+            and item.room(cost, now)
+        ]
+        if not usable:
+            return None
+        return min(usable, key=lambda n: (self.exits[n.exit_ip].last_used, *n.score()))
+
+    async def get(self, url: str, *, background: bool = False, **kwargs) -> httpx.Response:
+        try:
+            async with asyncio.timeout(settings.weather_proxy_deadline):
+                return await self._get(url, background=background, **kwargs)
+        except TimeoutError as exc:
+            raise UpstreamUnavailable("气象代理请求超时") from exc
+
+    async def _get(self, url: str, *, background: bool, **kwargs) -> httpx.Response:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname not in ALLOWED_HOSTS
+            or parsed.username
+            or parsed.password
+            or parsed.port not in (None, 443)
+        ):
+            raise UpstreamUnavailable("代理池只允许公开气象 HTTPS 地址")
+        # 与应用共享客户端隔离：代理请求不继承令牌、Cookie、认证或环境代理。
+        if set(kwargs) - {"params", "headers", "timeout"}:
+            raise UpstreamUnavailable("代理池请求选项不受支持")
+        kwargs["headers"] = {"Accept": "application/json"}
+        cost = request_cost(kwargs.get("params") or {})
+        limit = settings.weather_proxy_exit_units_per_minute
+        if 0 < limit < cost:
+            # 一批就超过出口分钟额度，等多久都发不出去。拆批是调用方的事
+            # （全目录见 fleet_coords_per_request），这里直接报错，不要静默超发。
+            raise UpstreamUnavailable(f"单批成本 {cost:.0f} 超过出口分钟额度 {limit:.0f}，请拆批")
+        self._check_pause()
+        async with self.background_slots() if background else _null(), self.slots():
+            skip: set[str] = set()
+            skip_exits: set[str] = set()
+            limited: httpx.Response | None = None
+            for attempt in range(max(1, settings.weather_proxy_attempts)):
+                self._check_pause()
+                if attempt:
+                    # 换出口重试同样占项目预算，别让重试变成免费的。
+                    await shared.take(cost)
+                    self._check_pause()
+                node = self._pick(cost, time.time(), skip, skip_exits)
+                if node is None:
+                    raise UpstreamUnavailable("气象代理池暂无可用出口，请稍后重试")
+                skip.add(node.proxy)
+                skip_exits.add(node.exit_ip)
+                self.exits[node.exit_ip].charge(cost, time.time())
+                try:
+                    log.info(
+                        "气象代理请求 path=%s exit=%s cost=%.1f attempt=%s",
+                        parsed.path,
+                        node.exit_ip,
+                        cost,
+                        attempt + 1,
+                    )
+                    return await self._request(node, url, **dict(kwargs))
+                except ExitLimited as exc:
+                    limited = exc.response
+                    continue
+                except (httpx.TransportError, TimeoutError):
+                    continue
+            if limited is not None:
+                return limited
+            # 抛业务异常，避免 Provider 再乘以 upstream_retries。
+            raise UpstreamUnavailable("气象代理连接失败，请稍后重试")
+
+
+class _null:
+    """没开后台限名额时的占位，省掉一层分支。"""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
 
 
 pool = ProxyPool()
