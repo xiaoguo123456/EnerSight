@@ -2,12 +2,14 @@
 
 与 calibrate.py 的分工：calibrate.py 对的是 PVGIS 多年平均理论值，这里对的是**场站实测功率**。
 
-两个阶段，回答两个不同的问题：
+三个阶段，回答三个不同的问题：
 
   measured  用场站自己的实测气象驱动模型，排除气象预报误差，只看「气象 → 功率」的转换误差。
             光伏用实测总辐照与散射辐照，风电用实测轮毂高度风速、气温、气压。
   era5      用 Open-Meteo archive（ERA5）驱动同一条链路，得到全链路误差。
-            两者之差即气象输入误差。只有 PVOD 有坐标，能跑这一阶段。
+            与 measured 之差即气象输入误差。只有 PVOD 有坐标，能跑这一阶段。
+  forecast  用 Open-Meteo **历史预报**接口驱动，得到线上真实用得到的预报精度。
+            与 era5 的区别：那是再分析（事后最优估计），这里是当时真发出去的预报。
 
 数据（下载与许可见 enersight-validation-data/README.md，不进仓库）：
 
@@ -15,13 +17,20 @@
       没有坐标，所以只做风电 —— 光伏要算太阳位置，无坐标就反推不出散射分量。
   PVOD v1.0（河北 10 座地面光伏）   15 分钟，2018-08 至 2019-06，带经纬度、容量、倾角、
       实测总辐照与散射辐照。时间戳是 UTC。
+  香港科大 60 座屋顶光伏（CC0）      逐小时，2021-06 至 2023-12，带 Brick 元数据（容量、
+      倾角、方位）与园区气象塔 1 分钟实测辐照。同一校园，共用一个气象格点。
 
-两份数据都**没有限电与停机标记**，实测里混着限电、检修和故障，会让实测偏低、显得模型高估。
-所以每组都给两个口径：全时段，以及剔除「气象条件够但实测出力为 0」的时段后。
+两份场站数据都**没有限电与停机标记**，实测里混着限电、检修和故障，会让实测偏低、显得模型高估。
+
+**时效说明**：Open-Meteo 的多时效存档（`_previous_dayN`，提前 N×24 小时的那一批）自 2024-01 起才有，
+而香港科大数据截止 2023-12-31，两者不重叠。所以 forecast 阶段用的是历史预报接口的基础变量，
+即每个时刻「当时最新一批运行」的预报，约 0–24 小时时效 —— 能代表次日预报，代表不了 7 天时效衰减。
+要测时效衰减得换 2024 年以后的实测数据（AEMO、ONS、台电都在这个区间）。
 
 用法：
-  uv run python scripts/reconcile_measured.py                 # 两阶段都跑
+  uv run python scripts/reconcile_measured.py                 # 三阶段都跑
   uv run python scripts/reconcile_measured.py --stage measured
+  uv run python scripts/reconcile_measured.py --stage forecast
   uv run python scripts/reconcile_measured.py --data-dir <路径>
 
 报告写到 docs/reports/measured-reconciliation-<日期>.md。
@@ -32,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -423,9 +433,186 @@ def overall(rows: list[Result]) -> str:
     )
 
 
+# ────────────────────────────── 香港科大：预报精度 ──────────────────────────────
+
+HKUST_LAT, HKUST_LON = 22.3363, 114.2634
+HKUST_TILT = 10.0  # 元数据里倾角是 0–15°，方位多为 "90/-90deg" 双朝向或 "Mixed"，
+HKUST_AZIMUTH = 180.0  # 逐站建模不可行，按园区平均近似；倾角这么小，朝向影响有限
+HKUST_EXCLUDE = {
+    # 容量标注与实测明显对不上：峰值/容量分别是 788、42、9.0、1.9、0.37 倍
+    "Tower A",
+    "SQ9",
+    "UG Hall4 Flexible PV",
+    "SQ Apartment37-48 Flexible PV",
+    "UG Hall7 Flexible PV",
+}
+HKUST_MIN_ONLINE = 0.5
+"""在线容量占比低于这个数的时刻不参与对账。
+
+60 座站起止时间差异极大（有的 2021-03 就有，有的 2023-08 才并网），任一时刻只有部分站在线。
+所以口径取「实测出力 ÷ 当时在线容量」对「模型单位容量出力」，把在线站数的波动消掉。
+"""
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def hkust_capacities(data_dir: Path) -> dict[str, float]:
+    """Brick 元数据里的逐站额定容量（kW）。文件名与实体名拼写略有出入，按归一化匹配。"""
+    ttl = (data_dir / "hkust-pv/Dataset/Metadata/PV generation system metadata.ttl").read_text(
+        encoding="utf-8"
+    )
+    blocks = re.findall(
+        r"pvsystem:(\w+) a brick:PV_Generation_System ;(.*?)(?=\n\npvsystem:|\Z)", ttl, re.S
+    )
+    caps = {}
+    for name, body in blocks:
+        m = re.search(
+            r"ratedPowerOutput \[ brick:hasUnit unit:(\w+) ;\s*brick:value ([\d.]+)", body
+        )
+        if m:
+            caps[_norm(name)] = float(m.group(2)) * (1000 if m.group(1).upper() == "MW" else 1)
+    caps["indoorsportscentre"] = caps["indoorsportcenter"]  # 文件名拼写不同
+    return caps
+
+
+def hkust_campus_output(data_dir: Path) -> tuple[pd.Series, pd.Series, float]:
+    """园区归一化出力、在线容量、纳入的总容量。
+
+    60 座站里 37 座是 15 分钟、23 座是逐小时，先按站聚合到小时（区间末标签，与线上口径一致），
+    否则时间轴对不齐。
+    """
+    caps = hkust_capacities(data_dir)
+    root = data_dir / "hkust-pv/Dataset/Time series dataset/PV generation dataset"
+    power, used = {}, {}
+    for path in sorted(root.glob("**/Site level dataset/*.csv")):
+        name = path.stem
+        if name in HKUST_EXCLUDE:
+            continue
+        s = pd.read_csv(path, parse_dates=["Time"]).set_index("Time")["power(W)"].astype(float)
+        s = s[~s.index.duplicated(keep="first")].sort_index() / 1000.0
+        step = s.index.to_series().diff().mode()
+        if len(step) and step[0] < pd.Timedelta("1h"):
+            s = s.resample("1h", label="right", closed="right").mean()
+        power[name] = s
+        used[name] = caps[_norm(name)]
+    frame = pd.DataFrame(power).sort_index()
+    frame.index = pd.DatetimeIndex(frame.index).tz_localize(TZ_CN)  # 与预报侧对齐，香港同为 UTC+8
+    cap = pd.Series(used)
+    online = frame.notna().mul(cap, axis=1).sum(axis=1)
+    out = frame.sum(axis=1, min_count=1)
+    keep = online > cap.sum() * HKUST_MIN_ONLINE
+    return (out[keep] / online[keep]), online[keep], float(cap.sum())
+
+
+def hkust_irradiance(data_dir: Path) -> pd.Series:
+    """园区气象塔实测总辐照，1 分钟 → 小时均值。
+
+    辐照计有零点漂移（夜间读数约 11 W/m²），先按夜间中位数扣掉再聚合，否则实测系统性偏高。
+    """
+    root = data_dir / "hkust-pv/Dataset/Time series dataset/Meteorological dataset/Irradiance"
+    parts = []
+    for path in sorted(root.glob("Irradiance_*.csv")):
+        d = pd.read_csv(path)
+        d["Time"] = pd.to_datetime(d["Time"], format="%Y/%m/%d %H:%M")
+        parts.append(d.set_index("Time")["Irradiance (W/m2)"].astype(float))
+    obs = pd.concat(parts).sort_index()
+    obs = obs[~obs.index.duplicated(keep="first")]
+    obs.index = pd.DatetimeIndex(obs.index).tz_localize(TZ_CN)  # 与预报侧对齐
+    night = float(obs.between_time("01:00", "04:00").median())
+    return (obs - night).clip(lower=0).resample("1h", label="right", closed="right").mean()
+
+
+def fetch_forecast(key: str, lat: float, lon: float, start: date, end: date) -> pd.DataFrame:
+    """Open-Meteo **历史预报**：每个时刻当时最新一批运行的预报，不是事后再分析。
+
+    用 curl 落盘缓存 —— 本机系统代理下 httpx 拉长区间偶发 502 与 TLS EOF（见 CLAUDE.md）。
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache = CACHE_DIR / f"{key}_{start}_{end}.json"
+    if not cache.exists() or not cache.stat().st_size:
+        url = (
+            "https://historical-forecast-api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lon}&start_date={start}&end_date={end}"
+            f"&hourly={','.join(ARCHIVE_VARS)}&timezone={TZ_CN}&wind_speed_unit=ms"
+        )
+        subprocess.run(
+            ["curl", "-sS", "--retry", "5", "--retry-all-errors", "--retry-delay", "3",
+             "-m", "240", "-o", str(cache), url],
+            check=True,
+        )  # fmt: skip
+    h = json.loads(cache.read_text())["hourly"]
+    # 必须带时区：PvInputs 声明 tz 但太阳位置按索引本身算，无时区索引会被当 UTC，
+    # 整整错开 8 小时（实测过：峰值 0.39 vs 0.78，正午出力 0.001 vs 0.6）
+    idx = pd.DatetimeIndex(pd.to_datetime(h["time"])).tz_localize(TZ_CN)
+    return pd.DataFrame({k: v for k, v in h.items() if k != "time"}, index=idx).astype(float)
+
+
+def run_hkust_forecast(data_dir: Path) -> tuple[list[Result], str]:
+    """香港科大园区：预报驱动 vs 实测，并单独给出预报辐照与实测辐照的偏差。"""
+    cf, online, cap_total = hkust_campus_output(data_dir)
+    obs_ghi = hkust_irradiance(data_dir)
+    fc = fetch_forecast(
+        "hkust_forecast", HKUST_LAT, HKUST_LON, cf.index[0].date(), cf.index[-1].date()
+    )
+
+    # 单位容量（1 kW）等效站，得到单位容量出力，直接与归一化实测比
+    model_unit = hourly_power(
+        PvInputs(
+            latitude=HKUST_LAT,
+            longitude=HKUST_LON,
+            tz=TZ_CN,
+            capacity_kw=1.0,
+            dc_capacity_kw=1.0,
+            tilt=HKUST_TILT,
+            azimuth=HKUST_AZIMUTH,
+            times=fc.index,
+            ghi=fc["shortwave_radiation"],
+            dni=fc["direct_normal_irradiance"],
+            dhi=fc["diffuse_radiation"],
+            temp_air=fc["temperature_2m"],
+            wind_speed=fc["wind_speed_10m"],
+            step_minutes=60,
+        )
+    )
+
+    rows = []
+    both = pd.concat({"m": model_unit, "o": cf, "cap": online}, axis=1).dropna()
+    for label, sub in (("全时段", both), ("仅白天（实测 CF>0.05）", both[both["o"] > 0.05])):
+        if sub.empty:
+            continue
+        rows.append(
+            Result(
+                site="园区 55 座合计",
+                capacity_kw=cap_total,
+                days=sub.index.normalize().nunique(),
+                measured_kwh=float((sub["o"] * sub["cap"]).sum()),
+                model_kwh=float((sub["m"] * sub["cap"]).sum()),
+                mae_kw=float(((sub["m"] - sub["o"]) * sub["cap"]).abs().mean()),
+                note=f"历史预报驱动·{label}",
+            )
+        )
+
+    # 预报辐照 vs 实测辐照：把「气象预报准不准」和「链路准不准」分开
+    pair = pd.concat({"fc": fc["shortwave_radiation"], "obs": obs_ghi}, axis=1).dropna()
+    day = pair[pair["obs"] > 20]
+    daily = pair.resample("D").sum()
+    daily = daily[daily["obs"] > 500]
+    rel = ((daily["fc"] - daily["obs"]).abs() / daily["obs"]).mean()
+    note = (
+        f"预报辐照 / 实测辐照 = {day['fc'].sum() / day['obs'].sum():.3f}"
+        f"（白天 {len(day)} 小时，偏差 {(day['fc'] - day['obs']).mean():+.1f} W/m²，"
+        f"MAE {(day['fc'] - day['obs']).abs().mean():.1f} W/m²，相关 {day['fc'].corr(day['obs']):.3f}）；"
+        f"逐日累计比值中位 {(daily['fc'] / daily['obs']).median():.3f}，"
+        f"平均绝对相对误差 {rel:.0%}（{len(daily)} 天）"
+    )
+    return rows, note
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", choices=("measured", "era5", "all"), default="all")
+    ap.add_argument("--stage", choices=("measured", "era5", "forecast", "all"), default="all")
     ap.add_argument("--data-dir", type=Path, default=DEFAULT_DATA)
     args = ap.parse_args()
 
@@ -478,6 +665,23 @@ def main() -> int:
             "与第二节的差即**气象输入误差**：两节容量口径、站点范围一致，差别只在气象来自"
             "站点实测还是 ERA5。第二节按 15 分钟、第三节按逐小时聚合，因此时段口径略有不同。\n\n",
             table(era_rows),
+        ]
+
+    if args.stage in ("forecast", "all"):
+        hk_rows, irr_note = run_hkust_forecast(args.data_dir)
+        parts += [
+            "\n## 四、光伏：香港科大园区，历史预报驱动（预报精度）\n\n",
+            "前三节用的都是事后气象（站点实测或 ERA5 再分析），这一节换成**当时真发出去的预报**，"
+            "才是线上用户实际拿到的精度。\n\n"
+            f"**预报辐照本身**：{irr_note}。\n\n"
+            "**时效**：Open-Meteo 的多时效存档（`_previous_dayN`）自 2024-01 才有，而这份数据截止 "
+            "2023-12-31，两者不重叠。所以这里是「每个时刻当时最新一批运行」的预报，约 0–24 小时时效，"
+            "**代表次日预报，不代表 7 天时效衰减**。\n\n"
+            f"口径：60 座站排除 5 座容量标注明显有误的（峰值/容量 0.37–788 倍），余 55 座合计 "
+            f"{hk_rows[0].capacity_kw / 1000:.2f} MW；各站起止差异大，按「实测出力 ÷ 当时在线容量」"
+            f"对「模型单位容量出力」，只取在线容量过半的时刻。倾角按园区平均 {HKUST_TILT:g}°、正南近似"
+            "（元数据里多为双朝向与 Mixed，逐站建模不可行）。屋顶分布式、同一个气象格点。\n\n",
+            table(hk_rows),
         ]
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
