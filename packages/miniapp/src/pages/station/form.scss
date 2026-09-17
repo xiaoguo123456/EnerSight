@@ -86,10 +86,12 @@
 .sform__textarea { width: 100%; min-height: 120px; padding: 10px 12px; box-sizing: border-box; border-radius: var(--radius-button); background: var(--color-bg); font-size: var(--font-body); line-height: 1.6; color: var(--color-text); font-variant-numeric: tabular-nums; }
 
 .sform .page-header { position: sticky; top: 0; z-index: 10; }
-.sform__body { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+// 提交条在流里，不再需要给固定底栏留位；只保留 iOS 底部安全区
+.sform__body { padding-bottom: calc(var(--space-page) + env(safe-area-inset-bottom)); }
 .sform__card { gap: var(--space-3); padding: var(--space-3); }
 .sform__fields { display: flex; flex-direction: column; gap: var(--space-3); }
-.sform__footer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 11; padding: var(--space-2) var(--space-page) calc(var(--space-2) + env(safe-area-inset-bottom)); background: var(--color-surface); border-top: 1px solid var(--color-divider); }
+// 不做 fixed：视口底部会被软键盘盖住，见 form.tsx 里的说明
+.sform__footer { padding-top: var(--space-2); }
 .sform__submit { margin: 0; width: 100%; height: var(--size-control); padding: 0; border: 0; line-height: 1.5; box-shadow: none; &::after { border: 0; } }
 .sform__submit[disabled] { opacity: .6; background: var(--color-primary); }
 .sform__error { display: block; color: var(--color-danger); font-size: var(--font-caption); line-height: 1.5; padding: var(--space-1) 0; }

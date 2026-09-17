@@ -294,7 +294,7 @@ Buffalo 那台是我们独占的：Ubuntu 24.04、3 vCPU、3.9 GB 内存、磁�
 | 开发者工具每次重编译回到启动页 | `TARO_APP_LAUNCH=<page>` 临时切启动页调试，生产构建不要设 |
 | 连续快速重编译会把开发者工具搞挂 | 表现为所有页面空白但 tabBar 在、控制台无报错、连旧代码都白。**先怀疑工具再怀疑代码**：`git stash` 构建上一提交验证；重启工具即恢复 |
 | `:active` 在小程序不响应触摸 | 按下态用 `hoverClass="pressed"`，H5 走 `:active`，mixin `pressable` 两者都写 |
-| 用 `onKeyboardHeightChange` 收起固定底栏 | 真机上键盘关闭动画期间会送来迟到的 `height>0`，把已经放开的状态又收回去，此后再无事件 —— 底栏是唯一提交入口就等于表单交不出去。**别用键盘状态做功能性门槛**；而且这个门槛只在真机生效，模拟器永远测不到 |
+| 把唯一的提交按钮放进 `position: fixed` 底栏 | 软键盘会盖住视口底部的固定元素（iOS 不上推页面），按钮点不到。想靠 `onKeyboardHeightChange` 躲开也不行：真机上键盘关闭动画期间会送来迟到的 `height>0`，把状态改回去，此后再无事件。**功能性控件放文档流里**，别押在键盘事件上；这两种失败都只在真机出现，模拟器永远测不到 |
 | `ctx.roundRect` 小程序 canvas 行为不一致 | 手画圆角矩形（`arcTo`），见 TrendChart/draw.ts |
 | 模拟器不渲染 `ground-overlay` | 调用后既不回调也不拉图，只能真机看。客户端错误可用 `clientLog()` 上报到后端日志（仅连本地后端时生效） |
 | `map` 的 `regionchange` 会被贴图本身触发 | 只响应 `causedBy` 为 drag/scale 的 end 事件，否则形成请求循环 |
