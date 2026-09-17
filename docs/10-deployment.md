@@ -309,6 +309,30 @@ cd /opt/enersight-test
 [自建评估第十一节](./2026-09-16-open-meteo-self-host.md)。
 压测用的 `ENERSIGHT_FLEET_REFRESH_HOUR=0` 已删除，测试环境除气象源外与生产行为一致。
 
+## 生产气象切自建（2026-09-17）
+
+生产分两步切：先发镜像 `295725a15700@sha256:88e9f1b1…`（此时 `.env` 还没有
+`ENERSIGHT_OPEN_METEO_*`，行为不变），确认健康后再追加四行并重建 api 容器。
+`.env` 备份为 `/opt/enersight/.env.before-selfhost-20260917T083056`（权限 600）。
+
+```dotenv
+ENERSIGHT_OPEN_METEO_BASE=http://192.236.166.152:8090/v1
+ENERSIGHT_OPEN_METEO_ARCHIVE_BASE=http://192.236.166.152:8090/v1
+ENERSIGHT_OPEN_METEO_META_BASE=https://openmeteo.s3.amazonaws.com/data
+ENERSIGHT_OPEN_METEO_FALLBACK_BASE=https://api.open-meteo.com/v1
+```
+
+回滚：删掉这四行再重建 api 容器即可回到官方直连，气象缓存与落盘格式不变、不用清数据。
+镜像回滚另有 `.previous-release.env`（上一版 `17290a7aa432`）。
+
+切换后半小时验证：公网 8 个接口全部 200（首页 0.27 s、详情 0.11 s），
+场站详情天气完整且 `index.score=60.9`，全目录轮次 `ready / 8218 of 8218 / failed 0`，
+`primary_requests 59`、`fallback_requests 0`、`breaker_trips 0`，0 次 429。
+全目录跑着的时候生产首页稳定 0.22 秒，1.5 核没有被挤爆。
+详见 [自建评估第十二节](./2026-09-16-open-meteo-self-host.md)。
+
+Buffalo 侧内存限额已从 2g 提到 3g（两轮跑完到 1.773 GiB / 2 GiB，贴得太近）。
+
 ## GitHub Secrets 与发布
 
 仓库设置中配置下列 Secrets，均不进入代码：
