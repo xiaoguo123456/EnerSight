@@ -11,6 +11,7 @@
 - fleet_history          每 10 分钟   归档全目录日快照
 - model_resolution       每日一次    复核自动选择模型是否仍等于 ECMWF IFS（docs/17 §二）
 - weather_upstream       每 5 分钟    探自建气象实例，熔断/恢复写日志（仅配了兜底时注册）
+- warm_coords            每日一次    导出公开目录坐标给自建实例预热（同上，仅自建时注册）
 """
 
 import asyncio
@@ -310,6 +311,22 @@ def start(app: FastAPI) -> AsyncIOScheduler | None:
             minutes=5,
             id="weather_upstream",
             next_run_time=datetime.now(UTC) + timedelta(seconds=20),
+            max_instances=1,
+            coalesce=True,
+        )
+        # 给自建实例导出预热用的坐标清单。目录按月同步，一天一次足够。
+        # 实例侧的拉取脚本见 deploy/open-meteo/warmup.py —— 预热必须在实例本机跑，
+        # 从北京驱动要 13 小时（大响应只有 16–18 KB/s）。
+        from app.jobs import warm_coords
+
+        async def export_warm_coords():
+            await warm_coords.export()
+
+        sched.add_job(
+            export_warm_coords,
+            CronTrigger(hour=19, minute=40),  # UTC 19:40 = 北京 03:40，避开整轮与扫描
+            id="warm_coords",
+            next_run_time=datetime.now(UTC) + timedelta(seconds=60),
             max_instances=1,
             coalesce=True,
         )
