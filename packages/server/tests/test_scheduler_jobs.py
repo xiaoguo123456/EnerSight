@@ -286,3 +286,36 @@ class TestGenerateReportsJob:
         monkeypatch.setattr(scheduler, "id_pages", ghost_ids)
         await scheduler._make_generate_reports(app)()  # 不抛异常
         assert called == []
+
+
+async def test_没配腾讯key时地址回填整轮不跑(sessions, monkeypatch: pytest.MonkeyPatch):
+    """逆地理编码只有腾讯位置服务一条路，没 key 时必然一条都填不上。
+
+    原先前半段（自建站点）缺这个判断，每小时对所有地址为空的站点白跑一轮，
+    每条都打一次 geo.reverse 再拿到 None。后半段（目录省市区）本来就有判断。
+    """
+    from app.services import geo
+
+    calls = []
+
+    async def spy(*args, **kwargs):
+        calls.append(args)
+        return None
+
+    monkeypatch.setattr(geo, "reverse", spy)
+    monkeypatch.setattr(settings, "tencent_lbs_key", "")
+    async with sessions() as db:
+        db.add(
+            Station(
+                id="no-addr",
+                owner_id="u1",
+                name="缺地址",
+                type="solar",
+                capacity_kw=1000.0,
+                latitude=31.5,
+                longitude=120.5,
+            )
+        )
+        await db.commit()
+    await scheduler._make_backfill_address(app)()
+    assert calls == [], "没 key 就不该去打逆地理编码"

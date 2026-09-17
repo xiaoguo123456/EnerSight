@@ -236,6 +236,10 @@ def _make_backfill_address(app: FastAPI):
     """站点地址回填；顺带给公开电站目录回填省市区，每小时 100 条，省配额。"""
 
     async def job() -> None:
+        # 逆地理编码只有腾讯位置服务这一条路（services/geo.reverse 拿不到就返回 None），
+        # 没 key 时整轮必然一条都填不上 —— 和下面目录回填保持一致，直接不跑。
+        if not settings.tencent_lbs_key:
+            return
         async with SessionLocal() as db:
             rows = (
                 (await db.execute(select(Station).where(Station.address.is_(None)))).scalars().all()
@@ -252,8 +256,6 @@ def _make_backfill_address(app: FastAPI):
             await db.commit()
         if rows:
             log.info("backfill_address: %d/%d", n, len(rows))
-        if not settings.tencent_lbs_key:
-            return
         async with SessionLocal() as db:
             plants = (
                 (
