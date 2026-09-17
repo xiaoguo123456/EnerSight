@@ -127,6 +127,50 @@ curl -s -o /dev/null --max-time 20 "http://<US_IP>:8090/v1/forecast?latitude=39.
 出口 IP 变了就会整体断流，换机房或加 NAT 后要重新确认并改规则。
 传输是明文 HTTP（公开气象数据）；要 TLS 就再前置一个 nginx。
 
+## 预热站点坐标（让「打开新电站」从 5–6 秒降到约 1 秒）
+
+实例的冷读成本是**每个新坐标**的，邻近坐标沾不到热。实测：
+
+| 场景 | 每坐标 |
+| --- | --- |
+| 单点请求，冷 | 5–6 s |
+| 100 个一批，冷（icon / gfs） | 3.11 s / 0.91 s |
+| 100 个一批，已热 | **0.01 s** |
+
+批量把成本摊薄 2–6 倍，热了之后实例侧基本归零。所以预热一万多个公开目录坐标是划算的。
+
+**必须在本机跑，不能从北京驱动**：北京→本机的大响应只有 16–18 KB/s
+（7.57 MB 的已热批次要 421 秒），从北京驱动要 13 小时，超过 6 小时的批次周期；
+本机走 localhost 约 2.8 小时，3 并发约 1 小时。
+
+坐标清单由北京侧的 `warm_coords` 定时任务导出到 `/tiles` 静态挂载下
+（只含**公开目录**坐标，自建站点是私有数据不导出），本机按公网地址取，
+取不到就用上一次缓存的那份 —— 目录按月才变，旧清单覆盖率几乎一样。
+
+```bash
+install -m 755 warmup.py /opt/open-meteo/warmup.py
+/opt/open-meteo/warmup.py --limit 300      # 先小跑一轮看速率
+```
+
+跟着批次走，每 6 小时一次，比 `available_at` 晚半小时（避开批次沉降窗口）：
+
+```cron
+35 0,6,12,18 * * * /opt/open-meteo/warmup.py >> /var/log/openmeteo-warmup.log 2>&1
+```
+
+脚本自带 `flock`，上一轮没跑完就跳过本轮，不会叠着跑。
+
+**要盯的是缓存命中而不是「脚本跑完了」**：预热的块存在实例的 LRU 缓存里
+（`CACHE_SIZE`，现在 24 GB）。整轮全目录 2,747 个网格坐标约占 240 MB，
+一万多个站点坐标按比例约 1 GB，远在上限内；但如果被别的读取挤掉，预热就白做。
+抽查办法是随便挑一个坐标打两次，第二次应当在 1 秒内：
+
+```bash
+Q='models=best_match&timezone=auto&wind_speed_unit=ms&forecast_days=8&past_days=1'
+F='temperature_2m,wind_speed_10m,wind_speed_80m,wind_speed_100m,wind_speed_120m,wind_speed_200m,shortwave_radiation,diffuse_radiation,direct_normal_irradiance,surface_pressure,cloud_cover,weather_code,apparent_temperature,relative_humidity_2m,wind_direction_10m'
+curl -s -o /dev/null -w '%{time_total}s\n' "http://127.0.0.1:8090/v1/forecast?latitude=31.5&longitude=120.5&$Q&minutely_15=$F"
+```
+
 ## 切换应用
 
 不用改代码，三个基址都是 `ENERSIGHT_` 前缀的配置项。在 `/opt/enersight/.env` 里加：
