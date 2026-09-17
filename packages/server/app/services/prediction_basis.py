@@ -38,8 +38,8 @@ def calculation_version(day: date | str) -> str:
     """时间口径与算法修订分开；参数变化必须使缓存和留档指纹变化。"""
     parameters = calculation_parameters()
     digest = hashlib.sha256(json.dumps(parameters, sort_keys=True).encode()).hexdigest()[:12]
-    # 修订3：目录风电按投运年份选机型档、海上风电取海上格点
-    return f"{version_for_day(day)}-修订3-{digest}"
+    # 修订4：目录光伏未声明交直流口径时按直流解释（原先拒绝估算）
+    return f"{version_for_day(day)}-修订4-{digest}"
 
 
 def station_parameters(station) -> dict:
@@ -72,19 +72,25 @@ def version_for_day(day: date | str) -> str:
 
 
 def catalog_basis(plant):
+    """目录站点的 (直流, 交流) 容量、不可估算原因、以及是否用了直流假设。
+
+    返回三元组；`[0]`/`[1]` 的既有取法不变。第三项为 True 表示这座站里至少有一个
+    分期没有声明交直流口径，按**直流**解释 —— 是假设，必须在界面上标出来。
+    """
     provenance = plant.provenance or {}
     location = provenance.get("location") or {}
     if location.get("tier") == "province" and not location.get("method"):
         # 省级占位且同县、同市都没有可靠参照（app/catalog/quality.py），气象会差几百公里
-        return None, "坐标为省级占位，位置不可靠，暂不估算"
+        return None, "坐标为省级占位，位置不可靠，暂不估算", False
     phases = provenance.get("phases", [])
     if not phases:
-        return None, "原始分期与容量来源尚未核验"
+        return None, "原始分期与容量来源尚未核验", False
     dc = ac = 0.0
+    assumed = False
     for phase in phases:
         capacity = phase.get("capacity_kw", 0)
         if not isinstance(capacity, (float, int)) or not math.isfinite(capacity) or capacity <= 0:
-            return None, "分期容量不完整"
+            return None, "分期容量不完整", False
         if plant.type == "wind":
             ac += capacity
             continue
@@ -93,17 +99,20 @@ def catalog_basis(plant):
             "assumed pv",
             "photovoltaic",
         ):
-            return None, "非光伏技术暂不适用当前发电模型"
+            return None, "非光伏技术暂不适用当前发电模型", False
         rating = phase.get("capacity_rating")
         if rating == "ac":
             ac += capacity
             dc += capacity * DC_AC_RATIO
-        elif rating == "dc":
+        else:
+            # rating == "dc"，或未声明按直流处理。GEM 那一列多半是空的：生产库实测
+            # 9,822 个光伏分期 unknown（占七成），而它写明口径的 3,796 个里 71% 是 dc；
+            # 按直流解释出力也更保守（ac = cap / 容配比）。原先这里直接拒绝估算，
+            # 挡掉了 13,472 座光伏里的 9,493 座。口径与实测数据见 docs/07 §2.1
             dc += capacity
             ac += capacity / DC_AC_RATIO
-        else:
-            return None, "光伏交流/直流容量类型未知，暂不估算"
-    return (dc, ac), None
+            assumed = assumed or rating != "dc"
+    return (dc, ac), None, assumed
 
 
 def wind_turbine_class(commissioning_year: int | None, offshore: bool) -> str | None:

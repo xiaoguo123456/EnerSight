@@ -138,7 +138,7 @@ def from_catalog(p: CatalogPlant) -> Station:
     )
     from datetime import UTC
 
-    basis, blocked = catalog_basis(p)
+    basis, blocked, assumed_dc = catalog_basis(p)
     station._pv_capacity = basis
     station._prediction_blocked = blocked
     station._cell_selection = catalog_cell_selection(p)
@@ -148,7 +148,11 @@ def from_catalog(p: CatalogPlant) -> Station:
     station._catalog_metadata = {
         "phases": provenance.get("phases", []),
         "source_file": provenance.get("source_file"),
-        "capacity_note": "原始分期申报容量合计；交流/直流口径见分期"
+        "capacity_note": (
+            "原始分期申报容量合计；数据源未声明交流/直流，按直流侧估算"
+            if assumed_dc
+            else "原始分期申报容量合计；交流/直流口径见分期"
+        )
         if p.type == "solar"
         else "已投运分期额定容量合计",
         "prediction_blocked_reason": blocked,

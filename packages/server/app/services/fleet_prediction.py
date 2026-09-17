@@ -206,7 +206,7 @@ def calculate_cell(
     for p in plants:
         hub = wind.default_hub_height() if p.type == "wind" else None
         turbine = catalog_turbine_class(p)
-        basis, blocked = catalog_basis(p)
+        basis, blocked, _assumed_dc = catalog_basis(p)
         if blocked:
             continue
         dc_ratio, ac_ratio = (v / p.capacity_kw for v in basis)
