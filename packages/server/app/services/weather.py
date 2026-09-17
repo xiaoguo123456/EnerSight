@@ -196,6 +196,25 @@ def batch_stamp(meta: ModelMeta | None) -> str:
     return f"unknown-{int(time.time()) // settings.ttl_current_weather}"
 
 
+def batch_settled(meta: ModelMeta | None) -> bool:
+    """这批数据是不是已经整批落地了。
+
+    数据桶按变量分别重写：`meta.json` 宣布新批次可用之后，还有一段时间里部分变量
+    的滚动时序文件仍是上一批 —— 实测同 chunk 各变量 `Last-Modified` 跨度约 30 分钟。
+    在这个窗口里换批次会取到混着两批的数据，而 `basis.issued_at` 会报成新批次，
+    比实际数据新。所以窗口内继续用手上那批，等整批沉降完再换。
+
+    只有自建才需要这条：官方接口对外宣布可用时，它自己那份库已经是一致的。
+    拿不到 `available_at` 就没法判断，按已沉降处理（不能因此永不刷新）。
+    """
+    if meta is None or not settings.weather_self_hosted:
+        return True
+    if meta.available_at is None:
+        return True
+    age = (datetime.now(UTC) - meta.available_at).total_seconds()
+    return age >= settings.weather_batch_settle_seconds
+
+
 def refresh_slot(moment: datetime, tz: str) -> tuple[str, int]:
     """当地日期与当天第几个回源时段；一天按 forecast_refreshes_per_day 等分。"""
     local = moment.astimezone(ZoneInfo(tz))
@@ -221,6 +240,7 @@ async def get_forecast(
     # 先取元数据再取预报：两次调用之间若有新批次落地，元数据只会偏旧，不会冒充更新
     meta = await get_model_meta(http, model)
     stamp = batch_stamp(meta) if meta is not None else None
+    settled = batch_settled(meta)
     key = f"15m:{model}:{latitude!r},{longitude!r}" + (
         f":{cell_selection}" if cell_selection else ""
     )
@@ -241,7 +261,10 @@ async def get_forecast(
             return False
         if fetched_slot == slot:
             return True
-        return stamp is not None and fc.meta is not None and batch_stamp(fc.meta) == stamp
+        if stamp is not None and fc.meta is not None and batch_stamp(fc.meta) == stamp:
+            return True
+        # 新批次还没整批落地就先不换，免得取到混着两批的数据。见 batch_settled
+        return fc.meta is not None and not settled
 
     return await _cache.get_or_load(key, _load, valid=fresh)
 

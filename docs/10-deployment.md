@@ -333,10 +333,18 @@ ENERSIGHT_OPEN_METEO_FALLBACK_BASE=https://api.open-meteo.com/v1
 
 Buffalo 侧内存限额已从 2g 提到 3g（两轮跑完到 1.773 GiB / 2 GiB，贴得太近）。
 
-**待修**：共用 HTTP 客户端超时硬编码 10 秒（`app/main.py:53`），而自建冷读单坐标
-要 5.6 秒、重启后首页 12.3 秒，冷读超时会静默转去花官方额度。测试环境已实际发生一次
-（`fallback_requests=1`，原因 `ReadTimeout`）。建议给主源那一跳单独配更长超时，
-别抬高共用客户端的 10 秒 —— 它还管着腾讯位置服务与 JMA 瓦片。
+**已修**（见评估文档第十四节）：主源单独超时 `weather_primary_timeout`（30 秒）、
+自建请求不再可能被路由进代理池、`primary_requests` 覆盖后台批量、
+新批次沉降窗口 `weather_batch_settle_seconds`（1800 秒，只对自建生效）、
+`fleet_refresh_hour` 只在用官方额度时才等。
+
+**未解决**：浏览公开电站时打开一座没缓存的要 5–6 秒（官方是 0.73 秒）。
+成本是「每个新坐标」的，邻近坐标沾不到热，粗网格预热覆盖不了 36,105 个格点。
+自己的电站不受影响（`scan_alerts` 每 15 分钟遍历全部 `Station` 保持热）。
+三条可选路线见评估文档第十三节第 4 小节，需要定。
+
+Buffalo 内存限额已从 3g 提到 3900m（机器共 3,915 MB、另有 2 GB swap，上面只跑这一个服务）。
+注意限额贴到物理内存意味着它不再保护主机 —— 真涨上去是靠 swap 兜，不是靠 cgroup 拦。
 
 ## GitHub Secrets 与发布
 

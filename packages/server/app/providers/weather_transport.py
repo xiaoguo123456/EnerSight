@@ -47,7 +47,11 @@ _last: dict[str, str | None] = {"error": None, "failure_at": None, "success_at":
 
 
 def status() -> dict[str, object]:
-    """给定时探测与调试用。只有地址与计数，不含请求参数。"""
+    """给定时探测与调试用。只有地址与计数，不含请求参数。
+
+    `primary_requests` 覆盖所有打到自建主源的请求，含 `background=True` 的批量路径 ——
+    早先只统计「可退回」那一条，整轮全目录跑完计数还是个位数，看不出实际出网量。
+    """
     return {
         "primary_base": settings.open_meteo_base,
         "fallback_base": settings.open_meteo_fallback_base or None,
@@ -136,27 +140,51 @@ async def weather_get(
 
     allow_fallback 不传时等于 `not background` —— 「后台批量不退回官方」是默认规则，
     只在需要例外时显式传。
+
+    URL 属于自建主源时**一定走 `_primary`**，与 allow_fallback 无关：
+    自建请求绝不能进代理池（池子是分摊官方额度用的），只有兜底那一跳才是官方通道。
     """
     cost = request_cost(kwargs.get("params") or {})
     await shared.take(cost)
     if allow_fallback is None:
         allow_fallback = not background
-    target = fallback_url(url) if allow_fallback else None
+    target = fallback_url(url)
     if target is None:
         return await _official(client, url, cost=cost, background=background, **kwargs)
-    return await _primary_then_fallback(client, url, target, **kwargs)
+    return await _primary(
+        client,
+        url,
+        target if allow_fallback else None,
+        cost=cost,
+        background=background,
+        **kwargs,
+    )
 
 
-async def _primary_then_fallback(
-    client: httpx.AsyncClient, url: str, target: str, **kwargs
+async def _primary(
+    client: httpx.AsyncClient,
+    url: str,
+    target: str | None,
+    *,
+    cost: float,
+    background: bool,
+    **kwargs,
 ) -> httpx.Response:
-    if _open_until > time.monotonic():
-        return await _fallback(client, target, **kwargs)
+    """自建主源：一律直连、单独的超时。target 为 None 表示这条路不许退回官方。
+
+    熔断只在有兜底可用时才短路 —— 没有替代品时再怎么失败也得去打主源。
+    """
+    if target is not None and _open_until > time.monotonic():
+        return await _fallback(client, target, cost=cost, background=background, **kwargs)
     _counters["primary"] += 1
+    primary_kwargs = {**kwargs}
+    primary_kwargs.setdefault("timeout", settings.weather_primary_timeout)
     try:
-        res = await client.get(url, **kwargs)  # 自建实例一律直连，不经代理池
+        res = await client.get(url, **primary_kwargs)
     except httpx.HTTPError as exc:
         _record_failure(f"{type(exc).__name__}: {exc}")
+        if target is None:
+            raise
     else:
         if res.status_code < 500:
             _record_success()
@@ -166,11 +194,16 @@ async def _primary_then_fallback(
                 _cooldown(res)
             return res
         _record_failure(f"HTTP {res.status_code}")
-    return await _fallback(client, target, **kwargs)
+        if target is None:
+            return res
+    return await _fallback(client, target, cost=cost, background=background, **kwargs)
 
 
-async def _fallback(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
-    """兜底直连官方，不经代理池。预算已在 `weather_get` 里计过一次，这里只管 429 归属。"""
+async def _fallback(
+    client: httpx.AsyncClient, url: str, *, cost: float, background: bool, **kwargs
+) -> httpx.Response:
+    """兜底直连官方，不经代理池 —— 自建与代理池是互替策略，叠起来一次故障会同时
+    动用两套限流账本。预算已在 `weather_get` 里计过一次，这里只管 429 归属。"""
     _counters["fallback"] += 1
     res = await client.get(url, **kwargs)
     if res.status_code == 429:

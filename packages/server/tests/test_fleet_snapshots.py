@@ -1,6 +1,7 @@
 """计算完成后再发布，刷新和跨日不能清空已可用的预测。"""
 
 import asyncio
+from contextlib import suppress
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock
 
@@ -174,9 +175,7 @@ def isolated(tmp_path, monkeypatch):
         ("partial", 31, True),  # 部分覆盖半小时后续算，只补拉缺失坐标
     ],
 )
-async def test_当天快照完成后不再重算_部分覆盖才续算(
-    tmp_path, isolated, status, minutes, rebuilt
-):
+async def test_当天快照完成后不再重算_部分覆盖才续算(tmp_path, isolated, status, minutes, rebuilt):
     saved = snapshot()
     saved.update(
         status=status,
@@ -229,3 +228,36 @@ async def test_续拉只请求缺失坐标且每天轮数有上限(tmp_path, mon
     assert not seen[0].startswith("40.") and seen[1].startswith("40.") and seen[2] == seen[1]
     out = fleet.load(tmp_path / f"gfs_global-{fleet.day_key()}.json")
     assert out["covered_count"] == 1 and out["status"] == "partial"
+
+
+class Test八点门槛只为官方额度而设:
+    """`fleet_refresh_hour` 是为了等 Open-Meteo 日额度在 UTC 零点（北京 08:00）重置。
+
+    自建主源不占官方额度，就没有等这个整点的理由。跨日保护另按 day_key 判定，
+    与额度无关，不受这里影响。见 docs/2026-09-16-open-meteo-self-host.md 第十一节。
+    """
+
+    def _carried_yesterday(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(fleet, "directory", lambda: tmp_path)
+        yesterday = (date.fromisoformat(fleet.day_key()) - timedelta(days=1)).isoformat()
+        fleet.write(tmp_path / f"gfs_global-{yesterday}.json", snapshot(yesterday))
+        monkeypatch.setattr(fleet.settings, "fleet_refresh_hour", 23)  # 保证「还没到点」
+        monkeypatch.setattr(fleet, "beijing_now", lambda: datetime(2026, 9, 17, 1, 0, tzinfo=UTC))
+
+    async def test_用官方时到点前不开新轮(self, tmp_path, monkeypatch):
+        self._carried_yesterday(tmp_path, monkeypatch)
+        monkeypatch.setattr(fleet.settings, "open_meteo_fallback_base", "")
+        await fleet.ensure(None, "gfs_global")
+        assert not fleet._jobs, "到点前不该起后台轮次"
+
+    async def test_自建时不等到点直接开轮(self, tmp_path, monkeypatch):
+        self._carried_yesterday(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            fleet.settings, "open_meteo_fallback_base", "https://api.open-meteo.com/v1"
+        )
+        monkeypatch.setattr(fleet, "catalog_revision", AsyncMock(side_effect=RuntimeError("停")))
+        await fleet.ensure(None, "gfs_global")
+        assert fleet._jobs, "自建不占官方额度，不该干等"
+        for task in list(fleet._jobs.values()):
+            with suppress(Exception):
+                await task

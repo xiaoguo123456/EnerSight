@@ -671,9 +671,16 @@ async def ensure(http, model: str) -> FleetPrediction:
         )
         else blank(model, day)
     )
-    if saved and saved.get("_carried") and beijing_now().hour < settings.fleet_refresh_hour:
+    if (
+        saved
+        and saved.get("_carried")
+        and not settings.weather_self_hosted
+        and beijing_now().hour < settings.fleet_refresh_hour
+    ):
         # Open-Meteo 日额度在 UTC 零点（北京 08:00）重置；此前沿用上一日快照里对应日期的
         # 预测，不开当天这一轮整目录拉取。docs/04 §二
+        # 自建主源不占官方额度，就没有等这个整点的理由 —— 跨日保护另在下面按
+        # day_key 判定，和额度无关，不受这里影响。
         return initial
     if saved and saved.get("_retry_at", 0) > time.time():
         return initial
