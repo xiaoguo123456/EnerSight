@@ -333,6 +333,11 @@ ENERSIGHT_OPEN_METEO_FALLBACK_BASE=https://api.open-meteo.com/v1
 
 Buffalo 侧内存限额已从 2g 提到 3g（两轮跑完到 1.773 GiB / 2 GiB，贴得太近）。
 
+**待修**：共用 HTTP 客户端超时硬编码 10 秒（`app/main.py:53`），而自建冷读单坐标
+要 5.6 秒、重启后首页 12.3 秒，冷读超时会静默转去花官方额度。测试环境已实际发生一次
+（`fallback_requests=1`，原因 `ReadTimeout`）。建议给主源那一跳单独配更长超时，
+别抬高共用客户端的 10 秒 —— 它还管着腾讯位置服务与 JMA 瓦片。
+
 ## GitHub Secrets 与发布
 
 仓库设置中配置下列 Secrets，均不进入代码：
