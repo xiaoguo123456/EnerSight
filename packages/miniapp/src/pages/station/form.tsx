@@ -366,17 +366,19 @@ export default function StationForm() {
         </Disclosure>
 
         {editing && <View className="sform__delete" hoverClass="pressed" onClick={remove}><Icon name="trash" size={14} color="#b91c1c" /><Text>删除电站</Text></View>}
+
+        {/* 提交条**在文档流里**，不做 position: fixed。
+            小程序里固定在视口底部的元素会被软键盘盖住（iOS 不上推页面），
+            常见解法是聚焦时把 bottom 动态设成键盘高度、失焦复位 —— 那又得依赖
+            onKeyboardHeightChange，而它在真机上会送来迟到的 height>0 把状态改回去，
+            前两版就是这么卡住的（先是条件渲染收起按钮，后是失焦兜底被竞态打败）。
+            这是唯一的提交入口，不能押在键盘事件上。放进流里之后键盘盖不到它，
+            模拟器与真机行为一致，代价只是要滚到表单末尾 —— 表单本来就是自上而下填。 */}
+        <View className="sform__footer">
+          {formError?.section === 'submit' && <Text className="sform__error">{formError.message}</Text>}
+          <Button className="sform__submit" disabled={saving} onClick={submit}><Text className="sform__submit-text">{saving ? '保存中…' : editing ? '保存修改' : '添加电站'}</Text></Button>
+        </View>
       </>}
     </View>
-    {/* 提交条不按键盘状态收起。曾经用 onKeyboardHeightChange 收它，结果真机上
-        「填完装机容量后按钮再也不出现」：blur 放开之后，键盘关闭动画期间迟到的
-        height>0 事件又把它收回去，此后再无事件送到。它是唯一的提交入口，被这种
-        竞态卡住就等于表单交不出去；而这个门槛只在真机生效，模拟器里永远测不到。
-        被键盘挡住是观感问题，按钮消失是功能问题 —— 不拿后者换前者。
-        输入框的 adjust-position 会把焦点滚到键盘上方，固定底栏不会盖住它。 */}
-    {!loading && !failed && <View className="sform__footer">
-      {formError?.section === 'submit' && <Text className="sform__error">{formError.message}</Text>}
-      <Button className="sform__submit" disabled={saving} onClick={submit}><Text className="sform__submit-text">{saving ? '保存中…' : editing ? '保存修改' : '添加电站'}</Text></Button>
-    </View>}
   </View>
 }
