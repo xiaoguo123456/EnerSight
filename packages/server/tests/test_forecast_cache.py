@@ -295,3 +295,72 @@ class TestFieldBudget:
         from app.services.fleet_prediction import FIELDS as MODEL_FIELDS
 
         assert set(MODEL_FIELDS) <= set(HOURLY_FIELDS)
+
+
+class TestBatchSettle:
+    """新批次的沉降窗口：数据桶按变量分别重写，刚宣布可用时会混着两批。
+
+    实测同 chunk 各变量 Last-Modified 跨度约 30 分钟。
+    见 docs/2026-09-16-open-meteo-self-host.md 第九节第 5 小节。
+    """
+
+    def _meta_obj(self, issued: datetime, available: datetime | None):
+        from app.providers.open_meteo import ModelMeta
+
+        return ModelMeta("ecmwf_ifs", issued, available, 21600)
+
+    def test_没配自建时一律算已沉降(self, monkeypatch):
+        """官方对外宣布可用时它自己那份库已经是一致的，不需要等。"""
+        monkeypatch.setattr(weather.settings, "open_meteo_fallback_base", "")
+        just_now = datetime.now(UTC)
+        assert weather.batch_settled(self._meta_obj(just_now, just_now)) is True
+
+    def test_自建下刚可用的批次算未沉降(self, monkeypatch):
+        monkeypatch.setattr(
+            weather.settings, "open_meteo_fallback_base", "https://api.open-meteo.com/v1"
+        )
+        monkeypatch.setattr(weather.settings, "weather_batch_settle_seconds", 1800.0)
+        just_now = datetime.now(UTC)
+        assert weather.batch_settled(self._meta_obj(just_now, just_now)) is False
+
+    def test_自建下过了窗口就算沉降(self, monkeypatch):
+        monkeypatch.setattr(
+            weather.settings, "open_meteo_fallback_base", "https://api.open-meteo.com/v1"
+        )
+        monkeypatch.setattr(weather.settings, "weather_batch_settle_seconds", 1800.0)
+        old = datetime.now(UTC) - timedelta(seconds=2000)
+        assert weather.batch_settled(self._meta_obj(old, old)) is True
+
+    def test_拿不到可用时刻按已沉降处理(self, monkeypatch):
+        """不能因为少一个字段就永不刷新 —— 那比混批次严重。"""
+        monkeypatch.setattr(
+            weather.settings, "open_meteo_fallback_base", "https://api.open-meteo.com/v1"
+        )
+        assert weather.batch_settled(self._meta_obj(datetime.now(UTC), None)) is True
+        assert weather.batch_settled(None) is True
+
+    async def test_未沉降时不换批次_保留手上那份(self, upstream: _Upstream, monkeypatch):
+        """换过去就会取到混着两批的数据，basis.issued_at 还会报得比数据新。"""
+        slots = iter(range(100))
+        monkeypatch.setattr(
+            weather, "refresh_slot", lambda *_: ("2026-09-17", next(slots))
+        )  # 每次调用都换时段，把判定逼到批次分支
+        monkeypatch.setattr(weather, "batch_settled", lambda _meta: False)
+        async with httpx.AsyncClient() as http:
+            await _get(http)
+            assert upstream.quarter_calls == 1
+            upstream.issued = BATCH_B  # 上游换批次
+            weather._meta_cache.clear()
+            await _get(http)
+        assert upstream.quarter_calls == 1, "未沉降就不该重拉"
+
+    async def test_沉降后照常换批次(self, upstream: _Upstream, monkeypatch):
+        slots = iter(range(100))
+        monkeypatch.setattr(weather, "refresh_slot", lambda *_: ("2026-09-17", next(slots)))
+        monkeypatch.setattr(weather, "batch_settled", lambda _meta: True)
+        async with httpx.AsyncClient() as http:
+            await _get(http)
+            upstream.issued = BATCH_B
+            weather._meta_cache.clear()
+            await _get(http)
+        assert upstream.quarter_calls == 2

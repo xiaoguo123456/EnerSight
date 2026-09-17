@@ -124,6 +124,20 @@ class Settings(BaseSettings):
     # 主源连续失败几次后熔断。熔断期间直接走兜底，不让每个请求先白等一次超时
     weather_primary_trip_after: int = 3
     weather_primary_probe_seconds: float = 120.0
+    # 自建主源的冷读远慢于官方：实测单坐标 15 字段 9 天首次 5–6 秒（每个新坐标的固定开销，
+    # 是 Buffalo→S3 的往返 × 几十次区间读），同坐标重复 0.9–1.1 秒。共用客户端只有 10 秒，
+    # 冷读一超时就**静默转去花官方额度** —— 正是自建要解决的事。所以主源单独一个超时。
+    # 调用方显式传了 timeout 的（全目录 40 秒、地图 25 秒）以调用方为准。
+    weather_primary_timeout: float = 30.0
+    # 新起报批次的沉降窗口。数据桶按变量分别重写，实测同 chunk 各变量 Last-Modified
+    # 跨度约 30 分钟；`available_at` 刚过去不久就换批次，会取到混着两批的数据，
+    # 且 basis.issued_at 报得比实际数据新。窗口内继续用手上那批，整批换过去再走。
+    weather_batch_settle_seconds: float = 1800.0
+
+    @property
+    def weather_self_hosted(self) -> bool:
+        """主源是自建实例。配了官方兜底就说明主源不是官方。"""
+        return bool(self.open_meteo_fallback_base)
 
     ttl_model_meta: int = 300
 

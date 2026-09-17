@@ -415,3 +415,80 @@ async def test_没配兜底时探测直接通过(selfhosted, monkeypatch):
         with respx.mock:  # 不注册任何路由：真去请求就会失败
             assert await selfhosted.probe(http) is True
             assert not respx.calls
+
+
+# ---- 自建主源的超时、计数与「不进代理池」（docs/2026-09-16-open-meteo-self-host.md 十三）----
+
+
+async def test_主源用单独的更长超时(selfhosted, monkeypatch):
+    """自建冷读实测 5–6 秒，共用客户端只有 10 秒，超时就静默转去花官方额度。"""
+    monkeypatch.setattr(settings, "weather_primary_timeout", 30.0)
+    seen = {}
+    async with httpx.AsyncClient(timeout=10.0) as http:
+        with respx.mock:
+            respx.get(f"{SELF}/forecast").mock(return_value=httpx.Response(200, json={}))
+            original = http.get
+
+            async def spy(url, **kwargs):
+                seen.update(kwargs)
+                return await original(url, **kwargs)
+
+            monkeypatch.setattr(http, "get", spy)
+            await weather_get(http, f"{SELF}/forecast")
+    assert seen["timeout"] == 30.0
+
+
+async def test_调用方显式给的超时优先(selfhosted, monkeypatch):
+    """全目录 40 秒、地图 25 秒是按各自批量大小定的，不该被主源默认值覆盖。"""
+    monkeypatch.setattr(settings, "weather_primary_timeout", 30.0)
+    seen = {}
+    async with httpx.AsyncClient() as http:
+        with respx.mock:
+            respx.get(f"{SELF}/forecast").mock(return_value=httpx.Response(200, json={}))
+            original = http.get
+
+            async def spy(url, **kwargs):
+                seen.update(kwargs)
+                return await original(url, **kwargs)
+
+            monkeypatch.setattr(http, "get", spy)
+            await weather_get(http, f"{SELF}/forecast", timeout=40, background=True)
+    assert seen["timeout"] == 40
+
+
+async def test_后台批量打自建也不进代理池(selfhosted, monkeypatch):
+    """background=True 时不退回官方，但它打的是自建 —— 绝不能被路由进代理池。"""
+    called = []
+
+    async def via_pool(url, **kw):
+        called.append(url)
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(settings, "weather_proxy_pool_enabled", True)
+    monkeypatch.setattr(weather_proxy_pool.pool, "get", via_pool)
+    async with httpx.AsyncClient() as http:
+        with respx.mock:
+            primary = respx.get(f"{SELF}/forecast").mock(return_value=httpx.Response(200, json={}))
+            res = await weather_get(http, f"{SELF}/forecast", background=True)
+    assert res.status_code == 200 and primary.called
+    assert called == []
+
+
+async def test_后台批量也计入主源请求数(selfhosted):
+    """早先只统计可退回那一条，整轮全目录跑完计数还是个位数，看不出实际出网量。"""
+    async with httpx.AsyncClient() as http:
+        with respx.mock:
+            respx.get(f"{SELF}/forecast").mock(return_value=httpx.Response(200, json={}))
+            for _ in range(3):
+                await weather_get(http, f"{SELF}/forecast", background=True)
+    assert selfhosted.status()["primary_requests"] == 3
+
+
+async def test_没有兜底可用时熔断不短路(selfhosted, monkeypatch):
+    """没有替代品时再怎么失败也得去打主源，否则后台永远拿不到数据。"""
+    monkeypatch.setattr(selfhosted, "_open_until", time.monotonic() + 999)
+    async with httpx.AsyncClient() as http:
+        with respx.mock:
+            primary = respx.get(f"{SELF}/forecast").mock(return_value=httpx.Response(200, json={}))
+            res = await weather_get(http, f"{SELF}/forecast", background=True)
+    assert res.status_code == 200 and primary.called
