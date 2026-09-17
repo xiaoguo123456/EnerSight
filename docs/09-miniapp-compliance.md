@@ -269,12 +269,15 @@ AI 生成  →  微信内容安全接口检测  →  通过则落库缓存
 
 mp 后台「开发管理 → 服务器域名」配置：
 
-| 类型 | 用途 | 本项目 |
-| --- | --- | --- |
-| request | 接口请求 | BFF 域名 |
-| uploadFile | 上传 | V1 暂无 |
-| downloadFile | 下载文件 | 视图层图片加载方式而定 |
-| socket | WebSocket | V1 暂无 |
+| 类型 | 用途 | 本项目 | 状态 |
+| --- | --- | --- | --- |
+| request | 接口请求 | `platform.qhzhiyin.com` | **已配置**（2026-09-17 确认） |
+| uploadFile | 上传 | V1 暂无 | —— |
+| downloadFile | 下载文件 | 视图层图片加载方式而定 | 待定，见下方待验证 |
+| socket | WebSocket | V1 暂无 | —— |
+
+**request 域名不再是上线阻塞项** —— `platform.qhzhiyin.com` 已在 mp 后台配好，
+真机可以直接连生产。别再把它列进待办。
 
 要求：
 
