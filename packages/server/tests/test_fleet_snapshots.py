@@ -168,14 +168,18 @@ def isolated(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "status,minutes,rebuilt",
+    "status,minutes,detail,rebuilt",
     [
-        ("ready", 13 * 60, False),  # 旧规则 12 小时后整轮重拉
-        ("partial", 10, False),
-        ("partial", 31, True),  # 部分覆盖半小时后续算，只补拉缺失坐标
+        ("ready", 13 * 60, True, False),  # 旧规则 12 小时后整轮重拉
+        ("partial", 10, True, False),
+        ("partial", 31, True, True),  # 部分覆盖半小时后续算，只补拉缺失坐标
+        # 逐省明细缺失（本功能上线前算的快照）补一轮，否则筛地区会一直停在准备中
+        ("ready", 10, False, True),
     ],
 )
-async def test_当天快照完成后不再重算_部分覆盖才续算(tmp_path, isolated, status, minutes, rebuilt):
+async def test_当天快照完成后不再重算_部分覆盖才续算(
+    tmp_path, isolated, status, minutes, detail, rebuilt
+):
     saved = snapshot()
     saved.update(
         status=status,
@@ -183,6 +187,8 @@ async def test_当天快照完成后不再重算_部分覆盖才续算(tmp_path,
         generated_at=(datetime.now(UTC) - timedelta(minutes=minutes)).isoformat(),
     )
     fleet.write(tmp_path / f"gfs_global-{fleet.day_key()}.json", saved)
+    if detail:
+        fleet.write(fleet.regions_path("gfs_global", fleet.day_key()), {"regions": {}})
     await fleet.ensure(None, "gfs_global")
     await fleet._jobs[f"gfs_global-{fleet.day_key()}"]
     assert isolated.await_count == (1 if rebuilt else 0)

@@ -466,8 +466,13 @@ interface HomeResponse {
 
 ```
 GET /v1/predictions/station?station_id={id}&days=7&weather_model=best_match
-GET /v1/predictions/fleet?weather_model=best_match
+GET /v1/predictions/fleet?weather_model=best_match&provinces=云南省,河北省
 ```
+
+`provinces` 可选，逗号分隔的目录省份全称。给了就把整份响应按所选省汇总，包括覆盖统计的
+**分母**；不给就是全目录。未知省份忽略，全部无效返回 400 `INVALID_PARAM`。
+筛选只读快照的逐省明细做加法，不触发新一轮计算，也不写历史留档。口径见
+[17 §二](./17-user-stations-and-outlook.md)。
 
 ```ts
 interface ForecastBasis {
@@ -535,6 +540,12 @@ interface FleetProvinceGrid {        // 已覆盖电站逐站按所在省利用�
   curtailed_kwh: number
   applied_count: number; unapplied_count: number
   periods: string[]; source: string
+}
+
+interface RegionPrediction {         // 按电站所在省汇总，只含该日已覆盖的电站
+  province: string                   // 省份不详归入「地区待补充」，不作为筛选项
+  energy_kwh: number
+  covered_count: number
 }
 ```
 

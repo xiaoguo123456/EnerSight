@@ -147,12 +147,23 @@ async def get_map_overview(
 
 
 @router.get("/predictions/fleet", response_model=Envelope[FleetPrediction])
-async def fleet_prediction(request: Request, coord: CoordQuery = Coord.WGS84):
-    """全目录汇总只含公开目录，游客可看。"""
+async def fleet_prediction(
+    request: Request,
+    coord: CoordQuery = Coord.WGS84,
+    provinces: Annotated[str, Query(max_length=512)] = "",
+):
+    """全目录汇总只含公开目录，游客可看。
+
+    `provinces` 为逗号分隔的省份全称，给了就整份按所选省汇总（含覆盖统计的分母）。
+    未知省份忽略，全部无效返回 400。docs/17 §二
+    """
     from app.services import fleet_prediction as fleet
     from app.weather_model import current_model
 
-    return envelope(await fleet.ensure(request.app.state.http, current_model.get()), coord)
+    picked = [name.strip() for name in provinces.split(",") if name.strip()]
+    return envelope(
+        await fleet.ensure_scoped(request.app.state.http, current_model.get(), picked), coord
+    )
 
 
 @router.get("/predictions/fleet/history")

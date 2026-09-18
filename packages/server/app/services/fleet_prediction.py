@@ -23,6 +23,7 @@ from app.render import tiles
 from app.schemas.prediction import (
     FleetDay,
     FleetPrediction,
+    FleetProvinceGrid,
     ForecastBasis,
     PowerPoint,
     RegionPrediction,
@@ -39,6 +40,7 @@ from app.services.prediction_basis import (
 from app.weather_model import MODELS
 
 log = logging.getLogger(__name__)
+UNKNOWN_REGION = "地区待补充"
 _jobs: dict[str, asyncio.Task] = {}
 _checked: dict[str, float] = {}
 _gate = asyncio.Lock()
@@ -140,9 +142,28 @@ def phases_of(p) -> list[dict]:
     return (p.provenance or {}).get("phases") or []
 
 
+def province_of(p) -> str:
+    """省份不详归入一个固定桶：它是合法的汇总项，但不作为筛选项。docs/17 §二"""
+    return p.province or UNKNOWN_REGION
+
+
+def bad_geometry(p) -> bool:
+    """坐标或能源类型不可用。容量另判，两处口径要一致。"""
+    return (
+        not math.isfinite(p.latitude)
+        or not math.isfinite(p.longitude)
+        or not -90 < p.latitude < 90
+        or not -180 <= p.longitude <= 180
+        or p.type not in ("solar", "wind")
+    )
+
+
 def eligible(plants):
-    seen, rows = set(), []
-    duplicate, invalid = 0, 0
+    """返回 (可算场站, [(被剔除的场站, 原因)])。原因为 duplicate 或 invalid。
+
+    被剔除的明细要留着：按地区筛选时每个省的分母得用同一套规则分桶算一遍。
+    """
+    seen, rows, dropped = set(), [], []
     for p in plants:
         if not (
             p.type in ("solar", "wind")
@@ -151,18 +172,155 @@ def eligible(plants):
             and -90 < p.latitude < 90
             and -180 <= p.longitude <= 180
         ):
-            invalid += 1
+            dropped.append((p, "invalid"))
             continue
         # 同一 GEM 分期只算一次。不能按「同名、同坐标、同容量」合并：GEM 里大量不同项目共用
         # 中文名与占位坐标，容量也可能相同（如白沟商业屋顶光伏 II–VI 期均为 1.6 MW）。
         phase_ids = tuple(sorted(str(ph["id"]) for ph in phases_of(p) if ph.get("id")))
         key = (p.type, phase_ids) if phase_ids else (p.type, p.source, p.source_id)
         if key in seen:
-            duplicate += 1
+            dropped.append((p, "duplicate"))
             continue
         seen.add(key)
         rows.append(p)
-    return rows, duplicate, invalid
+    return rows, dropped
+
+
+def region_totals(plants, rows, verified, dropped) -> dict[str, dict]:
+    """每省的目录分母：规则与全目录逐字一致，只是按省分桶。
+
+    覆盖率的分母必须按省重算 —— 拿全国容量当分母会把「云南省」显示成覆盖 0.9%。
+    """
+    out: dict[str, dict] = {}
+
+    def bucket(p) -> dict:
+        return out.setdefault(
+            province_of(p),
+            {
+                "total_count": 0,
+                "total_capacity_kw": 0.0,
+                "eligible_count": 0,
+                "duplicate_count": 0,
+                "invalid_count": 0,
+            },
+        )
+
+    for p in plants:
+        bucket(p)["total_count"] += 1
+    for p, reason in dropped:
+        b = bucket(p)
+        b[f"{reason}_count"] += 1
+        # 重复记录不计入目录总数，与全目录的 total_count 口径一致
+        if reason == "duplicate":
+            b["total_count"] -= 1
+    verified_ids = {p.id for p in verified}
+    for p in rows:
+        b = bucket(p)
+        b["total_capacity_kw"] += p.capacity_kw
+        if p.id in verified_ids:
+            b["eligible_count"] += 1
+        else:
+            b["invalid_count"] += 1
+    for p in plants:
+        if bad_geometry(p) and math.isfinite(p.capacity_kw) and p.capacity_kw > 0:
+            bucket(p)["total_capacity_kw"] += p.capacity_kw
+    return out
+
+
+def power_points(day: str, values) -> list[PowerPoint]:
+    """96 点曲线按区间起点标时刻，统一北京时间。"""
+    return [
+        PowerPoint(time=f"{day}T{h // 4:02d}:{h % 4 * 15:02d}:00+08:00", value=float(v))
+        for h, v in enumerate(values)
+    ]
+
+
+class RegionDetail:
+    """逐省明细：按地区筛选的请求读它做加法，不重算气象、不触发拉取。docs/17 §二
+
+    逐日以**日期**为键而不是数组下标 —— 跨日沿用昨日快照时，目标日在昨日明细里的位置
+    整体前移一天，按下标取会错位一天。
+    """
+
+    def __init__(self, dates: list[str], totals: dict[str, dict]) -> None:
+        self.dates = dates
+        self.totals = totals
+        self.dyn: dict[str, dict] = {}
+
+    def _of(self, name: str) -> dict:
+        d = self.dyn.get(name)
+        if d is not None:
+            return d
+        n = len(self.dates)
+        d = self.dyn[name] = {
+            "power": np.zeros((n, 96)),
+            "solar": np.zeros(n),
+            "wind": np.zeros(n),
+            "covered": np.zeros(n, dtype=int),
+            "capacity": np.zeros(n),
+            "common": np.zeros(n),
+            "common_count": 0,
+            "common_capacity": 0.0,
+            # 内蒙古按蒙西/蒙东分区折算，事后无法由省级合计反推，所以存折算结果不存利用率
+            "grid": province_grid.FleetAccumulator([date.fromisoformat(x) for x in self.dates]),
+        }
+        return d
+
+    def add(self, p, k: int, curve, energy_kwh: float) -> None:
+        d = self._of(province_of(p))
+        d["power"][k] += curve
+        d["covered"][k] += 1
+        d["capacity"][k] += p.capacity_kw
+        if p.type == "solar":
+            d["solar"][k] += energy_kwh
+        else:
+            d["wind"][k] += energy_kwh
+        d["grid"].add(k, p.type, p.province, p.city, energy_kwh)
+
+    def add_common(self, p, per_day) -> None:
+        d = self._of(province_of(p))
+        d["common_count"] += 1
+        d["common_capacity"] += p.capacity_kw
+        d["common"] += np.array([c.sum() * 0.25 for c in per_day])
+
+    def _days(self, d: dict) -> dict:
+        out = {}
+        for k, day in enumerate(self.dates):
+            if not d["covered"][k]:
+                continue
+            grid = d["grid"].result(k)
+            out[day] = {
+                "power_kw": [round(float(v), 3) for v in d["power"][k]],
+                "solar_kwh": round(float(d["solar"][k]), 3),
+                "wind_kwh": round(float(d["wind"][k]), 3),
+                "covered_count": int(d["covered"][k]),
+                "covered_capacity_kw": round(float(d["capacity"][k]), 3),
+                "common_energy_kwh": (
+                    round(float(d["common"][k]), 3) if d["common_count"] else None
+                ),
+                "province_grid": grid.model_dump() if grid else None,
+            }
+        return out
+
+    def dump(self, day: str) -> dict:
+        regions: dict[str, dict] = {}
+        for name, d in self.dyn.items():
+            regions[name] = {
+                **self.totals.get(name, {}),
+                "common_covered_count": d["common_count"],
+                "common_capacity_kw": round(d["common_capacity"], 3),
+                "days": self._days(d),
+            }
+        # 一个电站都没算出来的省也要留下分母，否则筛这种省会变成「没有这个省」而不是「未覆盖」
+        for name, totals in self.totals.items():
+            regions.setdefault(
+                name, {**totals, "common_covered_count": 0, "common_capacity_kw": 0.0, "days": {}}
+            )
+        return {"day": day, "resolution_minutes": 15, "regions": regions}
+
+
+def regions_path(model: str, day: str) -> Path:
+    return directory() / f"{model}-{day}-regions.json"
 
 
 def grid_step(station_type: str) -> float:
@@ -263,7 +421,9 @@ async def build(http, model: str, day: str, plants) -> None:
     out = blank(model, day)
     newest = max((p.updated_at for p in plants if p.updated_at is not None), default=None)
     out.catalog_revision = f"{len(plants)}:{newest.isoformat() if newest else ''}"
-    rows, dup, invalid = eligible(plants)
+    rows, dropped = eligible(plants)
+    dup = sum(1 for _, reason in dropped if reason == "duplicate")
+    invalid = len(dropped) - dup
     out.total_count = len(plants) - dup
     verified = [p for p in rows if not catalog_basis(p)[1]]
     out.eligible_count = len(verified)
@@ -272,15 +432,7 @@ async def build(http, model: str, day: str, plants) -> None:
     out.total_capacity_kw = sum(p.capacity_kw for p in rows) + sum(
         p.capacity_kw
         for p in plants
-        if math.isfinite(p.capacity_kw)
-        and p.capacity_kw > 0
-        and (
-            not math.isfinite(p.latitude)
-            or not math.isfinite(p.longitude)
-            or not -90 < p.latitude < 90
-            or not -180 <= p.longitude <= 180
-            or p.type not in ("solar", "wind")
-        )
+        if math.isfinite(p.capacity_kw) and p.capacity_kw > 0 and bad_geometry(p)
     )
     groups = defaultdict(list)
     for p in verified:
@@ -298,6 +450,8 @@ async def build(http, model: str, day: str, plants) -> None:
     covered_capacity = np.zeros(n_days)
     common_total = np.zeros(n_days)
     regions: list[dict[str, list]] = [{} for _ in range(n_days)]
+    # 按地区筛选用的逐省明细，与快照一起落盘。docs/17 §二
+    detail = RegionDetail(dates, region_totals(plants, rows, verified, dropped))
     covered = set()
     coverage_by_plant = {}
     cache_path = directory() / f"{model}-{day}-weather-15m.json"
@@ -355,12 +509,7 @@ async def build(http, model: str, day: str, plants) -> None:
         ]
 
     def points(k: int) -> list[PowerPoint]:
-        if not covered_days[k]:
-            return []
-        return [
-            PowerPoint(time=f"{dates[k]}T{h // 4:02d}:{h % 4 * 15:02d}:00+08:00", value=float(v))
-            for h, v in enumerate(total[k])
-        ]
+        return power_points(dates[k], total[k]) if covered_days[k] else []
 
     def publish():
         if out.status == "building":
@@ -410,6 +559,8 @@ async def build(http, model: str, day: str, plants) -> None:
                 if out.status == "error":
                     published["_retry_at"] = time.time() + 1800
                 write(path, published)
+                # 明细只跟着真正落盘的快照走，保留上次预测时也保留上次明细
+                write(regions_path(model, day), detail.dump(day))
             else:
                 previous["_retry_at"] = time.time() + 1800
                 previous["message"] = "本轮更新未取得有效数据，保留上次预测"
@@ -521,6 +672,7 @@ async def build(http, model: str, day: str, plants) -> None:
                     out.common_covered_count += 1
                     out.common_capacity_kw += p.capacity_kw
                     common_total += np.array([c.sum() * 0.25 for c in per_day])
+                    detail.add_common(p, per_day)
                 for k, curve in enumerate(per_day):
                     if curve is None:
                         continue
@@ -533,9 +685,10 @@ async def build(http, model: str, day: str, plants) -> None:
                         solar_kwh[k] += energy
                     else:
                         wind_kwh[k] += energy
-                    region = regions[k].setdefault(p.province or "地区待补充", [0.0, 0])
+                    region = regions[k].setdefault(province_of(p), [0.0, 0])
                     region[0] += energy
                     region[1] += 1
+                    detail.add(p, k, curve, energy)
         publish()
         if stop:
             break
@@ -628,7 +781,172 @@ def carry_previous(model: str, day: str) -> dict | None:
         setattr(result, field, getattr(today, field))
     result.status = "partial"
     result.message = "新一轮预报准备中，当前使用上一批对应日期的预测"
+    # 明细以日期为键，直接沿用昨日那份即可对齐，不需要按下标平移
+    carried = load_regions(model, yesterday)
+    if carried:
+        write(regions_path(model, day), {**carried, "day": day})
     return {**result.model_dump(), "_carried": True}
+
+
+def load_regions(model: str, day: str) -> dict | None:
+    data = load(regions_path(model, day))
+    return data if isinstance(data, dict) and isinstance(data.get("regions"), dict) else None
+
+
+def selectable_regions(detail: dict) -> set[str]:
+    """可作为筛选项的省份。省份不详的桶是合法的汇总项，但不给筛。"""
+    return {name for name in detail["regions"] if name != UNKNOWN_REGION}
+
+
+def _merge_province_grid(rows: list[dict]) -> dict | None:
+    """逐省的第二层折算结果相加。存的是折算后的电量，不是利用率，所以可加。"""
+    applied = sum(r["applied_count"] for r in rows)
+    if not applied:
+        return None
+    periods: set[str] = set()
+    for r in rows:
+        periods.update(r.get("periods") or [])
+    return {
+        "energy_kwh": round(sum(r["energy_kwh"] for r in rows), 2),
+        "curtailed_kwh": round(sum(r["curtailed_kwh"] for r in rows), 2),
+        "applied_count": applied,
+        "unapplied_count": sum(r["unapplied_count"] for r in rows),
+        "periods": sorted(periods),
+        "source": next((r["source"] for r in rows if r.get("source")), ""),
+    }
+
+
+def build_scoped(snapshot: FleetPrediction, detail: dict, names: list[str]) -> FleetPrediction:
+    """把全目录快照按所选省份重算一份，覆盖统计的分母一起换。docs/17 §二"""
+    picked = [detail["regions"][name] for name in names]
+    dates = [d.date for d in snapshot.days] or [
+        (date.fromisoformat(snapshot.date) + timedelta(days=k)).isoformat()
+        for k in range(days_count())
+    ]
+    out = snapshot.model_copy(deep=True)
+    # 筛选结果不写历史留档，也不参与预报时效留档，带着全目录的留档标识会误导
+    out.input_archive_id = None
+    out.assumptions = [
+        *snapshot.assumptions,
+        f"本页仅统计所选 {len(names)} 个地区：{'、'.join(names)}；覆盖统计的分母也按这些地区计。",
+    ]
+    out.total_count = sum(r["total_count"] for r in picked)
+    out.eligible_count = sum(r["eligible_count"] for r in picked)
+    out.duplicate_count = sum(r["duplicate_count"] for r in picked)
+    out.invalid_count = sum(r["invalid_count"] for r in picked)
+    out.total_capacity_kw = round(sum(r["total_capacity_kw"] for r in picked), 3)
+    out.common_covered_count = sum(r["common_covered_count"] for r in picked)
+    out.common_capacity_kw = round(sum(r["common_capacity_kw"] for r in picked), 3)
+    building = snapshot.status in ("queued", "building")
+    days = []
+    for k, day in enumerate(dates):
+        rows = [
+            (name, r["days"][day])
+            for name, r in zip(names, picked, strict=True)
+            if day in r["days"]
+        ]
+        covered = sum(row["covered_count"] for _, row in rows)
+        curve = np.zeros(96)
+        for _, row in rows:
+            curve += np.asarray(row["power_kw"], dtype=float)
+        grids = [row["province_grid"] for _, row in rows if row["province_grid"]]
+        common = [
+            row["common_energy_kwh"] for _, row in rows if row["common_energy_kwh"] is not None
+        ]
+        days.append(
+            FleetDay(
+                resolution_minutes=detail.get("resolution_minutes", 15),
+                date=day,
+                weekday=date.fromisoformat(day).isoweekday(),
+                lead_days=k,
+                energy_kwh=float(curve.sum()) * 0.25 if covered else None,
+                solar_kwh=round(sum(row["solar_kwh"] for _, row in rows), 3),
+                wind_kwh=round(sum(row["wind_kwh"] for _, row in rows), 3),
+                power_kw=power_points(day, curve) if covered else [],
+                covered_count=covered,
+                covered_capacity_kw=round(sum(row["covered_capacity_kw"] for _, row in rows), 3),
+                failed_count=out.eligible_count - covered,
+                status=(
+                    "building"
+                    if building
+                    else "ready"
+                    if covered == out.eligible_count and out.eligible_count
+                    else "partial"
+                    if covered
+                    else "error"
+                ),
+                common_energy_kwh=round(sum(common), 3) if out.common_covered_count else None,
+                regions=sorted(
+                    (
+                        RegionPrediction(
+                            province=name,
+                            energy_kwh=round(float(np.asarray(row["power_kw"]).sum()) * 0.25, 3),
+                            covered_count=row["covered_count"],
+                        )
+                        for name, row in rows
+                    ),
+                    key=lambda r: r.energy_kwh,
+                    reverse=True,
+                ),
+                province_grid=(
+                    FleetProvinceGrid.model_validate(merged)
+                    if (merged := _merge_province_grid(grids))
+                    else None
+                ),
+            )
+        )
+    out.days = days
+    today = days[0]
+    for field in (
+        "energy_kwh",
+        "solar_kwh",
+        "wind_kwh",
+        "power_kw",
+        "covered_count",
+        "covered_capacity_kw",
+        "failed_count",
+        "regions",
+        "resolution_minutes",
+    ):
+        setattr(out, field, getattr(today, field))
+    out.status = (
+        snapshot.status
+        if building
+        else "ready"
+        if out.eligible_count and all(d.covered_count == out.eligible_count for d in days)
+        else "partial"
+        if any(d.covered_count for d in days)
+        else "error"
+    )
+    return out
+
+
+def preparing_scope(snapshot: FleetPrediction, names: list[str]) -> FleetPrediction:
+    """明细还没落盘（首轮计算中、或旧快照）。不猜数字，按准备中返回。"""
+    out = snapshot.model_copy(deep=True)
+    out.days = []
+    out.energy_kwh = None
+    out.power_kw = []
+    out.regions = []
+    out.message = f"所选 {len(names)} 个地区的明细正在准备，稍后自动刷新"
+    return out
+
+
+async def ensure_scoped(http, model: str, provinces: list[str]) -> FleetPrediction:
+    """带 provinces 就按所选省汇总。只读明细做加法，不触发新一轮计算。docs/17 §二"""
+    from app.errors import ApiError
+
+    snapshot = await ensure(http, model)
+    if not provinces:
+        return snapshot
+    detail = await asyncio.to_thread(load_regions, model, day_key())
+    if detail is None:
+        return preparing_scope(snapshot, provinces)
+    allowed = selectable_regions(detail)
+    names = [name for name in dict.fromkeys(provinces) if name in allowed]
+    if not names:
+        raise ApiError("INVALID_PARAM", "没有可用于筛选的地区", 400)
+    return await asyncio.to_thread(build_scoped, snapshot, detail, names)
 
 
 async def catalog_revision() -> str:
@@ -700,11 +1018,14 @@ async def ensure(http, model: str) -> FleetPrediction:
                 if saved and not saved.get("_carried"):
                     age = time.time() - datetime.fromisoformat(saved["generated_at"]).timestamp()
                     # 当天已完成就不再重算，新批次也不触发；部分覆盖每半小时续算，
-                    # 气象只补拉缺失坐标。
+                    # 气象只补拉缺失坐标。逐省明细缺失（本功能上线前算的快照）要补一轮，
+                    # 否则按地区筛选会一直停在准备中，直到第二天那一轮才有数据。
+                    # 同日重算复用已落盘的气象与曲线缓存，不重新出网。
                     if (
                         usable(saved, day)
                         and saved.get("catalog_revision") == revision
                         and (saved["status"] == "ready" or age < 1800)
+                        and load_regions(model, day) is not None
                     ):
                         return
                 await build(http, model, day, await operating_plants())

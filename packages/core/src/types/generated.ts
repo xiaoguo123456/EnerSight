@@ -229,6 +229,9 @@ export interface paths {
         /**
          * Fleet Prediction
          * @description 全目录汇总只含公开目录，游客可看。
+         *
+         *     `provinces` 为逗号分隔的省份全称，给了就整份按所选省汇总（含覆盖统计的分母）。
+         *     未知省份忽略，全部无效返回 400。docs/17 §二
          */
         get: operations["fleet_prediction_v1_predictions_fleet_get"];
         put?: never;
@@ -2324,6 +2327,7 @@ export interface operations {
             query?: {
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
+                provinces?: string;
             };
             header?: never;
             path?: never;

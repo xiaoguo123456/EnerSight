@@ -179,5 +179,5 @@ def test_汇总不把同名同坐标同容量的不同分期当重复():
         )
         for i in range(5)
     ]
-    rows, duplicate, invalid = eligible(plants)
-    assert (len(rows), duplicate, invalid) == (5, 0, 0)
+    rows, dropped = eligible(plants)
+    assert (len(rows), dropped) == (5, [])
