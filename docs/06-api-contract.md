@@ -546,6 +546,10 @@ interface RegionPrediction {         // 按电站所在省汇总，只含该日�
   province: string                   // 省份不详归入「地区待补充」，不作为筛选项
   energy_kwh: number
   covered_count: number
+  // 以下三项 2026-09-18 才加，早于此的历史留档没有，读回为 null
+  solar_kwh: number | null
+  wind_kwh: number | null
+  covered_capacity_kw: number | null
 }
 ```
 

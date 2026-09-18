@@ -98,9 +98,18 @@ class StationOutlook(BaseModel):
 
 
 class RegionPrediction(BaseModel):
+    """按电站所在省汇总。省份不详归入「地区待补充」，是合法汇总项但不作为筛选项。
+
+    拆分与容量三项 2026-09-18 才加，早于此的历史留档没有，读回时为 null，
+    分省历史里那几天只画总量不画光伏/风电堆叠。
+    """
+
     province: str
     energy_kwh: float
     covered_count: int
+    solar_kwh: float | None = None
+    wind_kwh: float | None = None
+    covered_capacity_kw: float | None = None
 
 
 class FleetDay(BaseModel):

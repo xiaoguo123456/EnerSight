@@ -249,7 +249,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Fleet History */
+        /**
+         * Fleet History
+         * @description `provinces` 与今日预测同义：给了就把历史按所选省汇总。
+         *
+         *     没留分省明细的日期在该口径下算作无记录，不拿全国数字冒充某个省。docs/17 §二
+         */
         get: operations["fleet_history_v1_predictions_fleet_history_get"];
         put?: never;
         post?: never;
@@ -1456,7 +1461,13 @@ export interface components {
              */
             regions: string[];
         };
-        /** RegionPrediction */
+        /**
+         * RegionPrediction
+         * @description 按电站所在省汇总。省份不详归入「地区待补充」，是合法汇总项但不作为筛选项。
+         *
+         *     拆分与容量三项 2026-09-18 才加，早于此的历史留档没有，读回时为 null，
+         *     分省历史里那几天只画总量不画光伏/风电堆叠。
+         */
         RegionPrediction: {
             /** Province */
             province: string;
@@ -1464,6 +1475,12 @@ export interface components {
             energy_kwh: number;
             /** Covered Count */
             covered_count: number;
+            /** Solar Kwh */
+            solar_kwh?: number | null;
+            /** Wind Kwh */
+            wind_kwh?: number | null;
+            /** Covered Capacity Kw */
+            covered_capacity_kw?: number | null;
         };
         /** ReportPeriodOut */
         ReportPeriodOut: {
@@ -2360,6 +2377,7 @@ export interface operations {
             query?: {
                 period?: "week" | "month" | "year";
                 anchor?: string | null;
+                provinces?: string;
             };
             header?: never;
             path?: never;

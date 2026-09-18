@@ -171,7 +171,12 @@ async def fleet_history(
     request: Request,
     period: Literal["week", "month", "year"] = "week",
     anchor: date | None = None,
+    provinces: Annotated[str, Query(max_length=512)] = "",
 ):
+    """`provinces` 与今日预测同义：给了就把历史按所选省汇总。
+
+    没留分省明细的日期在该口径下算作无记录，不拿全国数字冒充某个省。docs/17 §二
+    """
     import asyncio
     from datetime import datetime
 
@@ -181,7 +186,13 @@ async def fleet_history(
 
     if anchor and not 2000 <= anchor.year <= 2100:
         raise ApiError("INVALID_PARAM", "日期超出支持范围", 400)
+    picked = [name.strip() for name in provinces.split(",") if name.strip()]
     result = await asyncio.to_thread(
-        history.summary, current_model.get(), period, anchor or datetime.now(history.TZ).date()
+        history.summary,
+        current_model.get(),
+        period,
+        anchor or datetime.now(history.TZ).date(),
+        None,
+        picked,
     )
     return envelope(result, Coord.WGS84)

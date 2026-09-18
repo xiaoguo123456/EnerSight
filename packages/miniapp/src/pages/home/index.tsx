@@ -180,7 +180,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
 }
 
 /** 全目录：同样一张卡。选中日由父级持有，区域贡献要跟着切。 */
-function FleetForecast({ f, selected, onSelect, version, onReload, refreshError, provinceOn, onProvince, scopeLabel }: { f: FleetPrediction; selected: number; onSelect: (i: number) => void; version: number; onReload: () => void; refreshError: boolean; provinceOn: boolean; onProvince: (on: boolean) => void; scopeLabel?: string }) {
+function FleetForecast({ f, selected, onSelect, version, onReload, refreshError, provinceOn, onProvince, scopeLabel, onHistory }: { f: FleetPrediction; selected: number; onSelect: (i: number) => void; version: number; onReload: () => void; refreshError: boolean; provinceOn: boolean; onProvince: (on: boolean) => void; scopeLabel?: string; onHistory: () => void }) {
   const days = f.days ?? []
   const day = days[selected]
   const value = day ? day.energy_kwh : f.energy_kwh
@@ -211,7 +211,7 @@ function FleetForecast({ f, selected, onSelect, version, onReload, refreshError,
     </View>
   }
   return <View className="home__card forecast-main">
-    <View className="forecast-row"><Text className="forecast-title">{label}{scopeLabel ? ` ${scopeLabel}` : ''} {coveredCount === f.total_count ? '发电量合计' : '已覆盖电站合计'}</Text><InfoTip {...info} /></View>
+    <View className="forecast-row"><View className="forecast-heading"><Text className="forecast-title">{label}{scopeLabel ? ` ${scopeLabel}` : ''} {coveredCount === f.total_count ? '发电量合计' : '已覆盖电站合计'}</Text><InfoTip {...info} /></View><Button className="forecast-action" onClick={onHistory}>历史趋势 ›</Button></View>
     <Value value={value} />
     <View className="forecast-split forecast-split--tight"><View><Text className="forecast-label">光伏</Text><Text>{fmtEnergy(value == null ? null : solar)}</Text></View><View><Text className="forecast-label">风电</Text><Text>{fmtEnergy(value == null ? null : wind)}</Text></View></View>
     {value != null && <FleetProvinceGrid g={day?.province_grid} on={provinceOn} onToggle={onProvince} />}
@@ -281,12 +281,23 @@ export default function Home() {
   const basis = scope === 'fleet' ? f?.basis : outlook.data?.basis ?? p?.basis
   const modelText = model === 'best_match' ? `自动${basis?.resolved_model ? ` · ${COMPACT_MODEL[basis.resolved_model] ?? basis.resolved_model}` : ''}` : weatherModelLabel(model)
   const stationMeta = station ? [station.address?.match(/[㐀-鿿]+/g)?.join(' · ') || station.address, station.type === 'wind' ? '风电' : '光伏', `${formatPower(station.capacity).value} ${formatPower(station.capacity).unit}`].filter(Boolean).join(' · ') : ''
+  /** 换筛选就换一次 version：功率曲线的 canvas id 带着它，新旧两张图不会撞同一个 id。
+   *  模拟器把 canvas 当叠加层按 id 记位置，撞 id 时新图可能画进旧图的位置里。 */
+  const applyProvinces = (next: string[]) => {
+    setProvinces(next)
+    setVersion(v => v + 1)
+  }
+  const openHistory = () => {
+    const query = scopeKey ? `?provinces=${encodeURIComponent(scopeKey)}` : ''
+    void Taro.navigateTo({ url: `/pages/fleet-history/index${query}` })
+  }
   const regionClick = (province: string) => {
     if (province === UNKNOWN_REGION) return
     const next = provinces.includes(province) ? provinces.filter(x => x !== province) : [...provinces, province]
-    // 首次选中滚回页首，让用户看见上面的数字变了；之后的切换不滚
-    if (!provinces.length && next.length) void Taro.pageScrollTo({ scrollTop: 0, duration: 200 })
-    setProvinces(next)
+    // 首次选中滚回页首，让用户看见上面的数字变了；之后的切换不滚。
+    // 不做滚动动画：动画期间创建的 canvas 在模拟器里会按动画中途的位置落点
+    if (!provinces.length && next.length) void Taro.pageScrollTo({ scrollTop: 0, duration: 0 })
+    applyProvinces(next)
   }
   return <View className="home">
     {scope === 'station' && station ? <StationTitleBar name={station.name} status={station.status} own={station.is_own} compact address={stationMeta} onSwitch={() => Taro.switchTab({ url: '/pages/station/index' })} /> : <PageTitleBar title={scope === 'fleet' ? '全目录发电预测' : '发电预测'} />}
@@ -297,7 +308,6 @@ export default function Home() {
           <View className="forecast-model"><Text>{modelText}</Text><Icon name="chevronDown" size={14} strokeWidth={1.5} /></View>
         </Picker>
       </View>
-      {scope === 'fleet' && <View className="fleet-history-link" hoverClass="pressed" onClick={() => Taro.navigateTo({ url: '/pages/fleet-history/index' })}><Icon name="trendingUp" size={15} strokeWidth={1.5} /><Text>{provinces.length ? '全国历史趋势' : '历史趋势'}</Text></View>}
       {scope === 'station' ? <>
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : d?.has_station === false ? <View className="home__card"><Text>选择或添加一座电站，开始查看预测</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择电站</Button></View> : !d || !station ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
           <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} selected={stationDay} onSelect={setStationDay} provinceOn={provinceOn} onProvince={setProvinceOn} />
@@ -315,10 +325,10 @@ export default function Home() {
         </>}
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
-          {!!provinces.length && <RegionFilter names={provinces} onRemove={regionClick} onClear={() => setProvinces([])} />}
+          {!!provinces.length && <RegionFilter names={provinces} onRemove={regionClick} onClear={() => applyProvinces([])} />}
           {scopeKey && scoped.status === 'error' ? <ErrorState error={scoped.error} onRetry={scoped.reload} />
             : !shownFleet ? <View className="home__card"><Skeleton height={220} lines={3} /></View>
-            : <FleetForecast f={shownFleet} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={reloadFleet} refreshError={!!(scopeKey ? scoped.refreshError : fleet.refreshError)} provinceOn={provinceOn} onProvince={setProvinceOn} scopeLabel={scopeText(provinces)} />}
+            : <FleetForecast f={shownFleet} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={reloadFleet} refreshError={!!(scopeKey ? scoped.refreshError : fleet.refreshError)} provinceOn={provinceOn} onProvince={setProvinceOn} scopeLabel={scopeText(provinces)} onHistory={openHistory} />}
           {!!regions.length && <View className="home__card"><SectionHeader icon="map" title={`区域贡献 · ${selectedFleet ? fmtDate(selectedFleet) : '今日'}`} info={{ title: '区域贡献', content: '按电站所在省份汇总已覆盖电站的日电量，仅含已计算的电站。点击地区即在本页筛选，可多选，再点取消；清除后回到全国。省份不详的一档不参与筛选。' }} />{(showAllRegions ? regions : regions.slice(0,6)).map(r => {
             const on = provinces.includes(r.province)
             return <View className={`forecast-region${on ? ' forecast-region--on' : ''}`} key={r.province} hoverClass="pressed" onClick={() => regionClick(r.province)}>

@@ -504,7 +504,14 @@ async def build(http, model: str, day: str, plants) -> None:
 
     def region_list(k: int) -> list[RegionPrediction]:
         return [
-            RegionPrediction(province=name, energy_kwh=v[0], covered_count=v[1])
+            RegionPrediction(
+                province=name,
+                energy_kwh=v[0],
+                covered_count=v[1],
+                solar_kwh=v[2],
+                wind_kwh=v[3],
+                covered_capacity_kw=v[4],
+            )
             for name, v in sorted(regions[k].items(), key=lambda item: item[1][0], reverse=True)
         ]
 
@@ -685,9 +692,11 @@ async def build(http, model: str, day: str, plants) -> None:
                         solar_kwh[k] += energy
                     else:
                         wind_kwh[k] += energy
-                    region = regions[k].setdefault(province_of(p), [0.0, 0])
+                    region = regions[k].setdefault(province_of(p), [0.0, 0, 0.0, 0.0, 0.0])
                     region[0] += energy
                     region[1] += 1
+                    region[2 if p.type == "solar" else 3] += energy
+                    region[4] += p.capacity_kw
                     detail.add(p, k, curve, energy)
         publish()
         if stop:
@@ -882,6 +891,9 @@ def build_scoped(snapshot: FleetPrediction, detail: dict, names: list[str]) -> F
                             province=name,
                             energy_kwh=round(float(np.asarray(row["power_kw"]).sum()) * 0.25, 3),
                             covered_count=row["covered_count"],
+                            solar_kwh=row["solar_kwh"],
+                            wind_kwh=row["wind_kwh"],
+                            covered_capacity_kw=row["covered_capacity_kw"],
                         )
                         for name, row in rows
                     ),

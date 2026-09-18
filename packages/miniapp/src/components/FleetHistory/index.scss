@@ -8,6 +8,8 @@
 .history-track { height:140px; display:flex; align-items:flex-end; justify-content:center; }
 .history-stack { width:72%; max-width:28px; display:flex; flex-direction:column; min-height:2px; overflow:hidden; border-radius:3px 3px 0 0; background:#617084; }
 .history-solar { background:#cf922c; } .history-wind { background:#1677ff; }
+// 没有光伏/风电拆分的日子画整柱，用中性色，别让人读成「全是光伏」
+.history-unsplit { background:#94a3b8; }
 .history-gap { width:50%; border-bottom:1px dashed #adb8c5; }
 .history-axis { display:block; text-align:center; height:24px; line-height:24px; font-size:10px; color:#617084; }
 .history-refresh { text-align:center; padding:12px; color:#1264d6; font-size:13px; }
