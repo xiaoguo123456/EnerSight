@@ -114,6 +114,33 @@ class OpenMeteoProvider:
             params["cell_selection"] = cell_selection
         return await self._get(f"{settings.open_meteo_base}/forecast", params)
 
+    async def recent_hourly(
+        self,
+        latitude: float,
+        longitude: float,
+        *,
+        past_days: int,
+        cell_selection: str | None = None,
+    ) -> dict:
+        """过去最多 92 天的逐小时点预报，给实测订正回算模型同期电量。docs/19 §三
+
+        上游把过去每个小时拼成最近一轮的短时效预报，与线上用的是同一个模型；
+        只要日电量，所以取逐小时、不取 15 分钟。字段与主请求相同，不新增计费权重。
+        """
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "hourly": ",".join(HOURLY_FIELDS),
+            "timezone": "auto",
+            "past_days": past_days,
+            "forecast_days": 1,
+            "wind_speed_unit": "ms",
+            "models": current_model.get(),
+        }
+        if cell_selection:
+            params["cell_selection"] = cell_selection
+        return await self._get(f"{settings.open_meteo_base}/forecast", params)
+
     async def model_meta(self, slug: str) -> ModelMeta | None:
         """模型元数据。拿不到返回 None，不阻塞预报；调用方按「无法确认起报」处理。"""
         try:

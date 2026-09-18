@@ -221,6 +221,7 @@ Open-Meteo 按**加权调用数**计费，不是按请求数：超过 10 个变�
 
 | 链路 | 每天上限 | 规则 | 实现 |
 | --- | --- | --- | --- |
+| 实测订正回算（`providers/open_meteo.recent_hourly`，[19 §三](./19-forecast-uncertainty-and-observations.md)） | 每电站每档每天 1 次 | 逐小时、`past_days` 按 7 / 31 / 92 分档、`forecast_days=1`，字段同主请求不新增权重；只在记录实测与每日拟合时发生，自建实例下不计费 | `services/hindcast.weather` |
 | 单点预报（自建场站、公开电站详情、首页、预警、报告共用） | 每坐标每模型 4 次 | 缓存键 `15m:{model}:{精确经纬度}`（海上风电另加 `:sea`，见上节）；当地一天按 `forecast_refreshes_per_day` 等分为 4 个时段。同一时段内命中、不追新批次；进入新时段但起报批次没变仍命中；跨当地日必定刷新（第七天末边界与昨日同期依赖当天请求）。元数据拿不到时每个时段回源一次 | `services/weather.get_forecast` |
 | 全目录预测 | 每模型整轮 1 次 | 北京时间 `fleet_refresh_hour`（08:00，Open-Meteo 日额度按 UTC 零点重置）起拉当天一轮，此前沿用上一日快照里对应日期的预测。同一天内新批次、元数据缺失、快照重算都复用当天已取得的坐标，起报以当天首轮为准；部分覆盖每半小时续算，只补拉缺失坐标，续拉轮数上限 `fleet_fetch_rounds_per_day`（4） | `services/fleet_prediction.ensure` / `build` |
 

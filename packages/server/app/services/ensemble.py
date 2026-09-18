@@ -19,6 +19,7 @@ import httpx
 from app.config import settings
 from app.models import Station
 from app.schemas.common import SpreadLevel
+from app.schemas.measured import CorrectionApplied
 from app.schemas.prediction import (
     DailyOutlook,
     EnsembleSummary,
@@ -47,37 +48,59 @@ def members() -> list[str]:
 
 
 class Member:
-    """一个成员算完的结果。留档要用各自的 forecast，所以一并带回。"""
+    """一个成员算完的结果。
 
-    __slots__ = ("model", "forecast", "outlook")
+    outlook 是对外展示值（有实测订正时已订正），聚合用它；raw 是模型原始值，留档用它 ——
+    系数一变演变就跟着跳，所以留档永远存未订正的。留档还要用各自的 forecast，一并带回。
+    """
 
-    def __init__(self, model: str, forecast: weather.Forecast, outlook: StationOutlook) -> None:
+    __slots__ = ("model", "forecast", "outlook", "raw")
+
+    def __init__(
+        self,
+        model: str,
+        forecast: weather.Forecast,
+        outlook: StationOutlook,
+        raw: StationOutlook | None = None,
+    ) -> None:
         self.model = model
         self.forecast = forecast
         self.outlook = outlook
+        self.raw = raw if raw is not None else outlook
 
 
-async def _member(http: httpx.AsyncClient, station: Station, days: int, model: str) -> Member:
-    """在本 Task 自己的 context 里跑一个成员。"""
+async def _member(
+    http: httpx.AsyncClient,
+    station: Station,
+    days: int,
+    model: str,
+    correction: CorrectionApplied | None = None,
+) -> Member:
+    """在本 Task 自己的 context 里跑一个成员。订正在每家各自的逐时出力上做，再聚合。"""
     token = current_model.set(model)
     try:
         fc = await weather.station_forecast(http, station)
-        out = await asyncio.to_thread(prediction.compute_days, station, fc, days, model)
-        return Member(model, fc, out)
+        raw, shown = await asyncio.to_thread(
+            prediction.compute_days_pair, station, fc, days, model, correction
+        )
+        return Member(model, fc, shown, raw)
     finally:
         current_model.reset(token)
 
 
 async def compute(
-    http: httpx.AsyncClient, station: Station, days: int
+    http: httpx.AsyncClient,
+    station: Station,
+    days: int,
+    correction: CorrectionApplied | None = None,
 ) -> tuple[StationOutlook, list[Member]]:
-    """并发跑三家并聚合。返回 (聚合结果, 成功的成员)，成员用于各自留档。
+    """并发跑三家并聚合。返回 (聚合结果, 成功的成员)，成员的 raw 用于各自留档。
 
     某成员失败只记日志：剩两家仍给区间，剩一家退回单模型结果，全失败则抛出最后一个异常。
     """
     names = members()
     results = await asyncio.gather(
-        *(_member(http, station, days, m) for m in names), return_exceptions=True
+        *(_member(http, station, days, m, correction) for m in names), return_exceptions=True
     )
     ok: list[Member] = []
     failed: list[tuple[str, BaseException]] = []
@@ -93,7 +116,7 @@ async def compute(
         out = ok[0].outlook
         out.assumptions = [*out.assumptions, f"其余气象模式暂不可用，本次只用 {ok[0].model}"]
         return out, ok
-    return aggregate(ok, [name for name, _ in failed]), ok
+    return aggregate(ok, [name for name, _ in failed], correction), ok
 
 
 def _spread_level(percent: float | None) -> SpreadLevel | None:
@@ -167,7 +190,9 @@ def earliest_basis(ok: list[Member]) -> ForecastBasis | None:
     )
 
 
-def aggregate(ok: list[Member], failed: list[str]) -> StationOutlook:
+def aggregate(
+    ok: list[Member], failed: list[str], correction: CorrectionApplied | None = None
+) -> StationOutlook:
     """以第一个成员的日期序列为准逐日聚合。"""
     base = ok[0]
     days: list[DailyOutlook] = []
@@ -214,6 +239,7 @@ def aggregate(ok: list[Member], failed: list[str]) -> StationOutlook:
         generated_at=base.outlook.generated_at,
         basis=earliest_basis(ok),
         days=days,
+        correction=correction,
         ensemble=EnsembleSummary(
             members=[m.outlook.basis for m in ok if m.outlook.basis],
             spread_level=days[0].spread_level if days else None,

@@ -102,22 +102,26 @@ async def station_outlook(
     import asyncio
 
     from app.config import settings
-    from app.services import ensemble, prediction
+    from app.services import correction, ensemble, prediction
     from app.services.prediction_archive import save_outlook
 
     station = await get_station(db, owner_of(user), station_id)
+    applied = await correction.lookup(db, station)
     # 只读事务在出网前结束，避免慢请求占满连接池。
     await db.commit()
     want = min(days, settings.forecast_outlook_days)
+    # 留档一律存模型原始值：系数一变演变就跟着跳。对外给订正后的。docs/19 §三
     if getattr(request.state, "ensemble", False):
-        out, members = await ensemble.compute(request.app.state.http, station, want)
+        out, members = await ensemble.compute(request.app.state.http, station, want, applied)
         # 三家各留一份自己的档：预报演变要按单一模型串时间序列。docs/19 §二
         for m in members:
-            await asyncio.to_thread(save_outlook, station, m.forecast, m.outlook)
+            await asyncio.to_thread(save_outlook, station, m.forecast, m.raw)
         return envelope(out, coord)
     fc = await weather.station_forecast(request.app.state.http, station)
-    out = await asyncio.to_thread(prediction.compute_days, station, fc, want)
-    await asyncio.to_thread(save_outlook, station, fc, out)
+    raw, out = await asyncio.to_thread(
+        prediction.compute_days_pair, station, fc, want, None, applied
+    )
+    await asyncio.to_thread(save_outlook, station, fc, raw)
     return envelope(out, coord)
 
 

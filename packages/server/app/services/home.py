@@ -22,8 +22,10 @@ from app.schemas.home import (
     TrendRange,
     TrendSeries,
 )
+from app.schemas.measured import CorrectionApplied
+from app.schemas.prediction import GenerationPrediction
 from app.schemas.station import StationMetrics, StationSummary
-from app.services import accumulate, alerts, energy, weather
+from app.services import accumulate, alerts, correction, energy, weather
 from app.services.station import from_catalog, get_station, to_summary
 from app.services.weather_text import describe_transition
 
@@ -147,15 +149,20 @@ class StationView:
 
     station: Station
     forecast: weather.Forecast
-    snapshot: energy.EnergySnapshot
+    snapshot: energy.EnergySnapshot  # 对外展示值：有实测订正时已订正
     summary: StationSummary
     index: EnergyIndex
     current: CurrentWeather | None
+    # 模型原始值，留档用；没有订正时与 snapshot 是同一个。docs/19 §三
+    raw_snapshot: energy.EnergySnapshot | None = None
+    correction: CorrectionApplied | None = None
 
 
 async def build_station_view(
     http: httpx.AsyncClient, station: Station, coord: Coord, db: AsyncSession | None = None
 ) -> StationView:
+    # 订正系数只在自建电站上有；出网前读完，再归还数据库连接。docs/19 §三
+    applied = await correction.lookup(db, station) if db is not None else None
     # 场站资料已读取，等待上游气象与计算时归还数据库连接。
     if db is not None:
         await db.commit()
@@ -163,7 +170,9 @@ async def build_station_view(
 
     # pvlib 是 CPU 密集同步代码，丢进线程池，别卡事件循环。docs/05 §6.6
     loop = asyncio.get_running_loop()
-    snap = await loop.run_in_executor(None, energy.compute, station, fc)
+    raw = await loop.run_in_executor(None, energy.compute, station, fc)
+    # 今日电量、当前功率、报告里的日电量都从这里取，订正在这一处乘，几处自然一致；指数不乘
+    snap = correction.apply_snapshot(station, fc, raw, applied.k) if applied else raw
 
     # 累计与减排来自逐日累积表（定时任务维护）；没有记录时为 None
     total_kwh, co2_kg = (await accumulate.totals(db, station.id)) if db else (None, None)
@@ -188,6 +197,8 @@ async def build_station_view(
         summary=summary,
         index=build_index(snap, station.type),
         current=build_current_weather(fc),
+        raw_snapshot=raw,
+        correction=applied,
     )
 
 
@@ -243,19 +254,30 @@ async def build_home(
     from app.services import prediction
 
     # 今日逐时出力已在 build_station_view 里算过，直接复用；明日单独算一遍供留档
-    forecast_prediction = prediction.from_hourly(
-        v.forecast,
-        v.snapshot.hourly_kw,
-        station,
-        step_minutes=v.snapshot.step_minutes,
-        grid_kw=v.snapshot.grid_hourly_kw,
-        curtailment_note=v.snapshot.curtailment_note,
-        notes=v.snapshot.notes,
+    def today(snap: energy.EnergySnapshot, notes: tuple[str, ...] = ()) -> GenerationPrediction:
+        out = prediction.from_hourly(
+            v.forecast,
+            snap.hourly_kw,
+            station,
+            step_minutes=snap.step_minutes,
+            grid_kw=snap.grid_hourly_kw,
+            curtailment_note=snap.curtailment_note,
+            notes=(*snap.notes, *notes),
+        )
+        out.estimated = snap.estimated
+        return out
+
+    forecast_prediction = (
+        today(v.snapshot, (correction.note(v.correction),)) if v.correction else today(v.snapshot)
     )
-    forecast_prediction.estimated = v.snapshot.estimated
+    forecast_prediction.corrected = (
+        v.correction is not None and forecast_prediction.energy_kwh is not None
+    )
     from app.services import prediction_archive
 
-    await asyncio.to_thread(prediction_archive.save, station, v.forecast, forecast_prediction)
+    # 留档存模型原始值，不存订正后的。docs/19 §三
+    archived = today(v.raw_snapshot) if v.correction and v.raw_snapshot else forecast_prediction
+    await asyncio.to_thread(prediction_archive.save, station, v.forecast, archived)
     tomorrow = await asyncio.to_thread(prediction.compute, station, v.forecast, day_offset=1)
     await asyncio.to_thread(prediction_archive.save, station, v.forecast, tomorrow)
     return HomeResponse(

@@ -7,7 +7,7 @@ import type { DailyOutlook, EnsembleSummary, FleetDay, FleetPrediction, Forecast
 import { api } from '@/api'
 import { homeApi } from '@/api/home'
 import { stationsApi } from '@/api/stations'
-import { AlertBanner, ErrorState, ForecastSpread, Icon, InfoTip, MetricCard, MetricGrid, OutlookStrip, PageTitleBar, SectionHeader, SegmentedTabs, Skeleton, StationTitleBar, TrendChart, dayLabel } from '@/components'
+import { AlertBanner, ErrorState, ForecastSpread, Icon, InfoTip, MetricCard, MetricGrid, OutlookStrip, PageTitleBar, RecordSheet, SectionHeader, SegmentedTabs, Skeleton, StationTitleBar, TrendChart, dayLabel } from '@/components'
 import { ApiError } from '@enersight/core/api'
 import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
@@ -159,9 +159,9 @@ function FleetProvinceGrid({ g, on, onToggle }: { g: FleetDay['province_grid'] |
 }
 
 /** 本站按所选日电量、峰值、功率曲线、七日电量组织。选中日由父级持有，下方气象趋势跟着切。 */
-function StationForecast({ station, p, version, onReload, refreshError, generatedAt, req, selected, onSelect, provinceOn, onProvince }: {
+function StationForecast({ station, p, version, onReload, refreshError, generatedAt, req, selected, onSelect, provinceOn, onProvince, onRecord }: {
   station: StationSummary; p: GenerationPrediction | null | undefined; version: number; onReload: () => void; refreshError: boolean; generatedAt?: string; req: { data: StationOutlook | null; status: string; error: ApiError | null; reload: () => Promise<void>; refreshError: ApiError | null }
-  selected: number; onSelect: (i: number) => void; provinceOn: boolean; onProvince: (on: boolean) => void
+  selected: number; onSelect: (i: number) => void; provinceOn: boolean; onProvince: (on: boolean) => void; onRecord?: () => void
 }) {
   const days = req.data?.days ?? []
   const day = days[selected]
@@ -182,7 +182,11 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
   return <View className="home__card forecast-main">
     <View className="forecast-row"><View className="forecast-heading"><Text className="forecast-title">{label} 发电量估算</Text><InfoTip {...info} /></View><Button className="forecast-action" onClick={() => Taro.navigateTo({ url: `/pages/station/detail?id=${encodeURIComponent(station.id)}` })}>电站资料 ›</Button></View>
     {station.prediction_blocked_reason ? <View className="forecast-empty"><Text>{station.prediction_blocked_reason}，暂不估算电量</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择其他电站</Button></View> : <View className="forecast-overview">
-      <Value value={value} />
+      <View className="forecast-headline">
+        <Value value={value} />
+        {/* 按实测订正过：电量与曲线乘了系数，指数没乘。系数与样本在 ⓘ 里。docs/19 §三 */}
+        {value != null && (day ? day.corrected : p?.corrected) && <Text className="forecast-badge">实测订正</Text>}
+      </View>
       {value != null && peak && <View className="forecast-peak"><Text className="forecast-label">峰值 · {peak.time}</Text><Text>{formatPower(peak.value).value}<Text className="forecast-unit"> {formatPower(peak.value).unit}</Text></Text></View>}
     </View>}
     {day && <ForecastSpread day={day} ensemble={req.data?.ensemble} stationId={station.id} />}
@@ -196,7 +200,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
     {value == null && !station.prediction_blocked_reason && <Text className="forecast-state">{station.prediction_blocked_reason ? `${station.prediction_blocked_reason}，暂不估算日电量` : !p && !day ? '预测服务暂未就绪，请稍后刷新' : '气象数据或电站参数不完整，暂不估算'}</Text>}
     {(refreshError || req.refreshError) && <Text className="forecast-warning" onClick={onReload}>刷新失败，当前保留上次预测 · 点击重试</Text>}
     {(day?.estimated ?? p?.estimated) && <Text className="forecast-warning">部分气象输入使用补值或降级估算</Text>}
-    <View className="forecast-foot"><Text>{formatBeijingTime(req.data?.generated_at ?? generatedAt)} 更新</Text><Button className="forecast-action" onClick={onReload}>刷新</Button></View>
+    <View className="forecast-foot"><Text>{formatBeijingTime(req.data?.generated_at ?? generatedAt)} 更新</Text><View className="forecast-actions">{onRecord && <Button className="forecast-action" onClick={onRecord}>记一笔</Button>}<Button className="forecast-action" onClick={onReload}>刷新</Button></View></View>
   </View>
 }
 
@@ -273,6 +277,8 @@ export default function Home() {
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId, model])
   const outlook = useRequest(() => home.data?.station ? stationsApi.outlook(home.data.station.id, 7) : Promise.resolve(null), [home.data?.station?.id])
   const refreshStation = async () => { await Promise.all([home.reload(), outlook.reload()]); setVersion(v => v + 1) }
+  // 记一笔实测：只对我的电站。记完服务端已重新拟合，刷新本站预测就能看到订正。docs/19 §三
+  const [recording, setRecording] = useState(false)
   // 全目录不认三模式：显式带实际用的模型，免得后端未部署新版时回 400
   const fleet = useRequest(() => api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: servedModel(model) }), [model])
   const served = servedModel(model)
@@ -337,7 +343,7 @@ export default function Home() {
       </View>
       {scope === 'station' ? <>
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : d?.has_station === false ? <View className="home__card"><Text>选择或添加一座电站，开始查看预测</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择电站</Button></View> : !d || !station ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
-          <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} selected={stationDay} onSelect={setStationDay} provinceOn={provinceOn} onProvince={setProvinceOn} />
+          <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} selected={stationDay} onSelect={setStationDay} provinceOn={provinceOn} onProvince={setProvinceOn} onRecord={station.is_own ? () => setRecording(true) : undefined} />
           {d.alert && <AlertBanner title={d.alert.title} description={d.alert.description} onMore={() => Taro.switchTab({ url: '/pages/alert/index' })} />}
           {weather && <View className="home__card home__weather"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前 15 分钟时段的预报值：气温、10 米风速、云量为瞬时值，辐射为对应区间的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
             <MetricCard icon="cloudSun" label="天气" metric={formatTemperature(weather.temperature.value)} caption={weather.weather_text ?? undefined} />
@@ -366,5 +372,6 @@ export default function Home() {
         </>}
       </>}
     </View>
+    {station?.is_own && <RecordSheet stationId={station.id} capacityKw={station.capacity} visible={recording} onClose={() => setRecording(false)} onDone={s => { void refreshStation(); if (s.entries.some(e => e.status === 'pending')) setTimeout(() => void refreshStation(), 8000) }} />}
   </View>
 }

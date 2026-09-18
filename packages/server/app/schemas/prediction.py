@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from app.schemas.common import ConvergenceLevel, IndexLevel, SpreadLevel
+from app.schemas.measured import CorrectionApplied
 
 
 class ForecastBasis(BaseModel):
@@ -47,6 +48,8 @@ class FleetProvinceGrid(BaseModel):
 class GenerationPrediction(BaseModel):
     calculation_version: str | None = None
     estimated: bool = False
+    # 按实测订正过；全目录快照要能读回旧文件，所以和 estimated 一样带默认值。docs/19 §三
+    corrected: bool = False
     model: str
     date: str
     timezone: str = "Asia/Shanghai"
@@ -114,6 +117,7 @@ class DailyOutlook(BaseModel):
     power_kw_high: list[PowerPoint] | None = Field(description="逐时刻三家最大值，同上")
     spread_percent: float | None = Field(description="(max−min)/median × 100")
     spread_level: SpreadLevel | None
+    corrected: bool = Field(description="电量与曲线按实测订正过；指数不受影响。docs/19 §三")
 
 
 class StationOutlook(BaseModel):
@@ -125,6 +129,7 @@ class StationOutlook(BaseModel):
     basis: ForecastBasis | None
     days: list[DailyOutlook]
     ensemble: EnsembleSummary | None = Field(description="三模式区间；单一模式请求为 null")
+    correction: CorrectionApplied | None = Field(description="正在作用的实测订正；没有为 null")
     assumptions: list[str] = Field(default_factory=list)
 
 

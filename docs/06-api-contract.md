@@ -624,6 +624,62 @@ interface Issuance {
 }
 ```
 
+### 实测电量与订正（2026-09-18）
+
+口径见 [19 §三](./19-forecast-uncertainty-and-observations.md)、[07 §九](./07-metrics.md)。只对我的电站，全部 `CurrentUserDep`；
+公开目录电站返回 403 `CATALOG_READ_ONLY`。
+
+```
+GET    /v1/stations/{id}/measured              → MeasuredSummary
+POST   /v1/stations/{id}/measured              body RecordMeasuredRequest → MeasuredSummary
+DELETE /v1/stations/{id}/measured/{entry_id}   → MeasuredSummary（200 带最新状态，不是 204）
+PATCH  /v1/stations/{id}                       新增 correction_enabled: boolean
+```
+
+```ts
+interface RecordMeasuredRequest {
+  entries: { kind: 'day' | 'month'; date: string; kwh: number }[]   // date：YYYY-MM-DD 或 YYYY-MM；1–31 条
+  basis: 'generation' | 'grid'           // 发电量或上网电量，默认 generation
+}
+interface MeasuredSummary {
+  station_id: string
+  entries: MeasuredEntry[]               // 按日期倒序
+  correction: CorrectionStatus
+}
+interface MeasuredEntry {
+  id: number; kind: 'day' | 'month'; date: string; kwh: number; basis: 'generation' | 'grid'
+  model_kwh: number | null               // 模型同期电量（未订正）；还没回算出来为 null
+  ratio: number | null                   // 实测 / 模型
+  status: 'used' | 'excluded' | 'pending' | 'idle'
+  recorded_at: string
+}
+interface CorrectionStatus {
+  enabled: boolean                       // 用户开关
+  applied: boolean                       // 开关打开且拟合通过
+  k: number | null; method: 'day' | 'month' | null
+  sample_count: number; excluded_count: number
+  error_before: number | null            // 逐条平均误差（%）
+  error_after: number | null             // 留一法订正后的逐条平均误差（%）
+  fitted_at: string | null; reason: string | null
+}
+```
+
+校验失败返回 400 `INVALID_PARAM`，`message` 可直接展示：日期还没过完、早于 92 天、超过装机容量满发、格式不对、同一请求里重复。
+记录接口最多等回算 6 秒，超时时 `model_kwh` 为 null、`status` 为 `pending`，回算在后台继续。
+
+订正生效时，7 天预测与首页今日带上它（指数不变）：
+
+```ts
+interface StationOutlook { correction: CorrectionApplied | null }   // 其余字段不变
+interface DailyOutlook   { corrected: boolean }
+interface GenerationPrediction { corrected: boolean }               // 全目录快照要能读回旧文件，这一个带默认值 false
+interface CorrectionApplied {
+  k: number; method: 'day' | 'month'; sample_count: number
+  error_before: number | null; error_after: number | null; fitted_at: string
+}
+interface StationSummary { correction_enabled: boolean | null }     // 公开目录电站为 null
+```
+
 
 ---
 

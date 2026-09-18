@@ -11,6 +11,7 @@
 - fleet_history          每 10 分钟   归档全目录日快照
 - issue_outlooks         每日 08:30   我的电站三模式 7 天签发留档，供预报演变（docs/19 §二）
 - prune_prediction        每日        按保留天数清理预测留档（docs/19 §二）
+- fit_corrections        每日 10:00   补模型同期值、按滚动窗口重拟合实测订正（docs/19 §三）
 - model_resolution       每日一次    复核自动选择模型是否仍等于 ECMWF IFS（docs/17 §二）
 - weather_upstream       每 5 分钟    探自建气象实例，熔断/恢复写日志（仅配了兜底时注册）
 - warm_coords            每日一次    导出公开目录坐标给自建实例预热（同上，仅自建时注册）
@@ -454,6 +455,21 @@ def start(app: FastAPI) -> AsyncIOScheduler | None:
         if removed:
             log.info("prune_prediction: %d day folders", removed)
 
+    async def fit_corrections() -> None:
+        from app.services import measured
+
+        async with SessionLocal() as db:
+            n = await measured.refresh_all(db, app.state.http)
+        log.info("fit_corrections: %d stations", n)
+
+    # 北京 10:00：上游 08:00 那一批已发布，昨天的回算数据已经稳定
+    sched.add_job(
+        fit_corrections,
+        CronTrigger(hour=2, minute=5),
+        id="fit_corrections",
+        max_instances=1,
+        coalesce=True,
+    )
     sched.add_job(
         prune_prediction,
         CronTrigger(hour=21, minute=40),

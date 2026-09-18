@@ -8,7 +8,9 @@ import pandas as pd
 
 from app.config import settings
 from app.models import Station
+from app.schemas.measured import CorrectionApplied
 from app.schemas.prediction import DailyOutlook, GenerationPrediction, PowerPoint, StationOutlook
+from app.services import correction as corrections
 from app.services import energy, province_grid
 from app.services.prediction_basis import calculation_version, version_for_day
 from app.services.weather import Forecast
@@ -158,68 +160,108 @@ def _daytime_weather(fc: Forecast, day: pd.Timestamp) -> str | None:
     return describe(int(seg.mode().iloc[0]))
 
 
-def compute_days(
-    station: Station, fc: Forecast, days: int, model: str | None = None
-) -> StationOutlook:
-    """未来 days 天，每天走 energy.compute 同一条链路，指数与电量一起给。docs/17 §二"""
-    out: list[DailyOutlook] = []
+def _outlook_day(
+    station: Station,
+    fc: Forecast,
+    snap: energy.EnergySnapshot,
+    k: int,
+    model: str | None,
+    *,
+    corrected: bool,
+) -> DailyOutlook:
+    pred = from_hourly(
+        fc,
+        snap.hourly_kw,
+        station,
+        model,
+        grid_kw=snap.grid_hourly_kw,
+        curtailment_note=snap.curtailment_note,
+        step_minutes=snap.step_minutes,
+        notes=snap.notes,
+    )
+    finite = [p.value for p in pred.power_kw if p.value is not None]
+    day = pd.Timestamp(pred.date)
+    return DailyOutlook(
+        estimated=snap.estimated,
+        date=pred.date,
+        weekday=day.isoweekday(),
+        energy_kwh=pred.energy_kwh,
+        grid_energy_kwh=pred.grid_energy_kwh,
+        curtailed_kwh=pred.curtailed_kwh,
+        province_grid=pred.province_grid,
+        index_score=snap.index.score if snap.index else None,
+        index_level=snap.index.level if snap.index else None,
+        weather_text=_daytime_weather(fc, day),
+        peak_kw=round(max(finite), 3) if finite and pred.energy_kwh is not None else None,
+        power_kw=pred.power_kw,
+        grid_power_kw=pred.grid_power_kw,
+        lead_days=k,
+        resolution_minutes=pred.resolution_minutes,
+        # 单模型路径没有区间，一律 null；三模式由 services.ensemble 填。docs/19 §一
+        energy_kwh_low=None,
+        energy_kwh_high=None,
+        member_energy_kwh=None,
+        median_model=None,
+        power_kw_low=None,
+        power_kw_high=None,
+        spread_percent=None,
+        spread_level=None,
+        corrected=corrected and pred.energy_kwh is not None,
+    )
+
+
+def compute_days_pair(
+    station: Station,
+    fc: Forecast,
+    days: int,
+    model: str | None = None,
+    correction: CorrectionApplied | None = None,
+) -> tuple[StationOutlook, StationOutlook]:
+    """(模型原始值, 对外展示值)。没有订正时两者是同一个对象。
+
+    原始值给签发留档与预报演变：系数一变演变就跟着跳，所以留档永远存未订正的。
+    订正在出力约束之前乘，限电与上网跟着重算；pvlib 只跑一遍，订正只是在它的结果上缩放。docs/19 §三
+    """
+    raw_days: list[DailyOutlook] = []
+    shown_days: list[DailyOutlook] = []
+    snap = None
     for k in range(days):
-        step = fc.step_minutes
-        snap = energy.compute(station, fc, day_offset=k, step_minutes=step)
-        pred = from_hourly(
-            fc,
-            snap.hourly_kw,
-            station,
-            model,
-            grid_kw=snap.grid_hourly_kw,
-            curtailment_note=snap.curtailment_note,
-            step_minutes=snap.step_minutes,
-            notes=snap.notes,
-        )
-        finite = [p.value for p in pred.power_kw if p.value is not None]
-        day = pd.Timestamp(pred.date)
-        blocked = getattr(station, "_prediction_blocked", None)
-        out.append(
-            DailyOutlook(
-                estimated=snap.estimated,
-                date=pred.date,
-                weekday=day.isoweekday(),
-                energy_kwh=pred.energy_kwh,
-                grid_energy_kwh=pred.grid_energy_kwh,
-                curtailed_kwh=pred.curtailed_kwh,
-                province_grid=pred.province_grid,
-                index_score=snap.index.score if snap.index else None,
-                index_level=snap.index.level if snap.index else None,
-                weather_text=_daytime_weather(fc, day),
-                peak_kw=round(max(finite), 3) if finite and pred.energy_kwh is not None else None,
-                power_kw=pred.power_kw,
-                grid_power_kw=pred.grid_power_kw,
-                lead_days=k,
-                resolution_minutes=pred.resolution_minutes,
-                # 单模型路径没有区间，一律 null；三模式由 services.ensemble 填。docs/19 §一
-                energy_kwh_low=None,
-                energy_kwh_high=None,
-                member_energy_kwh=None,
-                median_model=None,
-                power_kw_low=None,
-                power_kw_high=None,
-                spread_percent=None,
-                spread_level=None,
-            )
-        )
+        snap = energy.compute(station, fc, day_offset=k, step_minutes=fc.step_minutes)
+        raw_days.append(_outlook_day(station, fc, snap, k, model, corrected=False))
+        if correction is not None:
+            fixed = corrections.apply_snapshot(station, fc, snap, correction.k, k)
+            shown_days.append(_outlook_day(station, fc, fixed, k, model, corrected=True))
+    blocked = getattr(station, "_prediction_blocked", None)
     version = version_for_day(energy.target_day(fc, 0))
-    notes = assumptions(station, version, energy.curtailment_note(station), snap.notes)
+    notes = assumptions(
+        station, version, energy.curtailment_note(station), snap.notes if snap else ()
+    )
     notes += OUTLOOK_NOTES
     if blocked and blocked not in notes:
         notes.append(blocked)
-    return StationOutlook(
-        calculation_version=calculation_version(energy.target_day(fc, 0)),
-        station_id=station.id,
-        model=model or current_model.get(),
-        timezone=fc.tz,
-        generated_at=datetime.now(UTC).isoformat(),
-        basis=fc.basis(),
-        days=out,
-        ensemble=None,
-        assumptions=notes,
-    )
+
+    def wrap(out: list[DailyOutlook], applied: CorrectionApplied | None) -> StationOutlook:
+        return StationOutlook(
+            calculation_version=calculation_version(energy.target_day(fc, 0)),
+            station_id=station.id,
+            model=model or current_model.get(),
+            timezone=fc.tz,
+            generated_at=datetime.now(UTC).isoformat(),
+            basis=fc.basis(),
+            days=out,
+            ensemble=None,
+            correction=applied,
+            assumptions=[*notes, corrections.note(applied)] if applied else list(notes),
+        )
+
+    raw = wrap(raw_days, None)
+    if correction is None:
+        return raw, raw
+    return raw, wrap(shown_days, correction)
+
+
+def compute_days(
+    station: Station, fc: Forecast, days: int, model: str | None = None
+) -> StationOutlook:
+    """未来 days 天、模型原始值，每天走 energy.compute 同一条链路，指数与电量一起给。docs/17 §二"""
+    return compute_days_pair(station, fc, days, model)[0]

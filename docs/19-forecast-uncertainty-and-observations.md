@@ -20,7 +20,7 @@
 | 1 | 三模式区间（**默认模式**） | ECMWF / ICON / GFS 三模式同算，三个数并列，曲线画区间带 | 首页预测卡 | 现有四模式 | M1 |
 | 2 | 预报演变与收敛度 | 同一目标日历次起报的变化，收敛即高置信 | 首页预测卡 | 预测留档 + 定时签发 | M1 |
 | 3 | 实测随手记与订正 | 记日电量或月电量，几个数就拟出订正系数 | 首页「记一笔」、电站详情 → 实测对账页 | 用户输入 | M2 |
-| 4 | 卫星辐照实况 | 葵花 5 km 卫星辐照产品，实况替代预报 | 预警页「卫星实况」卡 → 当前功率与当日累计 | Open-Meteo 卫星辐射接口（JAXA 产品） | M3 |
+| 4 | 卫星辐照实况 | 葵花 5 km 卫星辐照产品，实况替代预报 | 预警页「卫星实况」卡 → 当前功率与当日累计 | JAXA P-Tree 葵花 SWR（免费，待书面确认商用） | M3 |
 | 5 | 气溶胶归因与积灰损失 | CAMS 的 AOD / PM 进指数归因与积灰模型，给清洗建议 | 电站详情、指数归因 | CAMS（公开桶有）+ ECMWF 降水字段 | M4 |
 
 四条硬规矩，五项通用：
@@ -217,54 +217,93 @@ interface Issuance {
 
 ### 两种输入
 
-| 档 | 输入 | 来源 | 最少数据 | 能得到 |
+| 档 | 输入 | 来源 | 最少数据 | 用法 |
 | --- | --- | --- | --- | --- |
-| A 月电量 | 每月一个数（kWh） | 结算单、电费单 | 2 个自然月 | 总体系数 `k` |
-| B 日电量随手记 | 每天一个数（kWh），可一次补录最近 31 天 | 逆变器 App、电表、值班日志 | 7 个有效日 | 总体系数 `k`；30 天后按月 `k` |
+| 日电量 | 每天一个数，可补录 | 逆变器 App、电表、值班日志 | 7 个有效日 | 取最近 `correction_window_days`（60）天拟合，跟着季节滚动 |
+| 月电量 | 每月一个数 | 结算单、电费单 | 2 个有效月 | 日电量不够时用，取最近 6 个月 |
 
-- 数是**上网电量**还是**发电量**由用户选，默认「发电量」；选上网电量时 ⓘ 注明系数会把限电与线损一起吃进去。
-- 「此刻功率」也可以记，只用于当前功率对照展示，不进拟合（单点噪声大）。
-- 只对我的电站，需登录（`CurrentUserDep`）。实测是用户经营数据：不进全目录、不对其他账号可见、
-  随删除电站或「删除我的数据」一并删除。
-- 校验：非负、不超过装机容量 × 24 小时 × 1.1（日）或 × 当月小时数 × 1.1（月），重复期间覆盖。
+- 数是**上网电量**还是**发电量**由用户选，默认「发电量」；选上网电量时 ⓘ 注明系数会把线损与厂用电一起吃进去。
+- 只对我的电站，需登录（`CurrentUserDep`）；公开目录电站不能记（403）。实测是用户经营数据：不进全目录、
+  不对其他账号可见、随删除电站或「删除我的数据」一并删除。
+- 校验：日期不晚于昨天（北京时间），月份必须已经过完；非负；不超过装机容量 × 当期小时数 × 1.1；
+  一次最多 31 条；同一天 / 同一月重复记录覆盖。
+
+### 模型同期电量从哪来
+
+拟合要拿实测去比「模型在同一天算出的电量」。三个来源比较过：
+
+| 来源 | 问题 |
+| --- | --- |
+| 预测留档 | 本版才开始每天签发，用户补录上个月的结算单时根本没有留档 |
+| ERA5 再分析 | 与线上预报不是同一个模型，拟出的系数修的是再分析的偏差 |
+| **预报接口 `past_days` 回算** | 同一个 `best_match` 模型，上游把过去每个小时拼成最近一轮的短时效预报，最多回溯 92 天 |
+
+取第三种：`providers/open_meteo.recent_hourly` 按电站坐标取过去的逐小时数据（字段同主请求，不新增计费权重），
+回溯天数按需要分 7 / 31 / 92 三档（记昨天只拉 7 天，补录一个多月才拉满），同一电站当天同一档共用缓存；
+逐日走 `energy.prepare(day=…)` 与 `energy.hourly_power` 同一条链路算日电量；
+设了出力约束的电站取计入约束后的「预计上网」，避免把限电学进系数。92 天以前的日子没有模型值，不参与拟合。
+AEMO 对账（07 §8.1）显示模型/实测比值在各预报时效间基本不变，所以用短时效回算拟出的系数可以用在 7 天预测上。
+
+算出的模型值连同指纹（电站设备参数 + 计算参数）存在记录上；指纹变了（改了容量、机型、约束）就重算，
+不会拿旧参数的模型值去拟合新参数。
 
 ### 存储
 
-- `measured_energy(station_id, period_start, period_end, kwh, basis: 'generation' | 'grid', source: 'monthly' | 'daily', recorded_at)`，
-  唯一 `(station_id, period_start, period_end)`。
-- 日粒度同步到 `daily_generation`，`source = measured`，累计发电与减排从此优先取实测（模型注释早已预留）。
+- `measured_energy(id, station_id, kind: day | month, period_start, period_end, kwh, basis, model_kwh, model_digest,
+  prior_kwh, recorded_at)`，唯一 `(station_id, period_start, period_end)`。
+- 日电量同步写进 `daily_generation`（`source = measured`），累计发电与减排从此用实测；被覆盖的推算值存进
+  `prior_kwh`，删除这条记录时恢复原值（原来没有记录就删掉那一行）。月电量拆不到日，只用于拟合，不改累计。
+- `station_correction(station_id, fitted_at, method, sample_count, excluded_count, k, error_before, error_after,
+  applied, reason)`，每站一行，只存最近一次拟合。
+- `stations.correction_enabled`，默认开。
 
 ### 订正
 
-- **公式**：`k = Σ实测 / Σ模型`，同期模型值取签发留档；重叠不足门槛时不拟合。光伏、风电同一公式。
-  `P_corr = clip(k × P_model, 0, Cap)`。只做乘性订正，不做加性（夜间会出负数或凭空出力）。
-- **回测**：B 档按时间顺序末 20% 的天留作回测；A 档样本太少不回测，只报「订正前后月偏差」。
-- **应用条件**：B 档回测日电量偏差绝对值下降 ≥ `correction_min_gain_pct`（3 个百分点）才启用；
-  A 档两个月的 `k` 相差 < 15% 才启用。否则保存拟合结果但不应用，界面说明原因。
-- **作用范围**：该站的 7 天预测、首页今日、当前功率、累积表的 forecast 行。**不改指数**（指数只反映气象），不改全目录。
-  有实测的日子累计直接用实测。
-- **与出力约束的关系**：设了出力约束的电站，拟合时模型侧用「预计上网」而不是「可发」，避免把限电学进系数。
-- **重拟合**：每日凌晨与每次记录后；`station_correction(station_id, fitted_at, sample_days, k, bias_before, bias_after, applied)`。
-- 预测响应 `assumptions` 加「已按 N 天实测订正（日电量偏差 +18% → +4%）」；`GenerationPrediction` / `DailyOutlook` 加 `corrected: boolean`。
+- **样本**：有模型值、两边都大于 0、实测 / 模型在 0.2–5 之间的记录；比值出界的判为停机或录错，
+  计入 `excluded_count`，界面标「未采用」。日电量够 7 条就用日电量，否则用月电量。
+- **系数**：`k = Σ实测 / Σ模型`。光伏、风电同一公式。只做乘性订正，不做加性（夜间会出负数或凭空出力）。
+- **回测（留一法）**：每条记录都用**其余**记录拟出的系数 `k₋ᵢ = (ΣY − yᵢ) / (ΣM − mᵢ)` 去修它，
+  比较修正前后的**逐条平均误差** `mean |预测 / 实测 − 1|`（`error_before` / `error_after`）。
+  原先打算按时间切末尾 20% 做回测，实测发现日电量本身就有 ±10–20% 的起伏，回测段只有一两天时，
+  碰上一天异常（真实数据里十天偏低 17%、最近一天偏高 8%）就把整站订正否决掉，订正会今天开、明天关。
+  留一法用上全部样本，问的是「这个系数对一般的一天有没有用」；单一乘性系数只有一个自由度，不怕用未来修过去。
+- **启用条件**：订正后的逐条平均误差比订正前至少小 `correction_min_gain_pct`（3 个百分点），且 `k` 在 0.4–2.5 之间。
+  出界说明参数本身错了（容量填成直流、机型档差一倍），这时不订正，提示先核对装机容量与机型参数。
+  不满足就保存拟合结果但不应用，`reason` 写明原因或还差几条。
+- **怎么乘**：在逐时出力进入出力约束之前乘 `k`，再按装机容量限幅，然后才算限电与上网 ——
+  `P_corr = min(k × P_model, Cap)`，上网口径随之重算。**指数不乘**（指数只反映气象）。
+- **作用范围**：该站的 7 天预测（三模式时每家先修再聚合）、首页今日、当前功率、AI 报告的日电量、
+  累积表的推算行。**留档不乘**：签发留档与预报演变存的是模型原始值，否则系数一变演变就跟着跳；
+  全目录汇总也不乘。
+- **重拟合**：每次记录或删除后立即回算并拟合，但接口**最多等 `measured_refresh_budget_s`（6 秒）**：
+  回算要出网，赶上上游慢或别的任务在抢，十几秒都可能（开发机上撞上地图预处理实测 18 秒），而小程序请求 10 秒就超时。
+  超时就先回「回算中」，回算在自己的数据库会话里跑完，对账页与首页过几秒自动再取一次。
+  回算拿不到时先存记录、模型值留空；每日任务 `fit_corrections`（北京 10:05）补缺失的模型值、按滚动窗口重拟合。
+- 响应：`DailyOutlook.corrected`、`StationOutlook.correction`（启用时给系数、样本数、回测前后偏差），
+  `GenerationPrediction.corrected`（全目录快照要能读回旧文件，这一个带默认值 false，同 `estimated`）；
+  `assumptions` 加「已按 N 天实测订正：模型偏高 18%，按 0.85 倍修正（逐日误差 19% → 5%）」。
 
 ### 接口
 
 ```
-POST   /v1/stations/{id}/measured        body { entries: [{ period_start, period_end, kwh }], basis }
-GET    /v1/stations/{id}/measured        → { entries: MeasuredEntry[], correction: StationCorrection | null }
-DELETE /v1/stations/{id}/measured?from=&to=
-PATCH  /v1/stations/{id}                 增加 correction_enabled: boolean
+GET    /v1/stations/{id}/measured              → MeasuredSummary
+POST   /v1/stations/{id}/measured              body { entries: [{ kind: 'day' | 'month', date, kwh }], basis }
+                                               date 为 YYYY-MM-DD 或 YYYY-MM；返回 MeasuredSummary
+DELETE /v1/stations/{id}/measured/{entry_id}   → MeasuredSummary
+PATCH  /v1/stations/{id}                       增加 correction_enabled: boolean
 ```
 
 全部 `CurrentUserDep`，归属校验同现有自建电站接口。
 
 ### 页面
 
-- **首页预测卡（我的电站）**：大数字旁一个小按钮「记一笔」，弹层：日期（默认昨天）、电量 kWh、发电量 / 上网电量两段开关，
-  一步提交。记录成功后卡片显示「昨日实测 11.2 MWh · 预测 12.1」。有订正时大数字旁徽章「实测订正」，ⓘ 说明来源。
+- **首页预测卡（我的电站）**：卡片底部「记一笔」，弹层：日 / 月两段、日期（默认昨天）或月份、电量（MWh，
+  实时换算 kWh）、发电量 / 上网电量两段，一步提交；成功提示「已记录 · 模型同期 12.1 MWh」，还在回算时提示「回算中」。
+  **弹层贴顶而不是贴底**：软键盘从底部升起会盖住贴底的输入框与提交按钮（CLAUDE.md「已知的环境坑」）。
+  订正生效时大数字旁徽章「实测订正」，ⓘ 说明系数与样本。
 - **电站详情 → 实测对账页**（`pages/station/measured`，`PageHeader`「实测对账」）：
-  Hero 是订正状态卡（系数、样本天数、偏差前后、开关）；下面是记录列表（月 / 日），可补录、删除。
-- CSV 导出增加 `measured_kwh` / `corrected_kw` 列；电站列表卡「实时功率」当日有实测时显示实测并标「实测」。
+  Hero 是订正状态卡（模型偏高 / 偏低多少、按几倍修正、样本数、订正前后的逐日误差、开关、未生效时的原因）；
+  下面是记录列表（日期、实测、模型同期、比值、是否采用），可补录、删除。
 
 ### 合规（09）
 
@@ -275,28 +314,49 @@ PATCH  /v1/stations/{id}                 增加 correction_enabled: boolean
 
 ## 四、卫星辐照实况
 
-### 数据源
+### 数据源（2026-09-18 调研，不走 Open-Meteo 付费接口）
 
-用 Open-Meteo 卫星辐射接口的 `jma_jaxa_himawari`：JAXA 用葵花 9 号反演的地表短波辐射产品，Open-Meteo 再分出直射与散射。
-亚洲全境、0.05°（5 km）、上游 10 分钟、延迟约 30 分钟、存档回溯到 2015。2026-09-18 拿敦煌前一日实测，
-逐小时返回 GHI / 直射 / 散射，峰值 802 W/m²，量级正常。托管接口 `satellite-api.open-meteo.com`，
-Professional 档起；不在公开桶里，自建实例服务不了。
+原计划用 Open-Meteo 卫星辐射接口的 `jma_jaxa_himawari`（Professional 付费档）。它底层就是 JAXA 的葵花短波辐射产品，
+而 JAXA 自己的数据门户 P-Tree 免费提供同一份数据。逐一核实过的渠道（「原文」表示读过条款原文）：
+
+| 渠道 | 产品 | 分辨率 / 步长 | 延迟 | 费用与条款 | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| **JAXA P-Tree 葵花 SWR** | L2 短波辐射（另有 PAR、AOT），NetCDF | 0.05°（5 km），10 分钟；L3 逐小时 | 实测约 30–40 分钟（13:18 UTC 时最新到 12:40） | 免费。FAQ Q4-1 原文：2026-02-01（UTC）起的数据可商用；JAXA 研究数据条款原文 §2.3：可免费商用、可修改和分发，须**事先通知 JAXA**（earth＠ml.jaxa.jp）并**署名**。但注册页仍写「仅限非营利、不得再分发」，与 FAQ 冲突 | **首选**，注册前先书面确认 |
+| 风云四号 FY-4B AGRI（国家卫星气象中心） | L2 地表短波辐射 SSR（含总辐照 SSI、直射、散射等 8 个要素），NetCDF | 4 km，15 分钟全圆盘 | 实测扫描结束后约 10–17 分钟 | 免费，个人实名注册。法律声明原文：未经书面许可不得以营利为目的使用；只能「检索 → 下单 → 取件」，L2 不能订阅推送，单文件 27–86 MB | 境内备选，须签资料提供协议 |
+| 中国气象数据网 CLDAS-V2.0 实时产品 | 卫星反演与地面站融合的短波辐射 | 0.0625°，逐小时 | 约 1 小时 | 条款同上，须书面授权 | 境内备选，比纯卫星更贴近站点 |
+| 哥白尼 CAMS 太阳辐射服务 | 地表辐照时间序列，2023-10 起接入葵花 | 逐点查询 | 1 天 | CC BY 4.0，原文明确面向商业下游；每用户每天 500 次 | 做不了实况；可做次日回看与对账 |
+| NASA POWER | 全天空地表短波 | 1°（约 100 km），逐小时 | 实测约 80 天 | 免费可商用 | 不可用 |
+| 韩国 GK-2A DSR | 下行短波辐射 | — | — | 门户从本机与抓取工具都连不上，规格与条款未核实 | 暂不可用 |
+| NOAA 公开桶的葵花 / GK-2A L1b | 定标后的原始观测，无辐射产品 | 1 km 波段中国段一帧约 40 MB | 实时 | NODD 原文：可随意使用，须署名、不得暗示 NOAA 背书 | 只能自己反演，留作 V2 |
 
 不再用现有 JMA 网页瓦片做云指数反演：0–255 显示灰度、JPEG 有损、调色板未知，反演出来说不清。
-NOAA 公开桶里的葵花 L1b（1 km 波段中国段一帧约 40 MB）留作 V2 连云图一起换源的路，与本节无关。
 
-### 授权
+**决定：用 JAXA P-Tree 的 SWR 实况；FY-4B SSR 作境内备选；CAMS 留作次日对账。**
+P-Tree 与 Open-Meteo 卖的是同一份数据，自己取就省掉订阅费。代价是自己接 FTP、解析 NetCDF：
 
-- JAXA P-Tree 条款：JAXA 产品版权归 JAXA；JMA 标准数据限非营利；不得向第三方再分发。我们不直接用 P-Tree，
-  经 Open-Meteo 商用订阅取得，商用授权链条要向 Open-Meteo 书面确认，与 JMA 云图授权一并交法务
-  （[09 §九](./09-miniapp-compliance.md)）。
-- 署名：读数旁「JAXA / 日本气象厅 · 经 Open-Meteo」。
+- **取数**：注册账号后走 `ftp.ptree.jaxa.jp`（FTP / FTPS 990 / SFTP 2051，单主机最多 30 连接），
+  每 10 分钟取最新一个 L2 文件，按电站坐标取最近格点。文件放在哪台机器上取、北京到日本的带宽够不够，
+  要在拿到账号后实测一次再定；带宽不够就放 Buffalo 那台，只把电站点值回传。
+- **时间标签**：P-Tree 小时产品的文件名时间是**区间起点**，项目里 Open-Meteo 的辐射是区间末，接入时要平移统一。
+- **直射与散射**：SWR 只给总辐照，按 Erbs 分解成直射与散射后再算倾斜面，走 `pv.hourly_power` 同一条链路。
+
+### 授权与上线前要办的事
+
+1. **注册前书面确认（最重要）**：写信给 P-Tree 事务局，说明是商业小程序、会在界面上展示由 SWR 算出的各电站辐照与出力数值、
+   不转发原始文件，请对方确认注册页「仅限非营利、不得再分发」的旧表述已被 FAQ Q4-1 取代。拿到答复前不注册、不接入。
+2. **商用通知**：按研究数据条款 §2.3，上线前邮件通知 JAXA（earth＠ml.jaxa.jp）。
+3. **署名**：读数旁「JAXA / P-Tree」；与 JMA 云图的「日本气象厅」出处一起保留。
+4. **境内备选**：若 JAXA 不同意，改走 FY-4B SSR，须与国家卫星气象中心签资料提供协议（dataserver@cma.gov.cn）。
+   两种都要按《气象信息服务管理办法》向营业执照所在省的气象局备案（查到的是 2015 年版，是否修订未核实），
+   与 [09 §九](./09-miniapp-compliance.md) 的其他合规事项一起办。
+
+调研原始记录（每条标了是否读过原文）在会话临时目录，结论已全部并入上表。
 
 ### 口径
 
-- **拉取**：`providers/satellite_radiation.py`，走 `weather_transport.weather_get`；变量 `shortwave_radiation`、
-  `direct_radiation`、`diffuse_radiation`，取过去 3 小时到当前。我的电站每 30 分钟一次（`satellite_irradiance` 任务），
-  公开目录电站按需拉并缓存 30 分钟。每次 1 个坐标、3 个变量，计 1 次。
+- **拉取**：`providers/ptree.py` 每 10 分钟取最新一个 L2 SWR 文件（`satellite_irradiance` 任务），整张格点留在内存，
+  任何电站按坐标取最近格点，不按电站逐个请求；缺帧退回上一帧，超过 `satellite_irradiance_stale_minutes` 判过期。
+  SWR 只有总辐照，直射与散射按 Erbs 分解。
 - **用途**：
   1. 预警页「卫星实况」卡：辐照大数字 + 「晴空的 78%」（分母 `metrics/solar.clearsky_interval_mean`）+ 观测时间；
   2. 当前功率：用卫星的 GHI / 直射 / 散射直接算 POA，走 `pv.hourly_power` 只替换当前区间，标「卫星实况」；
@@ -308,7 +368,8 @@ NOAA 公开桶里的葵花 L1b（1 km 波段中国段一帧约 40 MB）留作 V2
 
 ### 校准（不用等归档）
 
-存档回溯到 2015，直接与 `enersight-validation-data` 里 PVOD 河北 10 座光伏站 2018–2019 的实测总辐照对账：
+P-Tree 存档回溯到 2015，可直接与 `enersight-validation-data` 里 PVOD 河北 10 座光伏站 2018–2019 的实测总辐照对账。
+2026-02 之前的数据限非营利，拿它做内部精度评估属研究用途，在书面确认里一并问清楚。判据：
 逐小时 RMSE ≤ 25%（相对日间均值）、偏差在 ±10% 内视为达标；同时对比 ERA5 驱动的误差
 （[07 §8.1](./07-metrics.md) 2026-09-16 一节）看卫星比再分析好多少。结论写入 07 §8.1，达标前只做用途 1。
 
@@ -409,8 +470,8 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | --- | --- | --- |
 | `issue_outlooks` | 每日 00:30 | 我的电站三模式 7 天签发留档 |
 | `prune_prediction` | 每日 21:40 | 按 `prediction_archive_retention_days` 清理 |
-| `fit_corrections` | 每日 02:00，记录后立即 | 订正拟合与回测 |
-| `satellite_irradiance` | 每 30 分钟 | 我的电站卫星辐照拉取，更新当前功率与当日累计 |
+| `fit_corrections` | 每日 02:05（北京 10:05）；记录后立即 | 补缺失与参数变过的模型同期值、按滚动窗口重拟合 |
+| `satellite_irradiance` | 每 10 分钟 | 取 P-Tree 最新一帧 SWR，更新当前功率与当日累计（M3） |
 | `soiling_update` | 每日 01:00 | 拉空气质量与降水，更新积灰 |
 
 都用 `db.pages` 分批、算并发写串行，见 CLAUDE.md「在遍历站点的定时任务里并发写 DB」。
@@ -424,9 +485,14 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | `evolution_issuances` | 3 | 收敛度看最近几份起报 |
 | `evolution_stable_pct` / `evolution_swing_pct` | 10 / 25 | 收敛度分档（%） |
 | `prediction_archive_retention_days` | 45 | 留档保留 |
-| `correction_min_days` / `correction_min_months` | 7 / 2 | B / A 档拟合门槛 |
-| `correction_holdout_fraction` / `correction_min_gain_pct` | 0.2 / 3 | 回测比例与启用门槛 |
-| `satellite_radiation_base` / `satellite_radiation_model` | `https://satellite-api.open-meteo.com/v1` / `jma_jaxa_himawari` | 卫星辐照 |
+| `correction_min_days` / `correction_min_months` | 7 / 2 | 日电量 / 月电量拟合门槛 |
+| `correction_window_days` / `correction_window_months` | 60 / 6 | 拟合只看最近这些天 / 月 |
+| `correction_min_gain_pct` | 3 | 留一法：订正后逐条平均误差至少小几个百分点才启用 |
+| `correction_k_min` / `correction_k_max` | 0.4 / 2.5 | 系数出这个范围不订正，提示核参数 |
+| `correction_ratio_min` / `correction_ratio_max` | 0.2 / 5 | 实测 / 模型出界判为停机或录错 |
+| `hindcast_max_days` / `ttl_hindcast` | 92 / 6 小时 | 回算最多回溯天数与缓存 |
+| `measured_refresh_budget_s` | 6 | 记录接口最多等回算几秒，超时转后台 |
+| `ptree_host` / `ptree_user` / `ptree_password` | `ftp.ptree.jaxa.jp` / 环境变量 / 环境变量 | 卫星辐照；账号密码只走环境变量，不进仓库 |
 | `satellite_irradiance_stale_minutes` | 90 | 超过即退回预报 |
 | `air_quality_base` | `https://air-quality-api.open-meteo.com/v1` | 空气质量接口 |
 | `soiling_cleaning_threshold_mm` / `soiling_wash_loss_pct` | 0.5 / 5 | 积灰模型与清洗建议 |
@@ -436,7 +502,7 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | 表 / 字段 | 说明 |
 | --- | --- |
 | `measured_energy` | 月 / 日电量记录，唯一 `(station_id, period_start, period_end)` |
-| `station_correction` | 订正拟合结果与回测 |
+| `station_correction` | 订正拟合结果与留一法回测误差 |
 | `station_environment_daily` | 逐日 PM / AOD / 降雨 / 积灰比 |
 | `station.last_cleaned_on`、`station.correction_enabled` | 电站新增字段 |
 
@@ -448,11 +514,11 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | 里程碑 | 内容 | 进入下一步的门槛 |
 | --- | --- | --- |
 | M1 ✅ | 三模式默认、区间带与三家并列、预报演变、`issue_outlooks`、留档清理、各链路口径统一 | 第一、二节验收项全过；H5 截图已看，开发者工具截图待合入主仓库后补 |
-| M2 | 随手记、订正、实测对账页 | 用 PVOD 站点的日电量走一遍记录 → 拟合 → 应用，偏差下降可复现 |
-| M3 | 卫星辐照：接口接入、PVOD 回测、预警页卫星实况卡；达标后当前功率与当日累计切换 | 需 Open-Meteo Professional 订阅与授权确认；回测结论写入 07 §8.1 |
+| M2 ✅ | 随手记、订正、实测对账页 | 真实上游数据走通记录 → 回算 → 拟合 → 订正生效；H5 截图已看，开发者工具截图待合入主仓库后补 |
+| M3 | 卫星辐照：P-Tree 接入、PVOD 回测、预警页卫星实况卡；达标后当前功率与当日累计切换 | 需 JAXA 书面确认商用（§四「授权」第 1 步）与 P-Tree 账号；回测结论写入 07 §8.1 |
 | M4 | 空气质量接入、气溶胶归因、积灰卡、`precipitation` 字段 | 敦煌 / 拉萨 / 苏州三点归因数值合理；04 §二字段表已更新 |
 
-M1 与 M2 共用签发任务，先后做；M3 的回测不依赖归档，订阅到位即可开工；M4 独立可并行。
+M1 与 M2 共用签发任务，先后做；M3 的回测不依赖归档，拿到 JAXA 书面确认与账号即可开工；M4 独立可并行。
 
 
 ## 八、各文档同步清单
@@ -474,8 +540,8 @@ M1 与 M2 共用签发任务，先后做；M3 的回测不依赖归档，订阅�
 | # | 事项 | 影响 |
 | --- | --- | --- |
 | 1 | 预警 tab 是否改名「卫星」 | 只改文案，随时可做；本文按不改写 |
-| 2 | Open-Meteo 订阅升到 Professional | 卫星辐照接口的前提；不升则 M3 走不通 |
-| 3 | JAXA 产品经 Open-Meteo 的商用授权 | 与 JMA 云图授权一并交法务 |
+| 2 | JAXA 书面确认 P-Tree SWR 可在商业小程序里展示衍生数值 | 卫星辐照的前提；不同意就改走 FY-4B，须与国家卫星气象中心签协议 |
+| 3 | 气象信息服务备案（《气象信息服务管理办法》） | 用卫星辐照前向营业执照所在省气象局备案，与 09 §九合规事项一起办 |
 | 4 | 积灰是否进入上网电量折减 | 本文第一阶段只展示 |
 | 5 | 自建实例能否服务 `cams_global` | 决定 M4 走自建还是托管 |
 
@@ -504,4 +570,7 @@ M1 与 M2 共用签发任务，先后做；M3 的回测不依赖归档，订阅�
   文档标 0.05°、10 分钟、延迟 30 分钟、2015 年起。定价页：Historical / Ensemble / Satellite Radiation 需 Professional 档起。
 - NOAA `noaa-himawari9` 桶：`AHI-L1b-FLDK`、`AHI-L2-FLDK-Clouds`、`Winds`、`ISatSS`；1 km 波段中国段一帧约 40 MB。留作 V2 换源。
 - JAXA P-Tree 条款：免费、需注册、JAXA 产品版权归 JAXA、JMA 标准数据限非营利、不得再分发。
-- 风云：FY-4A 有 L2 SSI（4 km、15 分钟）；FY-4B 同款未核实。
+- 风云：FY-4B 的地表短波辐射产品叫 SSR（总辐照 SSI 是其中一个变量），4 km、15 分钟，实测扫描结束后 10–17 分钟可取。
+- JAXA P-Tree：葵花 SWR 5 km、10 分钟，实测延迟 30–40 分钟；FAQ Q4-1 写明 2026-02-01 起可商用，注册页旧表述冲突。
+- 实测订正（真实上游）：苏州 30 MW 自建站记 10 天、实测约为模型 0.85 倍，拟合 k = 0.84，逐日误差 19% → 5%；
+  回算过去 92 天逐小时数据单次拉取约 3 秒、10 天计算 0.1 秒。

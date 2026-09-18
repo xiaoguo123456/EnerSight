@@ -199,6 +199,26 @@ class Settings(BaseSettings):
     issue_outlooks_hour: int = 8
     issue_outlooks_concurrency: int = 4
 
+    # 实测订正。docs/19 §三
+    correction_min_days: int = 7  # 日电量至少几条有效记录才拟合
+    correction_min_months: int = 2  # 日电量不够时，月电量至少几条
+    correction_window_days: int = 60  # 日电量只取最近这些天，系数跟着季节滚动
+    correction_window_months: int = 6
+    # 留一法回测：订正后的逐条平均误差至少比订正前小这么多个百分点才启用
+    correction_min_gain_pct: float = 3.0
+    # 系数出这个范围说明参数本身错了（容量填成直流、机型档差一倍），不订正，提示先核参数
+    correction_k_min: float = 0.4
+    correction_k_max: float = 2.5
+    # 实测 / 模型超出这个范围判为停机或录错，不进拟合
+    correction_ratio_min: float = 0.2
+    correction_ratio_max: float = 5.0
+    # 模型同期电量用预报接口 past_days 回算，上游最多回溯 92 天
+    hindcast_max_days: int = 92
+    ttl_hindcast: int = 6 * 3600
+    fit_corrections_concurrency: int = 2
+    # 记录接口最多等回算这么久；超时先回「回算中」，回算在后台跑完。小程序请求超时 10 秒
+    measured_refresh_budget_s: float = 6.0
+
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码
     model_v4_start_date: date = date(2026, 9, 10)
 

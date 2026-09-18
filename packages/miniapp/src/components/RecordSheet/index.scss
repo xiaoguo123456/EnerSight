@@ -1,0 +1,60 @@
+// 贴顶弹出：软键盘从底部升起，贴底的弹层会被盖住（CLAUDE.md「已知的环境坑」）
+.record {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 88px var(--space-4) 0;
+  box-sizing: border-box;
+  background: rgba(15, 23, 42, 0.32);
+}
+.record__panel {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px var(--space-4) var(--space-4);
+  border-radius: 16px;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.record__head { display: flex; align-items: center; justify-content: space-between; }
+.record__title { font-size: 17px; font-weight: 600; color: var(--color-text); }
+.record__close { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; margin-right: -10px; }
+.record__field { display: flex; flex-direction: column; gap: 6px; }
+.record__label { font-size: var(--font-caption); color: var(--color-text-sub); }
+.record__select,
+.record__input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--size-control);
+  padding: 0 12px;
+  border-radius: var(--radius-thumb);
+  background: var(--color-bg);
+  font-size: 15px;
+  color: var(--color-text);
+}
+// 输入框本身定高 24px 居中在外框里，占位字才不会贴顶（与电站表单同一写法）
+.record__input { flex: 1; min-width: 0; height: 24px; line-height: 24px; padding: 0; background: transparent; font-size: 15px; font-variant-numeric: tabular-nums; }
+.record__ph { color: #94a3b8; }
+.record__adorn { flex-shrink: 0; font-size: var(--font-caption); color: var(--color-text-sub); font-variant-numeric: tabular-nums; }
+.record__hint { font-size: 11px; line-height: 1.6; color: var(--color-text-sub); }
+.record__submit {
+  margin: 0;
+  width: 100%;
+  min-height: 44px;
+  border-radius: var(--radius-button);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 44px;
+  border: 0;
+  @include pressable;
+}
+.record__submit::after { border: 0; }
+// 忙碌态用类名控制：H5 端 disabled={false} 也可能留下 disabled 属性，按属性选择器会一直半透明
+.record__submit--busy { opacity: 0.6; }

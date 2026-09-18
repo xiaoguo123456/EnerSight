@@ -23,7 +23,7 @@
 | [10-deployment.md](./10-deployment.md) | 部署 | 镜像、Compose、环境变量、升级回滚 SOP、上线清单 |
 | [17 自建场站、7 天预测与限电](./17-user-stations-and-outlook.md) | 自建场站与登录前提、7 天预测与起报时间、全目录口径、限电三层（本轮只做第一层） |
 | [18 UI、算法与数据一致性修复](./18-review-fixes.md) | 审查问题修复、接口与数据库迁移、回归测试及浏览器验收 |
-| [19 三模式区间、预报演变、实测订正、卫星辐照与积灰](./19-forecast-uncertainty-and-observations.md) | 三模式为默认并列展示、预报演变与收敛度、记日 / 月电量即可订正、Open-Meteo 卫星辐射接口的葵花辐照实况、气溶胶归因与积灰；页面落点、接口、任务与里程碑 |
+| [19 三模式区间、预报演变、实测订正、卫星辐照与积灰](./19-forecast-uncertainty-and-observations.md) | 三模式为默认并列展示、预报演变与收敛度、记日 / 月电量即可订正（已上线）；卫星辐照改走 JAXA P-Tree 葵花 SWR 的调研与授权步骤；气溶胶归因与积灰 |
 | [气象代理池维护策略](./2026-09-15-weather-proxy-pool-strategy.md) | 待实施：实际出口去重、预算与冷却、自动补充、持久化及测试验收 |
 
 ## 设计稿
@@ -81,7 +81,7 @@
 | 4 | 站点是否支持多用户共享 | [06 §十五](./06-api-contract.md) |
 | 5 | 预警是否接微信订阅消息推送 | [06 §十五](./06-api-contract.md) |
 | 6 | 预警 tab 是否改名「卫星」 | [19 §九](./19-forecast-uncertainty-and-observations.md) |
-| 7 | Open-Meteo 订阅升到 Professional（卫星辐照接口的前提），以及 JAXA 产品经 Open-Meteo 的商用授权 | [19 §九](./19-forecast-uncertainty-and-observations.md) |
+| 7 | JAXA 书面确认葵花 SWR 可在商业小程序里展示衍生数值（卫星辐照的前提；不同意就改走 FY-4B），以及气象信息服务备案 | [19 §四、§九](./19-forecast-uncertainty-and-observations.md) |
 | 8 | 积灰是否折减上网电量 | [19 §五](./19-forecast-uncertainty-and-observations.md) |
 
 > 设计稿 `packages/ui/` 中的数值均为视觉示意值，不作为算法校准依据。

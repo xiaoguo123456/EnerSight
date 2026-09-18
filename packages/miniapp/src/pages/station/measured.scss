@@ -1,0 +1,49 @@
+// 实测对账。Hero 是订正状态，记录列表退后。docs/19 §三、docs/02 §九
+.measured {
+  .page-header { position: sticky; top: 0; z-index: 10; }
+  min-height: 100vh;
+  background: var(--color-bg);
+  &__body { display: flex; flex-direction: column; gap: 12px; padding: 4px 16px calc(24px + env(safe-area-inset-bottom)); }
+  &__card { background: var(--color-surface); border-radius: 16px; padding: 16px; }
+  &__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  &__hero-title { display: flex; align-items: center; gap: 4px; font-size: 15px; font-weight: 600; color: var(--color-text); }
+  &__switch { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-text-sub); }
+  &__headline { display: block; margin-top: 12px; font-size: 28px; line-height: 1.3; font-weight: 700; color: var(--color-text); @include numeric; }
+  &__headline--idle { font-size: 22px; color: var(--color-text-sub); }
+  &__sub { display: block; margin-top: 4px; font-size: 13px; color: var(--color-text-sub); @include numeric; }
+  &__split { display: flex; gap: 24px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-divider); > view { display: flex; flex-direction: column; gap: 2px; } }
+  &__label { font-size: 11px; color: var(--color-text-sub); }
+  &__num { font-size: 17px; font-weight: 600; color: var(--color-text); @include numeric; }
+  &__reason { display: block; margin-top: 12px; padding: 8px 10px; border-radius: 10px; font-size: 12px; line-height: 1.6; color: #475569; background: #f6f9fc; }
+  &__record {
+    margin: 0;
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--radius-button);
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    border: 0;
+    @include pressable;
+    &::after { border: 0; }
+  }
+  &__list-head { margin-bottom: 8px; }
+  &__list-title { font-size: 15px; font-weight: 600; color: var(--color-text); }
+  &__caption { font-size: 11px; color: var(--color-text-sub); }
+  &__empty { display: block; padding: 12px 0; font-size: 13px; line-height: 1.6; color: var(--color-text-sub); }
+  &__entry { display: flex; align-items: center; gap: 8px; min-height: 40px; border-top: 1px solid var(--color-divider); font-size: 13px; color: var(--color-text); }
+  &__entry--head { border-top: 0; min-height: 28px; font-size: 11px; color: var(--color-text-sub); }
+  &__entry-date { flex: 1.3; min-width: 0; display: flex; align-items: baseline; gap: 6px; @include numeric; }
+  &__entry-kind { font-size: 10px; color: var(--color-text-sub); }
+  &__entry-num { flex: 1; min-width: 0; text-align: right; @include numeric; }
+  &__entry-model { color: var(--color-text-sub); }
+  &__entry-status { width: 44px; flex-shrink: 0; text-align: right; font-size: 11px; color: var(--color-text-sub); }
+  &__entry-status--used { color: #0f7a3a; }
+  &__entry-status--excluded { color: #98521a; }
+  &__entry-del { width: 32px; height: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; }
+}

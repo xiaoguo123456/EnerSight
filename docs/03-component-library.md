@@ -396,6 +396,19 @@ Inactive：
 
 ---
 
+### RecordSheet
+
+记一笔实测电量的弹层。docs/19 §三
+
+- 日电量 / 月电量两段、日期或月份选择（最近 92 天内已经过完的）、电量（MWh，实时换算 kWh；空着时提示满发上限）、
+  发电量 / 上网电量两段、一段口径说明、「记录」按钮
+- **贴顶弹出**，按钮在弹层内容流里：软键盘从底部升起会盖住贴底的输入框与按钮（CLAUDE.md「已知的环境坑」）
+- 成功提示「已记录 · 模型同期 X MWh」，还在回算时提示「回算中」；`onDone` 把最新 `MeasuredSummary` 交给页面
+- 首页预测卡与实测对账页共用
+
+
+---
+
 ### DataSummaryGrid
 
 
@@ -889,6 +902,7 @@ AI报告卡。
 | MetricGrid | ● | ● | | ● | ● | ● |
 | TrendChart | ● | | | | ● | |
 | ForecastSpread | ● | | | | | |
+| RecordSheet | ● | | | | ●（实测对账） | |
 | AlertBanner | ● | | | | | |
 | QuickEntryGrid | ● | | | | ● | |
 | MapContainer | | ● | | | | |

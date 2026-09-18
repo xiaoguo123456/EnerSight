@@ -115,6 +115,9 @@ class StationSummary(BaseModel):
     power_curve: list[PowerCurvePoint] | None = Field(description="自定义功率曲线，仅 custom 档")
     mounting: Mounting | None = Field(description="光伏安装方式，未设置为 null 即固定支架")
     bifacial: bool | None = Field(description="光伏是否双面组件，未设置为 null 即单面")
+    correction_enabled: bool | None = Field(
+        description="实测订正开关；公开目录电站为 null。docs/19 §三"
+    )
     source: str | None = None
     original_name: str | None = None
     local_name: str | None = None
@@ -209,6 +212,8 @@ class UpdateStationRequest(BaseModel):
     power_curve: list[PowerCurvePoint] | None = Field(default=None, max_length=60)
     mounting: Mounting | None = None
     bifacial: bool | None = None
+    # 实测订正开关。docs/19 §三
+    correction_enabled: bool | None = None
 
     @field_validator("power_curve")
     @classmethod

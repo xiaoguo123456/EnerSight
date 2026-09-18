@@ -98,6 +98,9 @@ export default function StationDetail() {
               <View className="detail__action" onClick={() => { setCurrent(id); Taro.switchTab({ url: '/pages/map/index' }) }}>
                 <Icon name="map" size={16} color="#475569" /><Text>地图查看</Text>
               </View>
+              {station.is_own && <View className="detail__action" onClick={() => Taro.navigateTo({ url: `/pages/station/measured?id=${encodeURIComponent(id)}` })}>
+                <Icon name="clipboard" size={16} color="#475569" /><Text>实测对账</Text>
+              </View>}
               {station.is_own && <View className="detail__action" onClick={() => Taro.navigateTo({ url: `/pages/station/form?id=${encodeURIComponent(id)}` })}>
                 <Icon name="pencil" size={16} color="#475569" /><Text>编辑</Text>
               </View>}

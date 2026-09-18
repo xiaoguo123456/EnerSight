@@ -63,6 +63,9 @@ def to_summary(s: Station, coord: Coord) -> StationSummary:
         else None,
         mounting=s.mounting,
         bifacial=s.bifacial,
+        correction_enabled=(
+            None if s.owner_id == CATALOG_OWNER else s.correction_enabled is not False
+        ),
         **getattr(s, "_catalog_metadata", {}),
     )
 
@@ -360,7 +363,15 @@ async def update_station(
     if s.owner_id == "__catalog__":
         raise ApiError("CATALOG_READ_ONLY", "公开电站由平台维护，不支持个人修改或删除", 403)
     data = req.model_dump(exclude_unset=True, exclude={"coord"})
-    for field in ("name", "type", "status", "latitude", "longitude", "capacity"):
+    for field in (
+        "name",
+        "type",
+        "status",
+        "latitude",
+        "longitude",
+        "capacity",
+        "correction_enabled",
+    ):
         if field in data and data[field] is None:
             raise ApiError("INVALID_PARAM", f"{field} 不可清空", 400)
     if "name" in data:
@@ -399,13 +410,14 @@ async def _purge(db: AsyncSession, stations: list[Station]) -> None:
 
     from sqlalchemy import delete
 
-    from app.models import Alert, DailyGeneration, Report
+    from app.models import Alert, DailyGeneration, MeasuredEnergy, Report, StationCorrection
     from app.services.prediction_archive import purge_station_archives
 
     ids = [s.id for s in stations]
     if not ids:
         return
-    for model in (Alert, DailyGeneration, Report):
+    # 实测电量与订正系数是用户经营数据，随电站一并删除。docs/19 §三、docs/09 §4.3
+    for model in (Alert, DailyGeneration, Report, MeasuredEnergy, StationCorrection):
         await db.execute(delete(model).where(model.station_id.in_(ids)))
     for s in stations:
         await db.delete(s)

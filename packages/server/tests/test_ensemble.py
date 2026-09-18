@@ -180,7 +180,7 @@ class TestDegrade:
     async def _compute(self, monkeypatch, available: dict[str, float]):
         made = {m: member(m, peak) for m, peak in available.items()}
 
-        async def fake(_http, _station, _days, model):
+        async def fake(_http, _station, _days, model, _correction=None):
             if model not in made:
                 raise httpx.ConnectError("upstream down")
             return made[model]

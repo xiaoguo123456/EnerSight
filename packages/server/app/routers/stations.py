@@ -12,6 +12,7 @@ from app.auth import CurrentUserDep
 from app.db import get_session
 from app.schemas.common import Coord, StationType
 from app.schemas.envelope import CoordQuery, Envelope, envelope
+from app.schemas.measured import MeasuredSummary, RecordMeasuredRequest
 from app.schemas.station import (
     CreateStationRequest,
     PublicStationListResponse,
@@ -19,6 +20,7 @@ from app.schemas.station import (
     StationSummary,
     UpdateStationRequest,
 )
+from app.services import measured
 from app.services import station as svc
 
 router = APIRouter(prefix="/v1/stations", tags=["stations"])
@@ -82,3 +84,44 @@ async def update_station(
 async def delete_station(user: CurrentUserDep, db: DbDep, station_id: str) -> Response:
     await svc.delete_station(db, user.id, station_id)
     return Response(status_code=204)
+
+
+# ── 实测电量与订正。只对我的电站。docs/19 §三 ──
+
+
+@router.get("/{station_id}/measured", response_model=Envelope[MeasuredSummary])
+async def get_measured(
+    user: CurrentUserDep, db: DbDep, station_id: str, coord: CoordQuery = Coord.WGS84
+) -> Envelope[MeasuredSummary]:
+    station = await svc.get_station(db, user.id, station_id)
+    measured.require_own(station)
+    return envelope(await measured.summary(db, station), coord)
+
+
+@router.post("/{station_id}/measured", response_model=Envelope[MeasuredSummary])
+async def record_measured(
+    request: Request,
+    user: CurrentUserDep,
+    db: DbDep,
+    station_id: str,
+    body: RecordMeasuredRequest,
+    coord: CoordQuery = Coord.WGS84,
+) -> Envelope[MeasuredSummary]:
+    """记完立即回算模型同期电量并重新拟合；回算拿不到时先存记录，交给每日任务补。"""
+    station = await svc.get_station(db, user.id, station_id)
+    out = await measured.record(db, request.app.state.http, station, body)
+    return envelope(out, coord)
+
+
+@router.delete("/{station_id}/measured/{entry_id}", response_model=Envelope[MeasuredSummary])
+async def delete_measured(
+    request: Request,
+    user: CurrentUserDep,
+    db: DbDep,
+    station_id: str,
+    entry_id: int,
+    coord: CoordQuery = Coord.WGS84,
+) -> Envelope[MeasuredSummary]:
+    station = await svc.get_station(db, user.id, station_id)
+    out = await measured.delete(db, request.app.state.http, station, entry_id)
+    return envelope(out, coord)

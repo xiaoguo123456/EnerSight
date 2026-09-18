@@ -67,7 +67,8 @@ export interface ApiClient {
   get<T>(url: string, query?: RequestOptions['query']): Promise<T>
   post<T>(url: string, body?: unknown): Promise<T>
   patch<T>(url: string, body?: unknown): Promise<T>
-  delete(url: string): Promise<void>
+  /** 多数删除回 204 无内容；需要删除后的最新状态时服务端回 200 带 data，这里原样返回。 */
+  delete<T = void>(url: string): Promise<T>
 }
 
 export function createClient(opts: ClientOptions): ApiClient {
@@ -145,8 +146,6 @@ export function createClient(opts: ClientOptions): ApiClient {
     get: (url, query) => send('GET', url, query),
     post: (url, body) => send('POST', url, undefined, body),
     patch: (url, body) => send('PATCH', url, undefined, body),
-    delete: async (url) => {
-      await send('DELETE', url)
-    },
+    delete: (url) => send('DELETE', url),
   }
 }

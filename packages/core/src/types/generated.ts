@@ -131,6 +131,44 @@ export interface paths {
         patch: operations["update_station_v1_stations__station_id__patch"];
         trace?: never;
     };
+    "/v1/stations/{station_id}/measured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Measured */
+        get: operations["get_measured_v1_stations__station_id__measured_get"];
+        put?: never;
+        /**
+         * Record Measured
+         * @description 记完立即回算模型同期电量并重新拟合；回算拿不到时先存记录，交给每日任务补。
+         */
+        post: operations["record_measured_v1_stations__station_id__measured_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stations/{station_id}/measured/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Measured */
+        delete: operations["delete_measured_v1_stations__station_id__measured__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/home": {
         parameters: {
             query?: never;
@@ -609,6 +647,68 @@ export interface components {
          */
         Coord: "wgs84" | "gcj02";
         /**
+         * CorrectionApplied
+         * @description 正在作用于预测的订正。随预测一起返回，给徽章与 ⓘ 用。
+         */
+        CorrectionApplied: {
+            /** K */
+            k: number;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "day" | "month";
+            /** Sample Count */
+            sample_count: number;
+            /** Error Before */
+            error_before: number | null;
+            /** Error After */
+            error_after: number | null;
+            /** Fitted At */
+            fitted_at: string;
+        };
+        /** CorrectionStatus */
+        CorrectionStatus: {
+            /**
+             * Enabled
+             * @description 用户开关
+             */
+            enabled: boolean;
+            /**
+             * Applied
+             * @description 开关打开且拟合通过，正在作用于预测
+             */
+            applied: boolean;
+            /**
+             * K
+             * @description 实测 / 模型；样本不够时为 null
+             */
+            k: number | null;
+            /** Method */
+            method: ("day" | "month") | null;
+            /** Sample Count */
+            sample_count: number;
+            /** Excluded Count */
+            excluded_count: number;
+            /**
+             * Error Before
+             * @description 逐条平均误差（%）：|模型 / 实测 − 1| 的平均
+             */
+            error_before: number | null;
+            /**
+             * Error After
+             * @description 留一法订正后的逐条平均误差（%）：每条用其余记录的系数修正
+             */
+            error_after: number | null;
+            /** Fitted At */
+            fitted_at: string | null;
+            /**
+             * Reason
+             * @description 未生效的原因，或还差几条记录
+             */
+            reason: string | null;
+        };
+        /**
          * CreateStationRequest
          * @description 两种建法：给 catalog_id 从公开电站目录复制（其余字段可省，给了则覆盖）；
          *     或者不给 catalog_id、把五个必填字段都给全（自建，docs/17 §一）。
@@ -826,6 +926,11 @@ export interface components {
              */
             spread_percent: number | null;
             spread_level: components["schemas"]["SpreadLevel"] | null;
+            /**
+             * Corrected
+             * @description 电量与曲线按实测订正过；指数不受影响。docs/19 §三
+             */
+            corrected: boolean;
         };
         /**
          * EnergyIndex
@@ -920,6 +1025,11 @@ export interface components {
         /** Envelope[MapOverviewResponse] */
         Envelope_MapOverviewResponse_: {
             data: components["schemas"]["MapOverviewResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[MeasuredSummary] */
+        Envelope_MeasuredSummary_: {
+            data: components["schemas"]["MeasuredSummary"];
             meta: components["schemas"]["Meta"];
         };
         /** Envelope[PublicStationListResponse] */
@@ -1019,6 +1129,11 @@ export interface components {
              * @default false
              */
             estimated: boolean;
+            /**
+             * Corrected
+             * @default false
+             */
+            corrected: boolean;
             /** Model */
             model: string;
             /** Date */
@@ -1234,6 +1349,11 @@ export interface components {
              * @default false
              */
             estimated: boolean;
+            /**
+             * Corrected
+             * @default false
+             */
+            corrected: boolean;
             /** Model */
             model: string;
             /** Date */
@@ -1504,6 +1624,75 @@ export interface components {
              */
             ai_hint: string | null;
         };
+        /** MeasuredEntry */
+        MeasuredEntry: {
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "day" | "month";
+            /**
+             * Date
+             * @description 日电量 YYYY-MM-DD，月电量 YYYY-MM
+             */
+            date: string;
+            /** Kwh */
+            kwh: number;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "generation" | "grid";
+            /**
+             * Model Kwh
+             * @description 模型同期电量（未订正）；还没回算出来为 null
+             */
+            model_kwh: number | null;
+            /**
+             * Ratio
+             * @description 实测 / 模型
+             */
+            ratio: number | null;
+            /**
+             * Status
+             * @description used 进了本次拟合；excluded 比值出界、判为停机或录错；pending 模型值还没算出来；idle 不在拟合窗口或另一档正在用
+             * @enum {string}
+             */
+            status: "used" | "excluded" | "pending" | "idle";
+            /** Recorded At */
+            recorded_at: string;
+        };
+        /** MeasuredEntryIn */
+        MeasuredEntryIn: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "day" | "month";
+            /**
+             * Date
+             * @description 日电量 YYYY-MM-DD，月电量 YYYY-MM
+             */
+            date: string;
+            /**
+             * Kwh
+             * @description kWh，基础单位
+             */
+            kwh: number;
+        };
+        /** MeasuredSummary */
+        MeasuredSummary: {
+            /** Station Id */
+            station_id: string;
+            /**
+             * Entries
+             * @description 按日期倒序
+             */
+            entries: components["schemas"]["MeasuredEntry"][];
+            correction: components["schemas"]["CorrectionStatus"];
+        };
         /**
          * MemberEnergy
          * @description 三模式里某一家对这一天的日电量。拿不到为 null，不省略这一家。docs/19 §一
@@ -1605,6 +1794,18 @@ export interface components {
              * @description 目录中可筛选的省级地区
              */
             regions: string[];
+        };
+        /** RecordMeasuredRequest */
+        RecordMeasuredRequest: {
+            /** Entries */
+            entries: components["schemas"]["MeasuredEntryIn"][];
+            /**
+             * Basis
+             * @description 发电量或上网电量；上网电量会把线损与厂用电一起算进系数
+             * @default generation
+             * @enum {string}
+             */
+            basis: "generation" | "grid";
         };
         /**
          * RegionPrediction
@@ -1801,6 +2002,8 @@ export interface components {
             days: components["schemas"]["DailyOutlook"][];
             /** @description 三模式区间；单一模式请求为 null */
             ensemble: components["schemas"]["EnsembleSummary"] | null;
+            /** @description 正在作用的实测订正；没有为 null */
+            correction: components["schemas"]["CorrectionApplied"] | null;
             /** Assumptions */
             assumptions?: string[];
         };
@@ -1864,6 +2067,11 @@ export interface components {
              * @description 光伏是否双面组件，未设置为 null 即单面
              */
             bifacial: boolean | null;
+            /**
+             * Correction Enabled
+             * @description 实测订正开关；公开目录电站为 null。docs/19 §三
+             */
+            correction_enabled: boolean | null;
             /** Source */
             source?: string | null;
             /** Original Name */
@@ -1968,6 +2176,8 @@ export interface components {
             mounting?: ("fixed" | "single_axis") | null;
             /** Bifacial */
             bifacial?: boolean | null;
+            /** Correction Enabled */
+            correction_enabled?: boolean | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2298,6 +2508,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_StationSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_measured_v1_stations__station_id__measured_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                station_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MeasuredSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_measured_v1_stations__station_id__measured_post: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                station_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordMeasuredRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MeasuredSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_measured_v1_stations__station_id__measured__entry_id__delete: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                station_id: string;
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MeasuredSummary_"];
                 };
             };
             /** @description Validation Error */

@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import pages, upsert_insert
 from app.models import DailyGeneration, Station
-from app.services import energy, weather
+from app.services import correction, energy, weather
 
 log = logging.getLogger(__name__)
 
@@ -83,16 +83,19 @@ class Daily:
 
 
 async def compute_station(
-    http: httpx.AsyncClient, station: Station, sem: asyncio.Semaphore
+    http: httpx.AsyncClient, station: Station, sem: asyncio.Semaphore, k: float | None = None
 ) -> Daily | None:
     """只算不写，可并发。不可算（气象缺测）时返回 None：宁可缺一天，也不把 0 累进总量。
 
     闸门同时管住在途的上游请求与线程池里的 pvlib 计算 —— 两者都不该随站点数线性膨胀。
+    k 是这座电站的实测订正系数，累计与首页今日要乘同一个数。docs/19 §三
     """
     async with sem:
         fc = await weather.station_forecast(http, station)
         loop = asyncio.get_running_loop()
         snap = await loop.run_in_executor(None, energy.compute, station, fc)
+        if k is not None:
+            snap = correction.apply_snapshot(station, fc, snap, k)
     if snap.daily_kwh is None or snap.blocked:
         log.warning("accumulate skipped (%s): station=%s", snap.blocked or "缺测", station.id)
         return None
@@ -122,8 +125,10 @@ async def accumulate_all(db: AsyncSession, http: httpx.AsyncClient) -> int:
     done = 0
     async for page in pages(db, select(Station), Station, settings.accumulate_batch_size):
         ids = [s.id for s in page]  # 提交后再读 ORM 属性要看 expire 配置，先取出来
+        factors = await correction.lookup_many(db, page)
         rows = await asyncio.gather(
-            *(compute_station(http, s, sem) for s in page), return_exceptions=True
+            *(compute_station(http, s, sem, factors.get(s.id)) for s in page),
+            return_exceptions=True,
         )
         for station_id, row in zip(ids, rows, strict=True):
             if isinstance(row, BaseException):

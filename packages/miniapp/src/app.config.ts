@@ -10,6 +10,7 @@ const PAGES = [
   'pages/info/index',
   'pages/fleet-history/index',
   'pages/station/form',
+  'pages/station/measured',
   'pages/login/index',
 ]
 
