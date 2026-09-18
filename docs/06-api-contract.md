@@ -556,6 +556,68 @@ interface RegionPrediction {         // 按电站所在省汇总，只含该日�
 `days` 上限取 `forecast_outlook_days`（7）。两个接口都支持 `weather_model` 选择。
 口径见 [17 §二](./17-user-stations-and-outlook.md)。
 
+### 三模式区间与预报演变（2026-09-18）
+
+口径见 [19 §一、§二](./19-forecast-uncertainty-and-observations.md)。
+
+**`weather_model=ensemble`** 是路由层的模式，不是上游模型名。只有 `/v1/predictions/station`
+认它，且不传 `weather_model` 时这个接口**默认就是它**；其余接口收到 `ensemble` 一律退回
+`best_match`，响应头 `X-Weather-Model` 写实际用的模型。客户端按「响应模型 == 当前选择」丢弃旧响应时，
+选了三模式要跟 `best_match` 比（`store/weatherModel.servedModel`）。
+
+```ts
+interface StationOutlook {
+  // …原有字段；三模式下 model = 'ensemble'，basis 取配置里第一个成员（ECMWF）
+  ensemble: EnsembleSummary | null     // 单一模式为 null
+}
+interface EnsembleSummary {
+  members: ForecastBasis[]             // 参与的成员及各自起报
+  spread_level: SpreadLevel | null     // 按首日
+}
+interface DailyOutlook {
+  // …原有字段。三模式下整套主字段（电量、曲线、指数、天气、峰值）取自同一个成员 ——
+  // 当天日电量居中的那家；不做逐点中位合成。以下单一模式时一律 null
+  energy_kwh_low: number | null        // 三家日电量最小
+  energy_kwh_high: number | null       // 三家日电量最大
+  member_energy_kwh: MemberEnergy[] | null
+  median_model: string | null          // 这一天主数字取自哪家
+  power_kw_low: PowerPoint[] | null    // 逐时刻包络，只作视觉，不参与求和
+  power_kw_high: PowerPoint[] | null
+  spread_percent: number | null        // (high − low) / 中位 × 100
+  spread_level: SpreadLevel | null
+}
+interface MemberEnergy { model: string; energy_kwh: number | null }
+type SpreadLevel = 'agree' | 'diverge' | 'strong'
+```
+
+成员失败：剩两家仍给区间并在 `assumptions` 说明缺了谁（偶数时主数字取偏低那家）；
+只剩一家退回该模型的单一结果，`ensemble` 为 null；全失败按上游错误返回。
+
+```
+GET /v1/predictions/station/history?station_id={id}&date=YYYY-MM-DD
+```
+
+同一目标日历次起报的变化。只读留档索引，不触发计算，不写留档；`date` 缺省为北京时间明天。
+归属校验与 `/v1/predictions/station` 相同。
+
+```ts
+interface ForecastEvolution {
+  station_id: string; date: string
+  model: string                        // 固定 evolution_model（ecmwf_ifs），不跨模型混
+  issuances: Issuance[]                // 按起报时刻升序，同一起报只留最后算的一份
+  convergence: 'stable' | 'wobble' | 'swing' | null   // 不足 2 份为 null
+  range_percent: number | null         // 最近 evolution_issuances 份的 (max − min) / mean × 100
+}
+interface Issuance {
+  issued_at: string | null             // 起报拿不到为 null，按拉取时刻所在 6 小时片归并，不冒充起报
+  generated_at: string
+  lead_days: number
+  model: string
+  energy_kwh: number | null
+  peak_kw: number | null
+}
+```
+
 
 ---
 

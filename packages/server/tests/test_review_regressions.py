@@ -275,8 +275,19 @@ def test_七天留档保存设备与高频输入且不覆盖(tmp_path):
     prediction_archive.save_outlook(st, fc, out)
     out.generated_at = datetime.now(UTC).isoformat()
     prediction_archive.save_outlook(st, fc, out)
-    files = list(tmp_path.rglob("prediction-outlook/*/*.json"))
+    files = [
+        p
+        for p in tmp_path.rglob("prediction-outlook/*/*.json")
+        if not p.name.endswith(".meta.json")
+    ]
     assert len(files) == 1
+    # 演变用的轻量索引与完整留档一一对应，只带电量与峰值：扫历史时不必解析整份气象输入
+    metas = list(tmp_path.rglob("prediction-outlook/*/*.meta.json"))
+    assert len(metas) == 1
+    index = json.loads(metas[0].read_text())
+    assert list(index)[0] == "station_id"  # 删站按文件头匹配，首键不能变
+    assert set(index["days"][0]) == {"date", "energy_kwh", "peak_kw"}
+    assert len(index["days"]) == 7
     content = json.loads(files[0].read_text())
     assert len(content["prediction"]["days"]) == 7
     assert content["weather_resolution_minutes"] == 15
@@ -285,7 +296,16 @@ def test_七天留档保存设备与高频输入且不覆盖(tmp_path):
     assert content["station_parameters"]["hub_height"] == 100
     st.hub_height = 120
     prediction_archive.save_outlook(st, fc, out)
-    assert len(list(tmp_path.rglob("prediction-outlook/*/*.json"))) == 2
+    assert (
+        len(
+            [
+                p
+                for p in tmp_path.rglob("prediction-outlook/*/*.json")
+                if not p.name.endswith(".meta.json")
+            ]
+        )
+        == 2
+    )
 
 
 def test_全目录留档同日多次签发都保留(tmp_path):

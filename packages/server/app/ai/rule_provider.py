@@ -7,6 +7,8 @@ AI 挂掉不能让页面白屏。模板的输入与 AI 完全一致（都来自 
 from app.ai.input import ReportInput
 from app.ai.schema import AIReport, ReportPeriod
 from app.config import settings
+from app.schemas.common import ConvergenceLevel
+from app.services.evolution import STABILITY_TEXT
 
 
 class RuleProvider:
@@ -88,6 +90,11 @@ def render(inp: ReportInput) -> AIReport:
             "当前气象条件较弱，请结合实测出力评估影响。",
             "设备检修与清洗应遵循现场规程，不仅依据气象评分安排。",
         ]
+    # 模式自己都没拿准时，提醒临近再看比任何具体建议都更要紧，排第一。
+    # 建议最多三条（AIReport 校验），有预警时本来就满了，挤掉最后一条。docs/19 §二
+    if inp.stability == STABILITY_TEXT[ConvergenceLevel.SWING]:
+        tip = "今天的预报在近几轮起报间来回摇摆，临近时段请以最新预报为准。"
+        suggestions = [tip, *suggestions][:3]
 
     return AIReport(
         verdict_title=title,

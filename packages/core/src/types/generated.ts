@@ -191,9 +191,29 @@ export interface paths {
         };
         /**
          * Station Outlook
-         * @description 未来 7 天逐日预测，首页懒加载。docs/17 §二
+         * @description 未来 7 天逐日预测，首页懒加载。默认三模式区间。docs/17 §二、docs/19 §一
          */
         get: operations["station_outlook_v1_predictions_station_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/station/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Station Forecast History
+         * @description 同一目标日历次起报的变化。只读留档，不触发计算。docs/19 §二
+         */
+        get: operations["station_forecast_history_v1_predictions_station_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -578,6 +598,12 @@ export interface components {
             impact_start_at?: string | null;
         };
         /**
+         * ConvergenceLevel
+         * @description 同一模型历次起报的摆动程度。docs/19 §二
+         * @enum {string}
+         */
+        ConvergenceLevel: "stable" | "wobble" | "swing";
+        /**
          * Coord
          * @enum {string}
          */
@@ -714,6 +740,10 @@ export interface components {
         /**
          * DailyOutlook
          * @description 7 天预测里的一天。指数只反映气象，不受出力约束影响。
+         *
+         *     三模式下整套主字段（电量、曲线、指数、天气、峰值）取自**同一个成员** —— 日电量居中的那家，
+         *     逐日独立选，记在 median_model。不做逐点中位合成：那条曲线求和不等于任何一家的日电量，
+         *     主数字与曲线会对不上，峰谷也被削平。docs/19 §一
          */
         DailyOutlook: {
             /** Date */
@@ -760,6 +790,42 @@ export interface components {
              * @description 当前点预报统一 15 分钟；历史小时资料保留 60 分钟
              */
             resolution_minutes: number;
+            /**
+             * Energy Kwh Low
+             * @description 三家日电量的最小值
+             */
+            energy_kwh_low: number | null;
+            /**
+             * Energy Kwh High
+             * @description 三家日电量的最大值
+             */
+            energy_kwh_high: number | null;
+            /**
+             * Member Energy Kwh
+             * @description 三家各自的日电量
+             */
+            member_energy_kwh: components["schemas"]["MemberEnergy"][] | null;
+            /**
+             * Median Model
+             * @description 这一天的主数字取自哪个成员
+             */
+            median_model: string | null;
+            /**
+             * Power Kw Low
+             * @description 逐时刻三家最小值，只作视觉包络，不参与求和
+             */
+            power_kw_low: components["schemas"]["PowerPoint"][] | null;
+            /**
+             * Power Kw High
+             * @description 逐时刻三家最大值，同上
+             */
+            power_kw_high: components["schemas"]["PowerPoint"][] | null;
+            /**
+             * Spread Percent
+             * @description (max−min)/median × 100
+             */
+            spread_percent: number | null;
+            spread_level: components["schemas"]["SpreadLevel"] | null;
         };
         /**
          * EnergyIndex
@@ -782,6 +848,19 @@ export interface components {
             estimated: boolean;
             /** Attribution */
             attribution?: components["schemas"]["IndexAttribution"][];
+        };
+        /**
+         * EnsembleSummary
+         * @description 三模式区间的成员与总体分歧度。单一模式请求时整个对象为 null。docs/19 §一
+         */
+        EnsembleSummary: {
+            /**
+             * Members
+             * @description 参与的成员及各自起报，按配置顺序
+             */
+            members: components["schemas"]["ForecastBasis"][];
+            /** @description 按首日的日电量分歧度分档 */
+            spread_level: components["schemas"]["SpreadLevel"] | null;
         };
         /** Envelope[AIReportResponse] */
         Envelope_AIReportResponse_: {
@@ -806,6 +885,11 @@ export interface components {
         /** Envelope[FleetPrediction] */
         Envelope_FleetPrediction_: {
             data: components["schemas"]["FleetPrediction"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[ForecastEvolution] */
+        Envelope_ForecastEvolution_: {
+            data: components["schemas"]["ForecastEvolution"];
             meta: components["schemas"]["Meta"];
         };
         /** Envelope[GeoReverseResponse] */
@@ -1114,6 +1198,33 @@ export interface components {
              */
             fetched_at: string;
         };
+        /**
+         * ForecastEvolution
+         * @description 同一目标日历次起报的变化。只读留档，不触发计算。docs/19 §二
+         */
+        ForecastEvolution: {
+            /** Station Id */
+            station_id: string;
+            /** Date */
+            date: string;
+            /**
+             * Model
+             * @description 固定单一模型，混模型比的是模型间差异而不是演变
+             */
+            model: string;
+            /**
+             * Issuances
+             * @description 按起报时刻升序
+             */
+            issuances: components["schemas"]["Issuance"][];
+            /** @description 不足 2 份起报时为 null */
+            convergence: components["schemas"]["ConvergenceLevel"] | null;
+            /**
+             * Range Percent
+             * @description 最近几份起报的 (max−min)/mean × 100
+             */
+            range_percent: number | null;
+        };
         /** GenerationPrediction */
         GenerationPrediction: {
             /** Calculation Version */
@@ -1244,6 +1355,30 @@ export interface components {
          * @enum {string}
          */
         IndexLevel: "excellent" | "good" | "fair" | "poor";
+        /**
+         * Issuance
+         * @description 同一目标日的一次起报。docs/19 §二
+         */
+        Issuance: {
+            /**
+             * Issued At
+             * @description 模型起报时刻；拿不到时为 null，按拉取时间归并
+             */
+            issued_at: string | null;
+            /** Generated At */
+            generated_at: string;
+            /**
+             * Lead Days
+             * @description 该次起报距目标日的天数
+             */
+            lead_days: number;
+            /** Model */
+            model: string;
+            /** Energy Kwh */
+            energy_kwh: number | null;
+            /** Peak Kw */
+            peak_kw: number | null;
+        };
         /** LatLng */
         LatLng: {
             /** Latitude */
@@ -1368,6 +1503,16 @@ export interface components {
              * @description 底部 AI 提示条一句话
              */
             ai_hint: string | null;
+        };
+        /**
+         * MemberEnergy
+         * @description 三模式里某一家对这一天的日电量。拿不到为 null，不省略这一家。docs/19 §一
+         */
+        MemberEnergy: {
+            /** Model */
+            model: string;
+            /** Energy Kwh */
+            energy_kwh: number | null;
         };
         /** Meta */
         Meta: {
@@ -1567,6 +1712,12 @@ export interface components {
             /** Value */
             value: number;
         };
+        /**
+         * SpreadLevel
+         * @description 三模式对同一天的分歧程度。说的是预报有多稳，不是天气好坏。docs/19 §一
+         * @enum {string}
+         */
+        SpreadLevel: "agree" | "diverge" | "strong";
         /** StationCounts */
         StationCounts: {
             /** All */
@@ -1648,6 +1799,8 @@ export interface components {
             basis: components["schemas"]["ForecastBasis"] | null;
             /** Days */
             days: components["schemas"]["DailyOutlook"][];
+            /** @description 三模式区间；单一模式请求为 null */
+            ensemble: components["schemas"]["EnsembleSummary"] | null;
             /** Assumptions */
             assumptions?: string[];
         };
@@ -2291,6 +2444,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_StationOutlook_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    station_forecast_history_v1_predictions_station_history_get: {
+        parameters: {
+            query: {
+                station_id: string;
+                /** @description 目标日，默认明天 */
+                date?: string | null;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ForecastEvolution_"];
                 };
             };
             /** @description Validation Error */

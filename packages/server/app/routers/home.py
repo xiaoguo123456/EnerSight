@@ -3,8 +3,9 @@
 游客可看公开电站；自建场站由 get_station 要求登录。docs/09 §4.3
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +22,7 @@ from app.schemas.home import (
     TrendRange,
     TrendSeries,
 )
-from app.schemas.prediction import FleetPrediction, StationOutlook
+from app.schemas.prediction import FleetPrediction, ForecastEvolution, StationOutlook
 from app.services import home as svc
 from app.services import weather
 from app.services.station import get_station
@@ -97,23 +98,49 @@ async def station_outlook(
     days: Annotated[int, Query(ge=1, le=7)] = 7,
     coord: CoordQuery = Coord.WGS84,
 ) -> Envelope[StationOutlook]:
-    """未来 7 天逐日预测，首页懒加载。docs/17 §二"""
+    """未来 7 天逐日预测，首页懒加载。默认三模式区间。docs/17 §二、docs/19 §一"""
     import asyncio
 
     from app.config import settings
-    from app.services import prediction
+    from app.services import ensemble, prediction
+    from app.services.prediction_archive import save_outlook
 
     station = await get_station(db, owner_of(user), station_id)
     # 只读事务在出网前结束，避免慢请求占满连接池。
     await db.commit()
+    want = min(days, settings.forecast_outlook_days)
+    if getattr(request.state, "ensemble", False):
+        out, members = await ensemble.compute(request.app.state.http, station, want)
+        # 三家各留一份自己的档：预报演变要按单一模型串时间序列。docs/19 §二
+        for m in members:
+            await asyncio.to_thread(save_outlook, station, m.forecast, m.outlook)
+        return envelope(out, coord)
     fc = await weather.station_forecast(request.app.state.http, station)
-    out = await asyncio.to_thread(
-        prediction.compute_days, station, fc, min(days, settings.forecast_outlook_days)
-    )
-    from app.services.prediction_archive import save_outlook
-
+    out = await asyncio.to_thread(prediction.compute_days, station, fc, want)
     await asyncio.to_thread(save_outlook, station, fc, out)
     return envelope(out, coord)
+
+
+@router.get("/predictions/station/history", response_model=Envelope[ForecastEvolution])
+async def station_forecast_history(
+    request: Request,
+    user: OptionalUserDep,
+    db: DbDep,
+    station_id: Annotated[str, Query()],
+    date_: Annotated[date | None, Query(alias="date", description="目标日，默认明天")] = None,
+    coord: CoordQuery = Coord.WGS84,
+) -> Envelope[ForecastEvolution]:
+    """同一目标日历次起报的变化。只读留档，不触发计算。docs/19 §二"""
+    import asyncio
+
+    from app.services import evolution
+
+    station = await get_station(db, owner_of(user), station_id)
+    await db.commit()
+    # 不传目标日时看明天：留档里今天的记录最少，演变也最没看头。前端一般显式传选中日
+    target = date_ or (datetime.now(ZoneInfo("Asia/Shanghai")).date() + timedelta(days=1))
+    data = await asyncio.to_thread(evolution.read, station.id, target)
+    return envelope(data, coord)
 
 
 @router.get("/map/overview", response_model=Envelope[MapOverviewResponse])

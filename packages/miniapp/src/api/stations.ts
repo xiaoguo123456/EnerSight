@@ -3,8 +3,8 @@
  * 类型全部来自 codegen，不手写。
  */
 import type {
-  CreateStationRequest, PublicStationListResponse, StationListResponse, StationOutlook,
-  StationSummary, StationType, UpdateStationRequest,
+  CreateStationRequest, ForecastEvolution, PublicStationListResponse, StationListResponse,
+  StationOutlook, StationSummary, StationType, UpdateStationRequest,
 } from '@enersight/core/types'
 import { api } from './index'
 
@@ -16,9 +16,16 @@ export const stationsApi = {
   mine: (type?: StationType) =>
     api.get<StationListResponse>('/v1/stations', type ? { type } : undefined),
 
-  /** 未来 7 天逐日预测，首页懒加载。docs/17 §二 */
+  /** 未来 7 天逐日预测，首页懒加载。默认三模式区间。docs/17 §二、docs/19 §一 */
   outlook: (stationId: string, days = 7) =>
     api.get<StationOutlook>('/v1/predictions/station', { station_id: stationId, days }),
+
+  /** 同一目标日历次起报的变化。只读留档，服务端不重算。docs/19 §二 */
+  history: (stationId: string, date: string) =>
+    api.get<ForecastEvolution>('/v1/predictions/station/history', {
+      station_id: stationId,
+      date,
+    }),
 
   create: (body: CreateStationRequest) =>
     api.post<StationSummary>('/v1/stations', body),

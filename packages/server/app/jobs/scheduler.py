@@ -9,6 +9,8 @@
 - backfill_address       每小时      给缺地址的站点补逆地理编码
 - fleet_prediction       每日 0/12 点 预热全目录汇总
 - fleet_history          每 10 分钟   归档全目录日快照
+- issue_outlooks         每日 08:30   我的电站三模式 7 天签发留档，供预报演变（docs/19 §二）
+- prune_prediction        每日        按保留天数清理预测留档（docs/19 §二）
 - model_resolution       每日一次    复核自动选择模型是否仍等于 ECMWF IFS（docs/17 §二）
 - weather_upstream       每 5 分钟    探自建气象实例，熔断/恢复写日志（仅配了兜底时注册）
 - warm_coords            每日一次    导出公开目录坐标给自建实例预热（同上，仅自建时注册）
@@ -93,6 +95,51 @@ def _make_scan_alerts(app: FastAPI):
                     found += await scan_one(db, from_catalog(p))
                     seen += 1
         log.info("scan_alerts: %d detections over %d stations", found, seen)
+
+    return job
+
+
+def _make_issue_outlooks(app: FastAPI):
+    """每天给我的电站签发一份三模式 7 天预测并留档。
+
+    预报演变要的是「同一个目标日、历次起报」的序列，而留档此前只在用户打开页面时才写 ——
+    没人打开的电站就没有历史。这个任务把签发变成每天固定一次，三个成员各存一份，
+    演变按单一模型（`evolution_model`）串起来。docs/19 §二
+
+    只读站点、只写文件，不写库：取完一页就放掉会话，之后的出网与计算不占连接。
+    """
+
+    async def one(station: Station) -> int:
+        from app.services import ensemble
+        from app.services.prediction_archive import save_outlook
+
+        _, members = await ensemble.compute(app.state.http, station, settings.forecast_outlook_days)
+        for m in members:
+            await asyncio.to_thread(save_outlook, station, m.forecast, m.outlook)
+        return len(members)
+
+    async def job() -> None:
+        sem = asyncio.Semaphore(settings.issue_outlooks_concurrency)
+
+        async def guarded(station: Station) -> int:
+            async with sem:
+                return await one(station)
+
+        stations_done = members_done = 0
+        async for ids in id_pages(Station, settings.accumulate_batch_size):
+            async with SessionLocal() as db:
+                page = list(
+                    (await db.execute(select(Station).where(Station.id.in_(ids)))).scalars().all()
+                )
+            results = await asyncio.gather(*(guarded(s) for s in page), return_exceptions=True)
+            for station, r in zip(page, results, strict=True):
+                if isinstance(r, BaseException):
+                    # 单站失败不能掀翻整轮：明天还会再签发一次
+                    log.error("issue_outlooks failed: station=%s", station.id, exc_info=r)
+                    continue
+                stations_done += 1
+                members_done += r
+        log.info("issue_outlooks: %d stations, %d archives", stations_done, members_done)
 
     return job
 
@@ -388,6 +435,29 @@ def start(app: FastAPI) -> AsyncIOScheduler | None:
         _make_generate_reports(app),
         CronTrigger(hour=(settings.report_generate_hour - 8) % 24, minute=0),
         id="generate_reports",
+        max_instances=1,
+        coalesce=True,
+    )
+    # 我的电站每日签发：排在全目录轮次（0:15）之后，且落在单点缓存的新时段内。docs/19 §二
+    sched.add_job(
+        _make_issue_outlooks(app),
+        CronTrigger(hour=(settings.issue_outlooks_hour - 8) % 24, minute=30),
+        id="issue_outlooks",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    async def prune_prediction() -> None:
+        from app.services import evolution
+
+        removed = await asyncio.to_thread(evolution.prune)
+        if removed:
+            log.info("prune_prediction: %d day folders", removed)
+
+    sched.add_job(
+        prune_prediction,
+        CronTrigger(hour=21, minute=40),
+        id="prune_prediction",
         max_instances=1,
         coalesce=True,
     )

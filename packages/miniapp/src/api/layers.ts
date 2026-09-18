@@ -1,13 +1,14 @@
 /** 同一组量化网格共享请求；冷却期不反复轰击上游。 */
 import type { LayerResponse, LayerType } from '@enersight/core/types'
-import { useWeatherModel } from '@/store/weatherModel'
+import { servedModel, useWeatherModel } from '@/store/weatherModel'
 import { imageryApi as api } from './index'
 export interface BBox { west: number; south: number; east: number; north: number }
 const cache = new Map<string, { until: number; value: Promise<LayerResponse> }>()
 let cooldown = 0
 export const layersApi = {
   get: (layer: LayerType, bbox: BBox, zoom: number) => {
-    const model = layer === 'cloud' ? useWeatherModel.getState().model : 'ecmwf_ifs'
+    // 图层不认三模式，按服务端实际会用的模型请求与缓存，免得同一份图按两个键各存一份
+    const model = layer === 'cloud' ? servedModel(useWeatherModel.getState().model) : 'ecmwf_ifs'
     // 返回的数值标注与风矢量绑定视野；图片本身由后端量化缓存。
     const key = [model, layer, zoom, bbox.west, bbox.south, bbox.east, bbox.north].join(':')
     const hit = cache.get(key)

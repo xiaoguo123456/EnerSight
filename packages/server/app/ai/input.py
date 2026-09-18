@@ -52,6 +52,9 @@ class ReportInput:
     # 计入出力约束后的预计上网电量与说明；没有规则为 None。模型只解释，不做差值。docs/17 §四
     grid_kwh: float | None = None
     curtailment_note: str | None = None
+    # 预报稳定度：历次起报是否已收敛。只给档位文字，不给摆动百分比 ——
+    # 历次起报值不进输入，免得模型拿去引用或比较。docs/19 §二
+    stability: str | None = None
 
     def render(self) -> str:
         lines = [
@@ -82,6 +85,8 @@ class ReportInput:
             lines.append(
                 f"预计上网 {self.grid_kwh:,.0f} kWh（{self.curtailment_note or '计入出力约束'}）"
             )
+        if self.stability:
+            lines.append(f"预报稳定度：{self.stability}")
         if self.capacity_note:
             lines.append(f"注：{self.capacity_note}")
         return "\n".join(lines)
@@ -113,6 +118,7 @@ def build_input(
     capacity_note: str | None = None,
     grid_kwh: float | None = None,
     curtailment_note: str | None = None,
+    stability: str | None = None,
 ) -> ReportInput:
     day = fc.current_hour().normalize()
     periods = []
@@ -156,6 +162,7 @@ def build_input(
         capacity_note=capacity_note,
         grid_kwh=grid_kwh,
         curtailment_note=curtailment_note,
+        stability=stability,
     )
     inp.numbers = extract_numbers(inp.render())
     return inp

@@ -1,0 +1,79 @@
+// 三模式区间与预报演变：附在大数字下方，字号退到次级，不跟 Hero 抢。docs/02 §九
+.spread { margin-top: var(--space-2); }
+
+.spread__row { display: flex; align-items: center; gap: 6px; }
+.spread__range {
+  font-size: var(--font-caption);
+  color: var(--color-text-sub);
+  font-variant-numeric: tabular-nums;
+}
+// 分歧程度是「预报有多稳」，不是天气好坏，所以一律中性灰底，不用红绿橙
+.spread__tag {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: #33465e;
+  background: #eef2f7;
+}
+.spread__tag--strong,
+.spread__tag--swing { color: #1f2937; background: #e2e8f0; }
+.spread__tag { flex-shrink: 0; white-space: nowrap; }
+
+.spread__members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+}
+.spread__member {
+  font-size: 11px;
+  line-height: 16px;
+  color: #617084;
+  font-variant-numeric: tabular-nums;
+}
+.spread__member--median { color: #233146; font-weight: 600; }
+
+.spread__evolution {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: 6px;
+}
+.spread__evolution-main { flex: 1; min-width: 0; }
+.spread__evolution-line {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.spread__toggle { flex-shrink: 0; font-size: 11px; line-height: 16px; color: var(--color-primary); }
+
+.spread__detail {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f6f9fc;
+}
+.spread__detail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  line-height: 20px;
+}
+.spread__detail-time { font-size: 11px; color: #617084; font-variant-numeric: tabular-nums; }
+.spread__detail-value {
+  font-size: 12px;
+  color: #233146;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.spread__help {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #617084;
+}

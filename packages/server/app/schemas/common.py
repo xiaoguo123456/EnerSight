@@ -47,6 +47,22 @@ class AlertLevel(StrEnum):
     CLEARED = "cleared"
 
 
+class SpreadLevel(StrEnum):
+    """三模式对同一天的分歧程度。说的是预报有多稳，不是天气好坏。docs/19 §一"""
+
+    AGREE = "agree"
+    DIVERGE = "diverge"
+    STRONG = "strong"
+
+
+class ConvergenceLevel(StrEnum):
+    """同一模型历次起报的摆动程度。docs/19 §二"""
+
+    STABLE = "stable"
+    WOBBLE = "wobble"
+    SWING = "swing"
+
+
 class MetricWithDelta(BaseModel):
     """值 + 环比。delta_percent 为 None 时前端隐藏环比标签。"""
 

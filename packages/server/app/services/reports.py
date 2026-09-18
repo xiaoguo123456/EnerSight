@@ -3,6 +3,7 @@
 当日报告按需生成或更新十分钟缓存，历史报告只读已有存档。
 """
 
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -19,7 +20,7 @@ from app.errors import ApiError, DataUnavailable
 from app.models import DailyGeneration, Report, Station
 from app.schemas.common import Coord, MetricWithDelta
 from app.schemas.report import AIReportResponse, ReportPeriodOut, ReportSummary
-from app.services import alerts
+from app.services import alerts, evolution
 from app.services.home import build_station_view
 
 
@@ -73,6 +74,8 @@ async def generate_and_store(
     note = (
         f"{v.snapshot.blocked}，发电量按目录申报容量估算，仅供参考" if v.snapshot.blocked else None
     )
+    # 只读留档索引，拿不到历史就是 None，报告里不出这一行
+    stability = await asyncio.to_thread(evolution.stability_text, station.id, day)
     inp = build_input(
         station,
         v.forecast,
@@ -82,6 +85,7 @@ async def generate_and_store(
         note,
         grid_kwh=None if v.snapshot.blocked else v.snapshot.grid_kwh,
         curtailment_note=v.snapshot.curtailment_note,
+        stability=stability,
     )
 
     gen = await ai.generate(inp)

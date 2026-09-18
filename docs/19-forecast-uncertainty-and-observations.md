@@ -73,7 +73,8 @@
 
 首页大数字（中位成员）与累计发电的当日增量（`best_match`）会差一点，量级在几个百分点，
 ⓘ 里说明「累计按自动模型逐小时累积」。`weather_model.supports_selection` 白名单不放开；
-全目录视图下选择器隐藏「三模式」项，已选则退回自动并标一句。
+全目录视图（含历史趋势页）的选择器里不出现「三模式」，已选的显示服务端实际用的「自动 · ECMWF」，
+不改写用户的选择，切回本站仍是三模式。
 
 ### 成本
 
@@ -122,11 +123,14 @@ interface MemberEnergy { model: string; energy_kwh: number | null }
 ### 页面
 
 - 首页本站预测卡（`StationForecast`）：模型选择器默认「三模式」。大数字是中位成员的值，
-  下面一行并列三家：「ECMWF 12.1 · ICON 11.5 · GFS 13.0 MWh · 模式一致」，居中那家加标记；
-  `PowerCurve` 画区间带；`OutlookStrip` 选中日说明行加区间。
+  下面两行由 `ForecastSpread` 组件给出，格式统一为「文字 + 灰标签」：
+  「区间 51–105 MWh」+「分歧很大」，下一行「ECMWF 105 · ICON 51 · GFS 91」，居中那家加粗。
 - `TrendChart.ChartData` 加 `band?: { low: (number | null)[]; high: (number | null)[] }`：主色 0.12 透明度填充，
-  按 null 分段，带内不画数据点。现有 `comparison`（可发 vs 上网）与带可同时出现。
-- ⓘ：成员清单与各自起报、分歧度定义、累积与预警的口径差异。
+  按 null 分段，垫在最底层，纵轴把带的上沿算进去。**有带时主曲线不画面积渐变** —— 两层浅蓝叠在一起，
+  带的下沿就看不出来了（截图验证时发现）。现有 `comparison`（可发 vs 上网）与带可同时出现。
+- ⓘ：`assumptions` 里给成员说明、区间不是概率区间、累计按自动模型累积。
+- 客户端防串味：首页、全目录、历史页按「响应模型 == 当前选择」丢弃旧响应，选了三模式要跟
+  `best_match` 比（`store/weatherModel.servedModel`），否则这几处响应永远对不上、页面停在加载。
 
 ### 验收
 
@@ -158,6 +162,9 @@ interface MemberEnergy { model: string; energy_kwh: number | null }
   新增定时任务 `issue_outlooks`，北京时间每日 08:30（全目录轮次之后、单点缓存新时段内）对全部我的电站
   算三模式并留档（三个成员各一份）；`db.pages` 分批，算并发写串行。公开目录电站不定时签发，
   有多少显示多少。这份签发同时是第三节订正拟合用的模型侧数据。
+- **留档索引**：完整留档带着整份 15 分钟气象输入，扫一遍太重。`save_outlook` 同时写一份
+  `{digest}.meta.json`，只含站点、模型、签发与起报时刻、每天的电量与峰值；演变只读索引。
+  索引首键仍是 `station_id`，删站时按文件头一并清掉。旧留档没有索引，演变从本版上线起攒。
 - **留档清理**：`prediction-archive` / `prediction-outlook` 目前不清理。新增 `prediction_archive_retention_days`（45）
   按日目录清理；删除电站时 `purge_station_archives` 照旧。
 
@@ -183,9 +190,13 @@ interface Issuance {
 
 ### 页面
 
-- 首页本站预测卡，选中日说明行下加一行：「预报演变 · 3 次起报 12.1 → 11.8 → 11.9 MWh · 已收敛」。
-  点击弹层：小折线（横轴为起报时刻，`TrendChart` 复用，点数 2–8）+ 档位定义。今天以外的日子同样可看。
-- AI 报告输入加一行「预报稳定度：收敛 / 波动 / 摇摆」，只有文字。
+- 首页本站预测卡，区间两行之下：「ECMWF 演变 12.1 → 11.8 → 11.9 MWh」+「已收敛」标签 + 「详情」。
+  **写明是哪家**：演变固定看 ECMWF，最新值可能与中位成员的大数字不同，不写明会被当成对不上。
+  点「详情」就地展开历次起报列表（起报时刻 + 电量）与两段说明。不用小折线：`TrendChart` 的横轴刻度
+  按固定步长算，2–8 个不等距的起报点画出来是错的。今天以外的日子同样可看，跟着选中日走。
+- 不足两份起报整行不出现；游客看公开电站也能看，有多少留档显示多少。
+- AI 报告输入加一行「预报稳定度：…」，只有档位文字；规则模板在「来回摇摆」时把「临近时段以最新预报为准」
+  排在建议第一条，建议总数仍不超过三条（`AIReport` 校验上限，有预警时本来就满了）。
 
 ### 验收
 
@@ -392,7 +403,7 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | 任务 | 周期（UTC） | 做什么 |
 | --- | --- | --- |
 | `issue_outlooks` | 每日 00:30 | 我的电站三模式 7 天签发留档 |
-| `prune_prediction_archive` | 每日 | 按 `prediction_archive_retention_days` 清理 |
+| `prune_prediction` | 每日 21:40 | 按 `prediction_archive_retention_days` 清理 |
 | `fit_corrections` | 每日 02:00，记录后立即 | 订正拟合与回测 |
 | `satellite_irradiance` | 每 30 分钟 | 我的电站卫星辐照拉取，更新当前功率与当日累计 |
 | `soiling_update` | 每日 01:00 | 拉空气质量与降水，更新积灰 |
@@ -431,7 +442,7 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 
 | 里程碑 | 内容 | 进入下一步的门槛 |
 | --- | --- | --- |
-| M1 | 三模式默认、区间带与三家并列、预报演变、`issue_outlooks`、留档清理、各链路口径统一 | 第一、二节验收项全过；模拟器截图 |
+| M1 ✅ | 三模式默认、区间带与三家并列、预报演变、`issue_outlooks`、留档清理、各链路口径统一 | 第一、二节验收项全过；H5 截图已看，开发者工具截图待合入主仓库后补 |
 | M2 | 随手记、订正、实测对账页 | 用 PVOD 站点的日电量走一遍记录 → 拟合 → 应用，偏差下降可复现 |
 | M3 | 卫星辐照：接口接入、PVOD 回测、预警页卫星实况卡；达标后当前功率与当日累计切换 | 需 Open-Meteo Professional 订阅与授权确认；回测结论写入 07 §8.1 |
 | M4 | 空气质量接入、气溶胶归因、积灰卡、`precipitation` 字段 | 敦煌 / 拉萨 / 苏州三点归因数值合理；04 §二字段表已更新 |

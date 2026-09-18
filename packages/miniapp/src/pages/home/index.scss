@@ -88,6 +88,8 @@
 .forecast-curve { padding-top: var(--space-1); }
 .forecast-series { display: flex; gap: var(--space-3); font-size: var(--font-caption); color: var(--color-primary); }
 .forecast-series__grid { color: var(--color-energy); }
+// 区间带是同色淡填充，图例也用淡一档的主色，不另起一种颜色。docs/19 §一
+.forecast-series__band { color: #7fa9e8; }
 .forecast-split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-divider); font-size: var(--font-metric-sm); font-weight: 600; }
 .forecast-province { padding: var(--space-1) 0 var(--space-2); border-bottom: 1px solid var(--color-divider); }
 .forecast-province .forecast-row { min-height: var(--size-control); }

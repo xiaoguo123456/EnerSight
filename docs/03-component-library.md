@@ -374,6 +374,26 @@ Inactive：
 - 点击数据点显示悬浮值气泡与纵向虚线
 
 
+区间带（2026-09-18，[19 §一](./19-forecast-uncertainty-and-observations.md)）：
+
+- `ChartData.band = { low, high }`，与 `values` 等长同序；任一端为 null 的点断开，不跨缺测连成一片
+- 主色 0.12 透明度填充，垫在最底层；纵轴上限把带的上沿算进去，带不会画出画布
+- 有带时主曲线只画线、不画面积渐变
+- 带只是视觉包络，不参与任何求和
+
+
+---
+
+### ForecastSpread
+
+预测卡上大数字下方的两行：三模式区间与预报演变。docs/19 §一、§二
+
+- 区间行：「区间 low–high 单位」+ 分歧度标签；下一行三家日电量并列，中位那家加粗
+- 演变行：「{模型} 演变 a → b → c 单位」+ 收敛度标签 + 「详情」；展开后是历次起报列表与两段说明
+- 演变自己请求 `/v1/predictions/station/history`，不足两份起报整行不出现；单一模式时区间行不出现，两行都没有时整个组件不渲染
+- 标签一律中性灰，不用状态色
+
+
 ---
 
 ### DataSummaryGrid
@@ -868,6 +888,7 @@ AI报告卡。
 | EnergyScoreCard | ● | ● | | | ● | |
 | MetricGrid | ● | ● | | ● | ● | ● |
 | TrendChart | ● | | | | ● | |
+| ForecastSpread | ● | | | | | |
 | AlertBanner | ● | | | | | |
 | QuickEntryGrid | ● | | | | ● | |
 | MapContainer | | ● | | | | |

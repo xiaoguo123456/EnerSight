@@ -196,6 +196,15 @@ def compute_days(
                 grid_power_kw=pred.grid_power_kw,
                 lead_days=k,
                 resolution_minutes=pred.resolution_minutes,
+                # 单模型路径没有区间，一律 null；三模式由 services.ensemble 填。docs/19 §一
+                energy_kwh_low=None,
+                energy_kwh_high=None,
+                member_energy_kwh=None,
+                median_model=None,
+                power_kw_low=None,
+                power_kw_high=None,
+                spread_percent=None,
+                spread_level=None,
             )
         )
     version = version_for_day(energy.target_day(fc, 0))
@@ -211,5 +220,6 @@ def compute_days(
         generated_at=datetime.now(UTC).isoformat(),
         basis=fc.basis(),
         days=out,
+        ensemble=None,
         assumptions=notes,
     )

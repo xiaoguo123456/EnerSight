@@ -11,6 +11,11 @@ export interface ChartData {
   /** 等间隔序列：逐小时 25 点对应 00:00 – 24:00，或 15 分钟 96 点。缺测用 null，断线不补 0 */
   values: (number | null)[]
   comparison?: (number | null)[]
+  /**
+   * 三模式的逐点包络，与 values 等长同序。两端任一为 null 的点不画，按段断开。
+   * 只是视觉范围，不参与任何求和 —— 主数字来自 values 所属的那一家。docs/19 §一
+   */
+  band?: { low: (number | null)[]; high: (number | null)[] }
   times?: string[]
   unit: string
   /** 固定纵轴上限；null 表示按数据自适应。由服务端下发，见 docs/06 §八 */
@@ -40,6 +45,8 @@ export interface ChartTheme {
   tipBorder: string
   tipTitle: string
   tipValue: string
+  /** 三模式区间带填充色 */
+  band: string
 }
 
 export const PAD_LEFT = 34
@@ -56,6 +63,21 @@ function niceMax(values: (number | null)[], yMax: number | null): number {
   if (max <= 0) return 1
   const mag = 10 ** Math.floor(Math.log10(max))
   return Math.ceil(max / mag) * mag
+}
+
+/** 连续可画的下标段：某点在任一序列里缺测就断开，不跨缺口连线。 */
+function segments(n: number, present: (i: number) => boolean): number[][] {
+  const out: number[][] = []
+  let cur: number[] = []
+  for (let i = 0; i < n; i++) {
+    if (present(i)) cur.push(i)
+    else {
+      if (cur.length) out.push(cur)
+      cur = []
+    }
+  }
+  if (cur.length) out.push(cur)
+  return out
 }
 
 function fmtTick(v: number): string {
@@ -102,7 +124,8 @@ export function draw(
   const n = data.values.length
   const step = data.stepMinutes ?? 60
   const timeLabel = (i: number) => data.times?.[i]?.slice(11, 16) ?? hhmm(i * step)
-  const max = niceMax(data.values, data.yMax)
+  // 带的上沿可能高过主曲线，纵轴要把它算进去，否则带会被画到画布外
+  const max = niceMax(data.band ? [...data.values, ...data.band.high] : data.values, data.yMax)
   const x0 = PAD_LEFT
   const y0 = data.comparison ? PAD_TOP_COMPARE : PAD_TOP_SINGLE
   const iw = w - PAD_LEFT - PAD_RIGHT
@@ -139,22 +162,36 @@ export function draw(
   }
   ctx.setLineDash?.([])
 
+  // ── 三模式区间带：垫在最底层，主曲线压在上面。docs/19 §一 ──
+  if (data.band) {
+    const { low, high } = data.band
+    ctx.fillStyle = t.band
+    for (const seg of segments(n, (i) => low[i] != null && high[i] != null)) {
+      if (seg.length < 2) continue
+      ctx.beginPath()
+      seg.forEach((i, k) => {
+        const X = px(i)
+        const Y = py(high[i] as number)
+        k === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y)
+      })
+      for (let k = seg.length - 1; k >= 0; k--) {
+        const i = seg[k]!
+        ctx.lineTo(px(i), py(low[i] as number))
+      }
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
+
   // ── 面积渐变 ──
-  const segs: number[][] = []
-  let cur: number[] = []
-  data.values.forEach((v, i) => {
-    if (v === null) {
-      if (cur.length) segs.push(cur)
-      cur = []
-    } else cur.push(i)
-  })
-  if (cur.length) segs.push(cur)
+  const segs = segments(n, (i) => data.values[i] !== null && data.values[i] !== undefined)
 
   const grad = ctx.createLinearGradient(0, y0, 0, y0 + ih)
   grad.addColorStop(0, t.areaTop)
   grad.addColorStop(1, t.areaBottom)
 
-  for (const seg of segs) {
+  // 有区间带时不画面积：两层浅蓝叠在一起，带的下沿就看不出来了，区间也就没了意义
+  for (const seg of data.band ? [] : segs) {
     if (seg.length < 2) continue
     ctx.beginPath()
     ctx.moveTo(px(seg[0]!), y0 + ih)

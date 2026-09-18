@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import IndexLevel
+from app.schemas.common import ConvergenceLevel, IndexLevel, SpreadLevel
 
 
 class ForecastBasis(BaseModel):
@@ -64,8 +64,27 @@ class GenerationPrediction(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
 
 
+class MemberEnergy(BaseModel):
+    """三模式里某一家对这一天的日电量。拿不到为 null，不省略这一家。docs/19 §一"""
+
+    model: str
+    energy_kwh: float | None
+
+
+class EnsembleSummary(BaseModel):
+    """三模式区间的成员与总体分歧度。单一模式请求时整个对象为 null。docs/19 §一"""
+
+    members: list[ForecastBasis] = Field(description="参与的成员及各自起报，按配置顺序")
+    spread_level: SpreadLevel | None = Field(description="按首日的日电量分歧度分档")
+
+
 class DailyOutlook(BaseModel):
-    """7 天预测里的一天。指数只反映气象，不受出力约束影响。"""
+    """7 天预测里的一天。指数只反映气象，不受出力约束影响。
+
+    三模式下整套主字段（电量、曲线、指数、天气、峰值）取自**同一个成员** —— 日电量居中的那家，
+    逐日独立选，记在 median_model。不做逐点中位合成：那条曲线求和不等于任何一家的日电量，
+    主数字与曲线会对不上，峰谷也被削平。docs/19 §一
+    """
 
     date: str
     estimated: bool = False
@@ -84,6 +103,17 @@ class DailyOutlook(BaseModel):
     grid_power_kw: list[PowerPoint] | None
     lead_days: int = Field(description="距今天数，0 为今日；1–3 为短期（日前）；≥4 为中期")
     resolution_minutes: int = Field(description="当前点预报统一 15 分钟；历史小时资料保留 60 分钟")
+    # 以下为三模式区间；单一模式请求时一律 null。docs/19 §一
+    energy_kwh_low: float | None = Field(description="三家日电量的最小值")
+    energy_kwh_high: float | None = Field(description="三家日电量的最大值")
+    member_energy_kwh: list[MemberEnergy] | None = Field(description="三家各自的日电量")
+    median_model: str | None = Field(description="这一天的主数字取自哪个成员")
+    power_kw_low: list[PowerPoint] | None = Field(
+        description="逐时刻三家最小值，只作视觉包络，不参与求和"
+    )
+    power_kw_high: list[PowerPoint] | None = Field(description="逐时刻三家最大值，同上")
+    spread_percent: float | None = Field(description="(max−min)/median × 100")
+    spread_level: SpreadLevel | None
 
 
 class StationOutlook(BaseModel):
@@ -94,7 +124,30 @@ class StationOutlook(BaseModel):
     generated_at: str
     basis: ForecastBasis | None
     days: list[DailyOutlook]
+    ensemble: EnsembleSummary | None = Field(description="三模式区间；单一模式请求为 null")
     assumptions: list[str] = Field(default_factory=list)
+
+
+class Issuance(BaseModel):
+    """同一目标日的一次起报。docs/19 §二"""
+
+    issued_at: str | None = Field(description="模型起报时刻；拿不到时为 null，按拉取时间归并")
+    generated_at: str
+    lead_days: int = Field(description="该次起报距目标日的天数")
+    model: str
+    energy_kwh: float | None
+    peak_kw: float | None
+
+
+class ForecastEvolution(BaseModel):
+    """同一目标日历次起报的变化。只读留档，不触发计算。docs/19 §二"""
+
+    station_id: str
+    date: str
+    model: str = Field(description="固定单一模型，混模型比的是模型间差异而不是演变")
+    issuances: list[Issuance] = Field(description="按起报时刻升序")
+    convergence: ConvergenceLevel | None = Field(description="不足 2 份起报时为 null")
+    range_percent: float | None = Field(description="最近几份起报的 (max−min)/mean × 100")
 
 
 class RegionPrediction(BaseModel):

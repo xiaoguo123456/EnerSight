@@ -182,6 +182,23 @@ class Settings(BaseSettings):
     forecast_outlook_days: int = 7
     ttl_hourly_forecast: int = 3600  # 图层网格块
 
+    # 三模式区间。只作用于 /v1/predictions/station，其余链路仍是 best_match。docs/19 §一
+    ensemble_members: str = "ecmwf_ifs,icon_global,gfs_global"
+    # 日电量分歧度 (max−min)/median 的分档，百分比
+    ensemble_spread_moderate: float = 15.0
+    ensemble_spread_high: float = 40.0
+    # 预报演变：固定单一模型串时间序列，混模型看到的是模型间差异而不是演变。docs/19 §二
+    evolution_model: str = "ecmwf_ifs"
+    evolution_issuances: int = 3  # 收敛度看最近几份不同起报
+    evolution_stable_pct: float = 10.0
+    evolution_swing_pct: float = 25.0
+    evolution_lead_days: int = 7  # 时效窗口：目标日往前几天的留档参与演变
+    # 预测留档保留天数；此前只写不清理
+    prediction_archive_retention_days: int = 45
+    # 我的电站每日签发时刻（UTC+8）：全目录轮次之后、单点缓存新时段内
+    issue_outlooks_hour: int = 8
+    issue_outlooks_concurrency: int = 4
+
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码
     model_v4_start_date: date = date(2026, 9, 10)
 

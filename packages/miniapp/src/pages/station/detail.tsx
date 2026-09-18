@@ -16,7 +16,7 @@ import {
 import { useRequest } from '@/hooks/useRequest'
 import { decodeRouteParam } from '@/route'
 import { StationTrend } from '@/components/StationTrend'
-import { useWeatherModel, weatherModelLabel } from '@/store/weatherModel'
+import { servedModel, useWeatherModel, weatherModelLabel } from '@/store/weatherModel'
 import { DataFreshness } from '@/components/DataFreshness'
 import './detail.scss'
 
@@ -136,7 +136,7 @@ export default function StationDetail() {
           </View>
         )}
 
-        <DataFreshness compact label={`${weatherModelLabel(useWeatherModel.getState().model)}${req.data.basis?.issued_at ? ` · 起报 ${formatBeijingTime(req.data.basis.issued_at)}` : ''}`} timeLabel="数据至 " time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
+        <DataFreshness compact label={`${weatherModelLabel(servedModel(useWeatherModel.getState().model))}${req.data.basis?.issued_at ? ` · 起报 ${formatBeijingTime(req.data.basis.issued_at)}` : ''}`} timeLabel="数据至 " time={updated_at} refreshing={req.refreshing} failed={!!req.refreshError} onRefresh={req.reload} />
         <View className="detail__card"><StationTrend key={id} stationId={id} type={station.type} initial={req.data.trends} /></View>
 
         {(station.phases?.length || station.prediction_blocked_reason) && <View className="detail__card">

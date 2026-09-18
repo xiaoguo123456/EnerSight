@@ -75,7 +75,8 @@ def purge_station_archives(station_ids: set[str]) -> int:
         if path.name[:24] in keys:
             path.unlink(missing_ok=True)
             removed += 1
-    heads = tuple(f'{{"station_id": {json.dumps(sid)}' for sid in station_ids)
+    # 留档是 ensure_ascii=False 写的，比对用的前缀也必须是，否则非 ASCII 的 id 永远匹配不上
+    heads = tuple(f'{{"station_id": {json.dumps(sid, ensure_ascii=False)}' for sid in station_ids)
     for path in (root / "prediction-outlook").glob("*/*.json"):
         try:
             with path.open(encoding="utf-8") as f:
@@ -115,6 +116,28 @@ def save_outlook(station, forecast, outlook):
     try:
         with (folder / f"{digest}.json").open("x") as f:
             json.dump(content, f, ensure_ascii=False, allow_nan=False)
+    except FileExistsError:
+        pass
+    _save_outlook_index(folder / f"{digest}.meta.json", station.id, outlook)
+
+
+def _save_outlook_index(path, station_id: str, outlook) -> None:
+    """预报演变只要每天的电量与峰值，完整留档带着整份气象输入，扫一遍太重。
+
+    首个键仍是 station_id，删站时 purge_station_archives 按文件头就能一并清掉。
+    """
+    index = {
+        "station_id": station_id,
+        "model": outlook.model,
+        "generated_at": outlook.generated_at,
+        "basis": outlook.basis.model_dump() if outlook.basis else None,
+        "days": [
+            {"date": d.date, "energy_kwh": d.energy_kwh, "peak_kw": d.peak_kw} for d in outlook.days
+        ],
+    }
+    try:
+        with path.open("x") as f:
+            json.dump(index, f, ensure_ascii=False, allow_nan=False)
     except FileExistsError:
         pass
 

@@ -21,6 +21,7 @@ const THEME: ChartTheme = {
   tipBorder: '#E5EAF0',
   tipTitle: '#526174',
   tipValue: '#1F2937',
+  band: 'rgba(22, 119, 255, 0.12)',
 }
 
 /**

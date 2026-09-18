@@ -7,11 +7,11 @@ import type { DailyOutlook, FleetDay, FleetPrediction, ForecastBasis, Generation
 import { api } from '@/api'
 import { homeApi } from '@/api/home'
 import { stationsApi } from '@/api/stations'
-import { AlertBanner, ErrorState, Icon, InfoTip, MetricCard, MetricGrid, OutlookStrip, PageTitleBar, SectionHeader, SegmentedTabs, Skeleton, StationTitleBar, TrendChart, dayLabel } from '@/components'
+import { AlertBanner, ErrorState, ForecastSpread, Icon, InfoTip, MetricCard, MetricGrid, OutlookStrip, PageTitleBar, SectionHeader, SegmentedTabs, Skeleton, StationTitleBar, TrendChart, dayLabel } from '@/components'
 import { ApiError } from '@enersight/core/api'
 import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
-import { useWeatherModel, WEATHER_MODELS, weatherModelLabel } from '@/store/weatherModel'
+import { servedModel, useWeatherModel, WEATHER_MODELS, weatherModelLabel } from '@/store/weatherModel'
 import { StationTrend } from '@/components/StationTrend'
 import { exportCsv } from '@/utils/exportCsv'
 import { requireLogin } from '@/utils/requireLogin'
@@ -58,19 +58,28 @@ function Value({ value }: { value?: number | null }) {
   const v = energy(value)
   return <View className="forecast-value"><Text>{v.value}</Text><Text className="forecast-value__unit">{v.unit}</Text></View>
 }
-function PowerCurve({ points, grid, id, title, step = 60, onExport }: { points: { time: string; value: number | null }[]; grid?: { time: string; value: number | null }[] | null; id: string; title: string; step?: number; onExport?: () => void }) {
+function PowerCurve({ points, grid, band, id, title, step = 60, onExport }: { points: { time: string; value: number | null }[]; grid?: { time: string; value: number | null }[] | null; band?: { low: { time: string; value: number | null }[] | null; high: { time: string; value: number | null }[] | null } | null; id: string; title: string; step?: number; onExport?: () => void }) {
   const values = points.map(p => p.value)
-  const unit = powerChartUnit(values)
+  // 带的上沿可能高过主曲线，进位单位要一起看，否则带会溢出画布
+  const unit = powerChartUnit(band?.high ? [...values, ...band.high.map(p => p.value)] : values)
   const [table, setTable] = useState(false)
   const gridByTime = new Map(grid?.map(p => [p.time, p.value]))
   const compare = grid ? points.map(p => gridByTime.get(p.time) ?? null) : undefined
+  const scale = (v: number | null | undefined) => v == null ? null : v / unit.divisor
+  // 带按主曲线的时刻对齐；服务端已经保证同序等长，这里仍按 time 查一次防错位
+  const bandData = band?.low && band?.high ? (() => {
+    const low = new Map(band.low!.map(p => [p.time, p.value]))
+    const high = new Map(band.high!.map(p => [p.time, p.value]))
+    return { low: points.map(p => scale(low.get(p.time))), high: points.map(p => scale(high.get(p.time))) }
+  })() : undefined
   return <View className="forecast-curve">
     <View className="forecast-row">
       <Text className="forecast-subtitle">{title}<Text className="forecast-unit"> · {unit.label}</Text></Text>
       <Button className="forecast-action" onClick={() => setTable(v => !v)}>{table ? '收起明细' : '数据明细'}</Button>
     </View>
     {grid && <View className="forecast-series"><Text>可发</Text><Text className="forecast-series__grid">预计上网</Text></View>}
-    <TrendChart id={id} key={id} height={180} data={{ values: values.map(v => v == null ? null : v / unit.divisor), comparison: compare?.map(v => v == null ? null : v / unit.divisor), times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
+    {bandData && !grid && <View className="forecast-series"><Text>中位模式</Text><Text className="forecast-series__band">三模式区间</Text></View>}
+    <TrendChart id={id} key={id} height={180} data={{ values: values.map(scale), comparison: compare?.map(scale), band: bandData, times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
     {table && <View className="forecast-details">
       {onExport && <View className="forecast-actions"><Button className="forecast-action" onClick={onExport}>导出七天 CSV</Button></View>}
       <View className="forecast-table">{points.map((p, i) => <View key={p.time} className="forecast-row"><Text>{p.time.slice(11,16)}</Text><Text>可发 {p.value == null ? '—' : (p.value / unit.divisor).toFixed(2)} {unit.label}{compare ? ` · 上网 ${compare[i] == null ? '—' : (compare[i]! / unit.divisor).toFixed(2)} ${unit.label}` : ''}</Text></View>)}</View>
@@ -165,9 +174,10 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
       <Value value={value} />
       {value != null && peak && <View className="forecast-peak"><Text className="forecast-label">峰值 · {peak.time}</Text><Text>{formatPower(peak.value).value}<Text className="forecast-unit"> {formatPower(peak.value).unit}</Text></Text></View>}
     </View>}
+    {day && <ForecastSpread day={day} ensemble={req.data?.ensemble} stationId={station.id} />}
     <GridSplit p={day ?? p} />
     {(day ?? p)?.grid_energy_kwh == null && !station.prediction_blocked_reason && value != null && <StationProvinceGrid g={(day ?? p)?.province_grid} type={station.type} on={provinceOn} onToggle={onProvince} />}
-    {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title="预测功率" step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)}
+    {value != null && points && <PowerCurve points={points} grid={day ? day.grid_power_kw : p?.grid_power_kw} band={day ? { low: day.power_kw_low, high: day.power_kw_high } : null} id={`power-${station.id.replace(/[^a-zA-Z0-9]/g, '')}-${selected}-${version}`} title="预测功率" step={day ? day.resolution_minutes : (p?.resolution_minutes ?? 60)}
       onExport={() => { if (requireLogin()) void exportCsv(`${station.name}_预测功率_${days[0]?.date ?? p?.date ?? ''}.csv`, powerCsv(days.length ? days : p ? [p] : [])) }} />}
     {req.status === 'error' ? <ErrorState error={req.error!} onRetry={req.reload} />
       : req.status !== 'success' ? <Skeleton height={100} lines={2} />
@@ -253,22 +263,27 @@ export default function Home() {
   const outlook = useRequest(() => home.data?.station ? stationsApi.outlook(home.data.station.id, 7) : Promise.resolve(null), [home.data?.station?.id])
   const refreshStation = async () => { await Promise.all([home.reload(), outlook.reload()]); setVersion(v => v + 1) }
   const fleet = useRequest(() => api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: model }), [model])
-  const f = fleet.data?.model === model ? fleet.data : null
+  const served = servedModel(model)
+  const f = fleet.data?.model === served ? fleet.data : null
   // 选中地区后整份按省汇总由服务端给，客户端不自己求和，口径只有一套。docs/17 §二
   const scopeKey = provinces.join(',')
   const scoped = useRequest(() => scopeKey ? api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: model, provinces: scopeKey }) : Promise.resolve(null), [scopeKey, model, f?.generated_at])
-  const shownFleet = scopeKey ? (scoped.data?.model === model ? scoped.data : null) : f
+  const shownFleet = scopeKey ? (scoped.data?.model === served ? scoped.data : null) : f
   const reloadFleet = async () => { await Promise.all([fleet.reload(), ...(scopeKey ? [scoped.reload()] : [])]) }
-  const d = home.data && (!home.data.prediction || home.data.prediction.model === model) ? home.data : null
+  const d = home.data && (!home.data.prediction || home.data.prediction.model === served) ? home.data : null
   useEffect(() => {
     if (!visible || !f) return
     const timer = setTimeout(() => void fleet.reload(), f.updating || ['queued','building'].includes(f.status) ? 8000 : 120000)
     return () => clearTimeout(timer)
   }, [f, visible, fleet.reload])
   usePullDownRefresh(async () => { await Promise.all([refreshStation(), reloadFleet()]); Taro.stopPullDownRefresh() })
+  // 全目录不做三模式（三倍坐标）：该视图下选择器里不出现这一项，已选的按服务端实际用的自动模型显示，
+  // 切回本站仍是三模式，不改写用户的选择。docs/19 §一
+  const options = scope === 'fleet' ? WEATHER_MODELS.filter(m => m.id !== 'ensemble') : WEATHER_MODELS
+  const shownModel = scope === 'fleet' ? served : model
   const choose = (index: number) => {
-    const next = WEATHER_MODELS[index]?.id
-    if (next && next !== model) { setModel(next); setVersion(v => v + 1) }
+    const next = options[index]?.id
+    if (next && next !== shownModel) { setModel(next); setVersion(v => v + 1) }
   }
   const station = d?.station
   const weather = d?.weather
@@ -279,7 +294,7 @@ export default function Home() {
   const selectedFleet: FleetDay | undefined = fleetDays[fleetDay]
   const regions = selectedFleet ? (selectedFleet.regions ?? []) : (f?.regions ?? [])
   const basis = scope === 'fleet' ? f?.basis : outlook.data?.basis ?? p?.basis
-  const modelText = model === 'best_match' ? `自动${basis?.resolved_model ? ` · ${COMPACT_MODEL[basis.resolved_model] ?? basis.resolved_model}` : ''}` : weatherModelLabel(model)
+  const modelText = shownModel === 'best_match' ? `自动${basis?.resolved_model ? ` · ${COMPACT_MODEL[basis.resolved_model] ?? basis.resolved_model}` : ''}` : weatherModelLabel(shownModel)
   const stationMeta = station ? [station.address?.match(/[㐀-鿿]+/g)?.join(' · ') || station.address, station.type === 'wind' ? '风电' : '光伏', `${formatPower(station.capacity).value} ${formatPower(station.capacity).unit}`].filter(Boolean).join(' · ') : ''
   /** 换筛选就换一次 version：功率曲线的 canvas id 带着它，新旧两张图不会撞同一个 id。
    *  模拟器把 canvas 当叠加层按 id 记位置，撞 id 时新图可能画进旧图的位置里。 */
@@ -304,7 +319,7 @@ export default function Home() {
     <View className="home__body">
       <View className="forecast-toolbar">
         <SegmentedTabs variant="underline" value={scope} options={[{ value: 'station', label: '本站' }, { value: 'fleet', label: '全部电站' }]} onChange={setScope} />
-        <Picker className="forecast-picker" mode="selector" range={WEATHER_MODELS.map(m => m.id === model ? `${m.label}${basis?.resolved_model ? ` · ${RESOLVED_LABEL[basis.resolved_model] ?? basis.resolved_model}` : ''}${basisShort(basis)}` : `${m.label} · ${m.description}`)} value={WEATHER_MODELS.findIndex(m => m.id === model)} onChange={e => choose(Number(e.detail.value))}>
+        <Picker className="forecast-picker" mode="selector" range={options.map(m => m.id === shownModel ? `${m.label}${m.id !== 'ensemble' && basis?.resolved_model ? ` · ${RESOLVED_LABEL[basis.resolved_model] ?? basis.resolved_model}` : ''}${basisShort(basis)}` : `${m.label} · ${m.description}`)} value={options.findIndex(m => m.id === shownModel)} onChange={e => choose(Number(e.detail.value))}>
           <View className="forecast-model"><Text>{modelText}</Text><Icon name="chevronDown" size={14} strokeWidth={1.5} /></View>
         </Picker>
       </View>
