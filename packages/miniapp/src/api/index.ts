@@ -5,7 +5,7 @@
 import Taro from '@tarojs/taro'
 import { ApiError, createClient, type HttpAdapter, type TokenStore } from '@enersight/core/api'
 
-import { useWeatherModel } from '@/store/weatherModel'
+import { servedModel, useWeatherModel } from '@/store/weatherModel'
 
 export const TOKEN_KEY = 'enersight_token'
 /** 用户主动登录过才允许后台续登；游客浏览公开数据不自动登录。docs/09 §4.3 */
@@ -19,11 +19,13 @@ const adapter: HttpAdapter = {
       .join('&')
 
     // X-Resolution-Minutes：取 15 分钟曲线；不带时服务端按线上旧版返回逐小时，见 docs/06 §2.8
+    // X-Weather-Model 只带真实模型名：三模式只有 7 天预测认，由 stationsApi.outlook 用查询参数单独带。
+    // 头里带 ensemble 的话，后端还没部署到新版时每个接口都会回 400 INVALID_MODEL。docs/19 §一
     const res = await Taro.request({
       url: qs ? `${url}?${qs}` : url,
       method,
       data: body as Record<string, unknown> | undefined,
-      header: { 'Content-Type': 'application/json', ...headers, 'X-Weather-Model': useWeatherModel.getState().model, 'X-Resolution-Minutes': '15' },
+      header: { 'Content-Type': 'application/json', ...headers, 'X-Weather-Model': servedModel(useWeatherModel.getState().model), 'X-Resolution-Minutes': '15' },
       timeout: timeoutMs,
     })
     return { status: res.statusCode, body: res.data }

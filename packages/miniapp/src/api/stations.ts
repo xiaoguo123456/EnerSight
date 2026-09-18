@@ -6,6 +6,7 @@ import type {
   CreateStationRequest, ForecastEvolution, PublicStationListResponse, StationListResponse,
   StationOutlook, StationSummary, StationType, UpdateStationRequest,
 } from '@enersight/core/types'
+import { useWeatherModel } from '@/store/weatherModel'
 import { api } from './index'
 
 export const stationsApi = {
@@ -16,9 +17,18 @@ export const stationsApi = {
   mine: (type?: StationType) =>
     api.get<StationListResponse>('/v1/stations', type ? { type } : undefined),
 
-  /** 未来 7 天逐日预测，首页懒加载。默认三模式区间。docs/17 §二、docs/19 §一 */
+  /**
+   * 未来 7 天逐日预测，首页懒加载。docs/17 §二、docs/19 §一
+   *
+   * 唯一认三模式的接口，所以当前选择（可能是 ensemble）用查询参数显式带上 —— 查询参数优先于请求头，
+   * 而请求头为了兼容后端未部署的窗口只带真实模型名。
+   */
   outlook: (stationId: string, days = 7) =>
-    api.get<StationOutlook>('/v1/predictions/station', { station_id: stationId, days }),
+    api.get<StationOutlook>('/v1/predictions/station', {
+      station_id: stationId,
+      days,
+      weather_model: useWeatherModel.getState().model,
+    }),
 
   /** 同一目标日历次起报的变化。只读留档，服务端不重算。docs/19 §二 */
   history: (stationId: string, date: string) =>

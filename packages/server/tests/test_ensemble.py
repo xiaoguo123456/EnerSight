@@ -223,6 +223,19 @@ class TestRouting:
         assert r.headers["X-Weather-Model"] == "best_match"
         assert "ensemble" not in upstream
 
+    async def test_查询参数优先于请求头_即小程序的真实请求形态(self, client: AsyncClient, upstream):
+        """小程序请求头只带真实模型名（后端未部署新版时也不会 400），
+        三模式只在 7 天预测的查询参数里带。"""
+        sid = await self._station(client)
+        r = await client.get(
+            "/v1/predictions/station",
+            params={"station_id": sid, "days": 2, "weather_model": "ensemble"},
+            headers={"X-Weather-Model": "best_match"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.headers["X-Weather-Model"] == "ensemble"
+        assert r.json()["data"]["ensemble"] is not None
+
     async def test_未知模型仍然拒绝(self, client: AsyncClient):
         r = await client.get(
             "/v1/predictions/station", params={"station_id": "x", "weather_model": "era5"}

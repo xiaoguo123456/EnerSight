@@ -26,7 +26,7 @@ export function FleetHistory({ provinces = [], onClearScope }: { provinces?: str
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(today)
   const [selected, setSelected] = useState<string | null>(null)
-  const req = useRequest(() => api.get<History>('/v1/predictions/fleet/history', { weather_model: model, period, anchor, ...(scope ? { provinces: scope } : {}) }), [model, period, anchor, scope])
+  const req = useRequest(() => api.get<History>('/v1/predictions/fleet/history', { weather_model: servedModel(model), period, anchor, ...(scope ? { provinces: scope } : {}) }), [model, period, anchor, scope])
   const d = req.data?.model === servedModel(model) ? req.data : null
   const move = (step: number) => {
     const date = new Date(`${anchor}T00:00:00Z`)

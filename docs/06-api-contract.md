@@ -565,6 +565,10 @@ interface RegionPrediction {         // 按电站所在省汇总，只含该日�
 `best_match`，响应头 `X-Weather-Model` 写实际用的模型。客户端按「响应模型 == 当前选择」丢弃旧响应时，
 选了三模式要跟 `best_match` 比（`store/weatherModel.servedModel`）。
 
+客户端请求形态：`X-Weather-Model` 头**只带真实模型名**（三模式时为 `best_match`），只有 7 天预测用
+查询参数 `weather_model=ensemble` 显式带（查询参数优先于请求头）。小程序与后端分开发布，后端还是旧版时
+它不认 `ensemble`，头里带了会让每个接口都回 400；这样旧后端下只有 7 天预测条回错误态。
+
 ```ts
 interface StationOutlook {
   // …原有字段；三模式下 model = 'ensemble'，basis 取配置里第一个成员（ECMWF）

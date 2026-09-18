@@ -262,12 +262,13 @@ export default function Home() {
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId, model])
   const outlook = useRequest(() => home.data?.station ? stationsApi.outlook(home.data.station.id, 7) : Promise.resolve(null), [home.data?.station?.id])
   const refreshStation = async () => { await Promise.all([home.reload(), outlook.reload()]); setVersion(v => v + 1) }
-  const fleet = useRequest(() => api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: model }), [model])
+  // 全目录不认三模式：显式带实际用的模型，免得后端未部署新版时回 400
+  const fleet = useRequest(() => api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: servedModel(model) }), [model])
   const served = servedModel(model)
   const f = fleet.data?.model === served ? fleet.data : null
   // 选中地区后整份按省汇总由服务端给，客户端不自己求和，口径只有一套。docs/17 §二
   const scopeKey = provinces.join(',')
-  const scoped = useRequest(() => scopeKey ? api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: model, provinces: scopeKey }) : Promise.resolve(null), [scopeKey, model, f?.generated_at])
+  const scoped = useRequest(() => scopeKey ? api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: servedModel(model), provinces: scopeKey }) : Promise.resolve(null), [scopeKey, model, f?.generated_at])
   const shownFleet = scopeKey ? (scoped.data?.model === served ? scoped.data : null) : f
   const reloadFleet = async () => { await Promise.all([fleet.reload(), ...(scopeKey ? [scoped.reload()] : [])]) }
   const d = home.data && (!home.data.prediction || home.data.prediction.model === served) ? home.data : null
