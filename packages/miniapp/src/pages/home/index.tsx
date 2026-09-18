@@ -3,7 +3,7 @@ import { Button, Picker, Switch, View, Text } from '@tarojs/components'
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
 import { powerChartUnit, powerCsv, thousands, formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatUtilization, formatWindSpeed, formatPower } from '@enersight/core/format'
-import type { DailyOutlook, FleetDay, FleetPrediction, ForecastBasis, GenerationPrediction, StationOutlook, StationSummary } from '@enersight/core/types'
+import type { DailyOutlook, EnsembleSummary, FleetDay, FleetPrediction, ForecastBasis, GenerationPrediction, StationOutlook, StationSummary } from '@enersight/core/types'
 import { api } from '@/api'
 import { homeApi } from '@/api/home'
 import { stationsApi } from '@/api/stations'
@@ -40,7 +40,18 @@ function shortTime(iso: string) {
 }
 function basisShort(basis?: ForecastBasis | null) {
   if (!basis) return ''
-  return basis.issued_at ? ` · 起报 ${shortTime(basis.issued_at)}` : ` · 拉取 ${shortTime(basis.fetched_at)}`
+  // 三模式的起报统一报三家中最早的那一家，写明「最早」，免得被当成三家同一批。docs/19 §一
+  const label = basis.model === 'ensemble' ? '最早起报' : '起报'
+  return basis.issued_at ? ` · ${label} ${shortTime(basis.issued_at)}` : ` · 拉取 ${shortTime(basis.fetched_at)}`
+}
+const MEMBER_LABEL: Record<string, string> = { ecmwf_ifs: 'ECMWF', icon_global: 'ICON', gfs_global: 'GFS', cma_grapes_global: 'GRAPES' }
+/** 三模式：统一按最早起报，每家各自的起报列在后面。 */
+function ensembleBasisDetail(e: EnsembleSummary, basis?: ForecastBasis | null) {
+  const each = e.members.map(m => `${MEMBER_LABEL[m.model] ?? m.model} ${m.issued_at ? formatBeijingTime(m.issued_at) : '起报未知'}`).join('、')
+  const head = basis?.issued_at
+    ? `气象批次：三模式，起报按三家中最早的 ${formatBeijingTime(basis.issued_at)} 标注`
+    : `气象批次：三模式，有一家拿不到起报时刻，只标服务端拉取时间 ${formatBeijingTime(basis?.fetched_at)}`
+  return `${head}；各家起报：${each}（北京时间）。三家都每 6 小时起报一轮，发布要晚 3–7 小时，所以同一时刻常常不是同一批。`
 }
 function basisDetail(basis?: ForecastBasis | null) {
   if (!basis) return '气象批次：未知'
@@ -164,7 +175,7 @@ function StationForecast({ station, p, version, onReload, refreshError, generate
       ...(req.data?.assumptions ?? p?.assumptions ?? []),
       station.type === 'wind' ? '风电按轮毂高度风速与机型功率曲线估算（公开电站按投运年份选机型），低于切入或高于切出风速时功率为零，不代表实测停机。' : '光伏按倾斜面辐射与 PVWatts 估算，夜间功率为零。',
       '七天功率曲线均按 15 分钟计算，采用电站当地时间。',
-      basisDetail(req.data?.basis ?? p?.basis),
+      req.data?.ensemble ? ensembleBasisDetail(req.data.ensemble, req.data.basis) : basisDetail(req.data?.basis ?? p?.basis),
       DISCLAIMER,
     ].join('\n'),
   }

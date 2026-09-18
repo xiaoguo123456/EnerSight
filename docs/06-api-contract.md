@@ -571,7 +571,9 @@ interface RegionPrediction {         // 按电站所在省汇总，只含该日�
 
 ```ts
 interface StationOutlook {
-  // …原有字段；三模式下 model = 'ensemble'，basis 取配置里第一个成员（ECMWF）
+  // …原有字段；三模式下 model = 'ensemble'。basis 统一报三家中最早起报的那一家
+  // （issued/available/fetched 三个时刻同出一家，resolved_model 为 null）；任一家拿不到起报
+  // 则 issued_at 为 null，只给最早的拉取时刻，不猜
   ensemble: EnsembleSummary | null     // 单一模式为 null
 }
 interface EnsembleSummary {

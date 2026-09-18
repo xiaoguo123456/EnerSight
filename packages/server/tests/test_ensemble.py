@@ -118,6 +118,62 @@ class TestAggregate:
         assert len(day.member_energy_kwh) == 2
 
 
+class TestEarliestBasis:
+    """三家起报不一致时对外统一报最早那一家。docs/19 §一"""
+
+    @staticmethod
+    def _with(m: ensemble.Member, issued: str | None, fetched: str) -> ensemble.Member:
+        m.outlook.basis = ForecastBasis(
+            model=m.model,
+            resolved_model=m.model,
+            issued_at=issued,
+            available_at=None if issued is None else fetched,
+            fetched_at=fetched,
+        )
+        return m
+
+    def test_取三家中最早的起报(self):
+        ms = [
+            self._with(
+                member("ecmwf_ifs", 600), "2026-09-18T08:00:00+08:00", "2026-09-18T15:10:00+08:00"
+            ),
+            self._with(
+                member("icon_global", 800), "2026-09-18T14:00:00+08:00", "2026-09-18T17:40:00+08:00"
+            ),
+            self._with(
+                member("gfs_global", 700), "2026-09-18T02:00:00+08:00", "2026-09-18T09:00:00+08:00"
+            ),
+        ]
+        basis = ensemble.aggregate(ms, []).basis
+        assert basis.issued_at == "2026-09-18T02:00:00+08:00"
+        # 可用与拉取时刻跟着同一家，不拼三家
+        assert basis.fetched_at == "2026-09-18T09:00:00+08:00"
+        assert basis.model == "ensemble" and basis.resolved_model is None
+
+    def test_按时刻比较而不是按字符串(self):
+        """偏移不同的时刻按字符串排会排错：UTC 的 01:00 其实是北京 09:00，比 08:00 晚。"""
+        ms = [
+            self._with(
+                member("ecmwf_ifs", 600), "2026-09-18T01:00:00+00:00", "2026-09-18T12:00:00+00:00"
+            ),
+            self._with(
+                member("icon_global", 800), "2026-09-18T08:00:00+08:00", "2026-09-18T15:00:00+08:00"
+            ),
+        ]
+        assert ensemble.aggregate(ms, []).basis.issued_at == "2026-09-18T08:00:00+08:00"
+
+    def test_有一家拿不到起报就不猜_只给最早拉取时刻(self):
+        ms = [
+            self._with(
+                member("ecmwf_ifs", 600), "2026-09-18T08:00:00+08:00", "2026-09-18T15:10:00+08:00"
+            ),
+            self._with(member("icon_global", 800), None, "2026-09-18T14:30:00+08:00"),
+        ]
+        basis = ensemble.aggregate(ms, []).basis
+        assert basis.issued_at is None and basis.available_at is None
+        assert basis.fetched_at == "2026-09-18T14:30:00+08:00"
+
+
 class TestDegrade:
     """成员失败不能掀翻整轮：剩两家仍给区间，剩一家退回单模型。"""
 

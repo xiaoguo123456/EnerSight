@@ -11,6 +11,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from statistics import median
 
 import httpx
@@ -21,6 +22,7 @@ from app.schemas.common import SpreadLevel
 from app.schemas.prediction import (
     DailyOutlook,
     EnsembleSummary,
+    ForecastBasis,
     MemberEnergy,
     PowerPoint,
     StationOutlook,
@@ -40,7 +42,7 @@ NOTES = (
 
 
 def members() -> list[str]:
-    """配置里的成员顺序即展示顺序；第一个同时是 basis 与预报演变的取值模型。"""
+    """配置里的成员顺序即展示顺序。"""
     return [m.strip() for m in settings.ensemble_members.split(",") if m.strip()]
 
 
@@ -136,6 +138,35 @@ def _day_of(m: Member, date: str) -> DailyOutlook | None:
     return next((d for d in m.outlook.days if d.date == date), None)
 
 
+def earliest_basis(ok: list[Member]) -> ForecastBasis | None:
+    """三家起报时刻不一致时，对外统一报最早那一家的：区间里最旧的数据就是它。
+
+    三家都每 6 小时起报一轮，但发布要等 3–7 小时，同一时刻常常是 ECMWF 还停在 08:00、
+    ICON 已经出了 14:00。只报其中一家会让人以为三家是同一批；报最新的又夸大了新鲜度。
+    任何一家拿不到起报，就说不清最早是哪一刻 —— 不猜，只给最早的拉取时刻。docs/17 §二
+    """
+    bases = [m.outlook.basis for m in ok if m.outlook.basis is not None]
+    if not bases:
+        return None
+    if len(bases) < len(ok) or any(b.issued_at is None for b in bases):
+        oldest = min(bases, key=lambda b: datetime.fromisoformat(b.fetched_at))
+        return ForecastBasis(
+            model=MODEL,
+            resolved_model=None,
+            issued_at=None,
+            available_at=None,
+            fetched_at=oldest.fetched_at,
+        )
+    first = min(bases, key=lambda b: datetime.fromisoformat(b.issued_at))
+    return ForecastBasis(
+        model=MODEL,
+        resolved_model=None,
+        issued_at=first.issued_at,
+        available_at=first.available_at,
+        fetched_at=first.fetched_at,
+    )
+
+
 def aggregate(ok: list[Member], failed: list[str]) -> StationOutlook:
     """以第一个成员的日期序列为准逐日聚合。"""
     base = ok[0]
@@ -181,8 +212,7 @@ def aggregate(ok: list[Member], failed: list[str]) -> StationOutlook:
         model=MODEL,
         timezone=base.outlook.timezone,
         generated_at=base.outlook.generated_at,
-        # basis 取配置里第一个成员（默认 ECMWF）：起报时刻要有单一出处，不混三家
-        basis=base.outlook.basis,
+        basis=earliest_basis(ok),
         days=days,
         ensemble=EnsembleSummary(
             members=[m.outlook.basis for m in ok if m.outlook.basis],

@@ -118,7 +118,12 @@ interface DailyOutlook {
 interface MemberEnergy { model: string; energy_kwh: number | null }
 ```
 
-`basis` 取 ECMWF 成员。
+**起报时刻统一报三家中最早的那一家**（2026-09-18 定）。三家都每 6 小时起报一轮（北京 02/08/14/20 点），
+但发布要晚 3–7 小时，同一时刻常常是 ECMWF 还停在 08:00、ICON 已经出了 14:00。只报其中一家会让人以为
+三家是同一批，报最新的又夸大了新鲜度；区间里最旧的数据就是最早起报那家，所以报它。
+`basis` 的起报、可用、拉取三个时刻同出这一家，`model` 为 `ensemble`、`resolved_model` 为 null；
+任何一家拿不到起报就说不清最早是哪一刻，`issued_at` 给 null、只报最早的拉取时刻（17 §二「不猜」）。
+选择器里写「最早起报 08:00」，ⓘ 里列出三家各自的起报。
 
 ### 页面
 
