@@ -332,13 +332,39 @@ PATCH  /v1/stations/{id}                       增加 correction_enabled: boolea
 不再用现有 JMA 网页瓦片做云指数反演：0–255 显示灰度、JPEG 有损、调色板未知，反演出来说不清。
 
 **决定：用 JAXA P-Tree 的 SWR 实况；FY-4B SSR 作境内备选；CAMS 留作次日对账。**
-P-Tree 与 Open-Meteo 卖的是同一份数据，自己取就省掉订阅费。代价是自己接 FTP、解析 NetCDF：
+P-Tree 与 Open-Meteo 卖的是同一份数据，自己取就省掉订阅费。
 
-- **取数**：注册账号后走 `ftp.ptree.jaxa.jp`（FTP / FTPS 990 / SFTP 2051，单主机最多 30 连接），
-  每 10 分钟取最新一个 L2 文件，按电站坐标取最近格点。文件放在哪台机器上取、北京到日本的带宽够不够，
-  要在拿到账号后实测一次再定；带宽不够就放 Buffalo 那台，只把电站点值回传。
-- **时间标签**：P-Tree 小时产品的文件名时间是**区间起点**，项目里 Open-Meteo 的辐射是区间末，接入时要平移统一。
-- **直射与散射**：SWR 只给总辐照，按 Erbs 分解成直射与散射后再算倾斜面，走 `pv.hourly_power` 同一条链路。
+### 怎么取：用自建 Open-Meteo 自带的下载器（2026-09-19 核实）
+
+Open-Meteo 卖的卫星辐射，是它开源代码里的 `download-jaxa-himawari` 命令拿**用户自己的 P-Tree 账号**从 FTP 拉 L2 SWR
+（`Sources/App/JaxaHimawari/`）。Buffalo 那台跑的官方镜像 1.6.0（2026-09-10 发布）的源码里有这个命令，
+所以**不必自己写 FTP 与 NetCDF 解析**：
+
+- **下载入库**：Buffalo 上每 10 分钟跑一次
+  `openmeteo-api download-jaxa-himawari himawari_70e_10min --username … --password …`（70E 起的扩展格点，覆盖新疆西缘）。
+  账号密码放 Buffalo 本机的环境文件，不进仓库；命令另起一个带 `mem_limit` 的一次性容器，与常驻服务共用数据卷。
+- **它替我们做掉的三件事**：
+  1. **扫描时刻校正**：L2 是**瞬时值**，文件名时间是全圆盘扫描**起点**，一帧从北往南扫约 10 分钟，
+     日本一带的像元实际在起点后 8 分钟左右才观测到。下载器按 JMA 辅助文件里的逐像元观测时刻，
+     把瞬时值换成「前 10 分钟均值」并标在**区间末**，与项目里 Open-Meteo 预报的辐射口径一致；
+  2. 每天 02:40–02:50、14:40–14:50 UTC 卫星例行维护不观测，自动跳过；
+  3. 葵花 8 / 9 号切换（2025-10-11 至 11-26 临时换回过 8 号）时文件名前缀会变，已按日期处理。
+- **取值**：后端按电站坐标查自建实例的 `/v1/archive?models=jma_jaxa_himawari`，与其他气象请求一样走
+  `providers/weather_transport`。直射、散射与倾斜面由 Open-Meteo 同一套辐射分解给出，不再自己做 Erbs 分解。
+- **为什么放 Buffalo 不放北京**（2026-09-19 实测）：FTP 主机 `ftp.ptree.jaxa.jp`（133.56.101.71）的 21 / 990 / 2051 端口
+  两台都连得通，TCP 往返北京约 95 ms、Buffalo 约 160 ms；但北京从 JAXA 网站下载只有 20–30 KB/s，
+  跟不上 10 分钟一帧的全圆盘文件。Buffalo 测到约 470 KB/s，但那次连的是 CDN 节点，不代表 FTP 主机本身的速度。
+- **拿到账号后先实测**：
+  1. 单个 L2 文件多大、从 Buffalo 拉一次多久；
+  2. 配了 `REMOTE_DATA_DIRECTORY`（其余模式按需从 AWS 读）时，本地下载的葵花数据能否正常查到；
+  3. 数据卷一天涨多少，要不要定期清理（Buffalo 数据盘剩约 26 GB）；
+  4. 容器里直接跑子命令的方式：`--help` 在常驻容器里 `exec` 两分钟没返回，改用一次性容器试，别在常驻容器里试。
+
+**产品本身的限制**：JAXA 标注 SWR 是 beta 版、**不做质量保证**；P-Tree 没有服务等级承诺。
+所以卫星值只作实况参考，拿不到就退回预报，不影响任何主数字；精度按下文「校准」先对账再上线。
+
+备选：下载器用不了时再自己写 FTP 与 NetCDF 解析，变量名 `SWR`（W/m²，int16 × `scale_factor` + `add_offset`，≤ −999 为缺测），
+上面的扫描时刻校正必须照做，否则日出日落前后偏差很大。
 
 ### 授权与上线前要办的事
 
@@ -354,9 +380,8 @@ P-Tree 与 Open-Meteo 卖的是同一份数据，自己取就省掉订阅费。�
 
 ### 口径
 
-- **拉取**：`providers/ptree.py` 每 10 分钟取最新一个 L2 SWR 文件（`satellite_irradiance` 任务），整张格点留在内存，
-  任何电站按坐标取最近格点，不按电站逐个请求；缺帧退回上一帧，超过 `satellite_irradiance_stale_minutes` 判过期。
-  SWR 只有总辐照，直射与散射按 Erbs 分解。
+- **拉取**：Buffalo 的下载器每 10 分钟入库（见上文「怎么取」）；后端 `satellite_irradiance` 任务按电站坐标批量查自建实例，
+  取最近一个非空的 10 分钟值；缺帧退回上一帧，超过 `satellite_irradiance_stale_minutes` 判过期。
 - **用途**：
   1. 预警页「卫星实况」卡：辐照大数字 + 「晴空的 78%」（分母 `metrics/solar.clearsky_interval_mean`）+ 观测时间；
   2. 当前功率：用卫星的 GHI / 直射 / 散射直接算 POA，走 `pv.hourly_power` 只替换当前区间，标「卫星实况」；
@@ -471,7 +496,7 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | `issue_outlooks` | 每日 00:30 | 我的电站三模式 7 天签发留档 |
 | `prune_prediction` | 每日 21:40 | 按 `prediction_archive_retention_days` 清理 |
 | `fit_corrections` | 每日 02:05（北京 10:05）；记录后立即 | 补缺失与参数变过的模型同期值、按滚动窗口重拟合 |
-| `satellite_irradiance` | 每 10 分钟 | 取 P-Tree 最新一帧 SWR，更新当前功率与当日累计（M3） |
+| `satellite_irradiance` | 每 10 分钟 | 从自建 Open-Meteo 取各电站最新的葵花 SWR（Buffalo 下载器入库），更新当前功率与当日累计（M3） |
 | `soiling_update` | 每日 01:00 | 拉空气质量与降水，更新积灰 |
 
 都用 `db.pages` 分批、算并发写串行，见 CLAUDE.md「在遍历站点的定时任务里并发写 DB」。
@@ -515,7 +540,7 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | --- | --- | --- |
 | M1 ✅ | 三模式默认、区间带与三家并列、预报演变、`issue_outlooks`、留档清理、各链路口径统一 | 第一、二节验收项全过；H5 截图已看，开发者工具截图待合入主仓库后补 |
 | M2 ✅ | 随手记、订正、实测对账页 | 真实上游数据走通记录 → 回算 → 拟合 → 订正生效；H5 截图已看，开发者工具截图待合入主仓库后补 |
-| M3 | 卫星辐照：P-Tree 接入、PVOD 回测、预警页卫星实况卡；达标后当前功率与当日累计切换 | 需 JAXA 书面确认商用（§四「授权」第 1 步）与 P-Tree 账号；回测结论写入 07 §8.1 |
+| M3 | 卫星辐照：Buffalo 跑 Open-Meteo 自带的葵花下载器、后端取值、PVOD 回测、预警页卫星实况卡；达标后当前功率与当日累计切换 | 需 JAXA 书面确认商用（§四「授权」第 1 步）与 P-Tree 账号；回测结论写入 07 §8.1 |
 | M4 | 空气质量接入、气溶胶归因、积灰卡、`precipitation` 字段 | 敦煌 / 拉萨 / 苏州三点归因数值合理；04 §二字段表已更新 |
 
 M1 与 M2 共用签发任务，先后做；M3 的回测不依赖归档，拿到 JAXA 书面确认与账号即可开工；M4 独立可并行。
