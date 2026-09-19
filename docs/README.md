@@ -81,7 +81,7 @@
 | 4 | 站点是否支持多用户共享 | [06 §十五](./06-api-contract.md) |
 | 5 | 预警是否接微信订阅消息推送 | [06 §十五](./06-api-contract.md) |
 | 6 | 预警 tab 是否改名「卫星」 | [19 §九](./19-forecast-uncertainty-and-observations.md) |
-| 7 | JAXA 书面确认葵花 SWR 可在商业小程序里展示衍生数值（卫星辐照的前提；不同意就改走 FY-4B），以及气象信息服务备案 | [19 §四、§九](./19-forecast-uncertainty-and-observations.md) |
+| 7 | P-Tree 事务局答复：非营利小程序里公开展示由葵花 SWR 算出的各电站数值是否可以（对外展示卫星辐照的前提；不同意就改走 FY-4B），以及气象信息服务备案 | [19 §四、§九](./19-forecast-uncertainty-and-observations.md) |
 | 8 | 积灰是否折减上网电量 | [19 §五](./19-forecast-uncertainty-and-observations.md) |
 
 > 设计稿 `packages/ui/` 中的数值均为视觉示意值，不作为算法校准依据。
