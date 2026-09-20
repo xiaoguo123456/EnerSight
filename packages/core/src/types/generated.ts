@@ -2193,12 +2193,12 @@ export interface components {
              * Satellite
              * @description 卫星实况辐照，与 points 等长同序；仅 metric=radiation 的今日曲线有，其余为 null。未来时段与夜间的点为 null。docs/19 §四
              */
-            satellite?: components["schemas"]["TrendPoint"][] | null;
+            satellite: components["schemas"]["TrendPoint"][] | null;
             /**
              * Satellite Source
              * @description 卫星数据署名文案；有 satellite 时必须展示
              */
-            satellite_source?: string | null;
+            satellite_source: string | null;
         };
         /**
          * UpdateStationRequest

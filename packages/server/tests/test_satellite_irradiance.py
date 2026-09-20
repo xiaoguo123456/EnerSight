@@ -69,6 +69,12 @@ class TestGet:
         now = datetime.now(UTC)
         observed = now.replace(second=0, microsecond=0) - timedelta(minutes=10)
         _install(monkeypatch, payload=_payload([(observed, 264.0, 36.4, 227.6)]))
+        # 固定晴空基准：不然测试跑在夜里时真实晴空是 0，指数算不出来，白天跑又随时刻漂
+        monkeypatch.setattr(
+            svc.solar,
+            "clearsky_interval_mean",
+            lambda *_a, **_k: pd.DataFrame({"ghi": [600.0]}),
+        )
         async with AsyncClient() as http:
             out = await svc.get(http, _station(), TZ)
         assert out is not None
@@ -77,9 +83,8 @@ class TestGet:
         assert out.direct_w_m2 == 36.4
         assert out.source == svc.SOURCE
         assert out.observed_at is not None and out.observed_at.endswith("+08:00")
-        # 晴空基准只能是正数，指数是实况与它的比
-        assert out.clear_sky_ghi_w_m2 is not None and out.clear_sky_ghi_w_m2 > 0
-        assert out.clear_sky_index == pytest.approx(264.0 / out.clear_sky_ghi_w_m2, abs=0.002)
+        assert out.clear_sky_ghi_w_m2 == 600.0
+        assert out.clear_sky_index == pytest.approx(264.0 / 600.0, abs=0.001)
 
     async def test_夜间不是故障(self, monkeypatch):
         _install(monkeypatch, day=False, payload=_payload([]))

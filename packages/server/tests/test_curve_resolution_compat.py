@@ -37,6 +37,8 @@ def _series(metric: TrendMetric) -> TrendSeries:
         points=[TrendPoint(time=t, value=float(i)) for i, t in enumerate(times)],
         resolution_minutes=15,
         hub_height=None,
+        satellite=None,
+        satellite_source=None,
     )
 
 
