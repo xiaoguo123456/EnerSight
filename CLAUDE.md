@@ -369,8 +369,15 @@ Buffalo 那台是我们独占的：Ubuntu 24.04、3 vCPU、3.9 GB 内存、磁�
 方法见 [05 §6.7](docs/05-architecture.md) 末尾。自建场站的 `wx.getLocation` /
 `wx.chooseLocation` 授权流程、真实 `code2session` 与两个微信号的数据隔离也只能真机验。
 
-**需要凭证才能通的：** 微信 AppID/AppSecret（真 `code2session`）、腾讯位置服务 key、
-`ANTHROPIC_API_KEY`。都有降级，不阻塞开发。
+**凭证现状**（2026-09-20 查的生产 `/opt/enersight/.env`，别再照旧文念）：
+
+| 项 | 状态 |
+| --- | --- |
+| `ENERSIGHT_WX_APPID` / `ENERSIGHT_WX_SECRET` | **已配置**，生产跑的是真 `code2session`，登录正常 |
+| 腾讯位置服务 key | 未配置 —— 地址回填一直走降级，不是回归 |
+| `ANTHROPIC_API_KEY` | 未配置，`ENERSIGHT_AI_PROVIDER=rule`，报告全走规则模板 |
+
+后两项都有降级，不阻塞开发。真机才能验的是授权弹窗与两个微信号的数据隔离，与凭证无关。
 
 **目录同步需要配置：** `ENERSIGHT_GEM_CONTACT_NAME / EMAIL / ORG`，定时任务用它提交 GEM
 下载表单（每月一次）。不配则不同步，目录停留在最后一次手动导入。
