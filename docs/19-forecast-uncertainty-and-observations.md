@@ -351,14 +351,39 @@ Open-Meteo 卖的卫星辐射，是它开源代码里的 `download-jaxa-himawari
   3. 葵花 8 / 9 号切换（2025-10-11 至 11-26 临时换回过 8 号）时文件名前缀会变，已按日期处理。
 - **取值**：后端按电站坐标查自建实例的 `/v1/archive?models=jma_jaxa_himawari`，与其他气象请求一样走
   `providers/weather_transport`。直射、散射与倾斜面由 Open-Meteo 同一套辐射分解给出，不再自己做 Erbs 分解。
+  **必须带 `temporal_resolution=native`**，否则只返回小时均值，实况要等整点过完。
+  `minutely_15` 与 `current` 在这条路径上无效 —— 卫星走的是 archive 控制器，它的 `has15minutely` 是 false。
+  2026-09-20 实测（苏州 31.3,120.62）：`01:40 → GHI 264 W/m²，直射 36.4，散射 227.6`，`01:50 → 289 / 44.2 / 244.8`，
+  时间标签是区间末的 10 分钟均值，与预报口径一致。实况总延迟 = JAXA 落地 22 分钟 + 我们的拉取间隔 10 分钟 ≈ 25–35 分钟。
 - **为什么放 Buffalo 不放北京**（2026-09-19 实测）：FTP 主机 `ftp.ptree.jaxa.jp`（133.56.101.71）的 21 / 990 / 2051 端口
   两台都连得通，TCP 往返北京约 95 ms、Buffalo 约 160 ms；但北京从 JAXA 网站下载只有 20–30 KB/s，
   跟不上 10 分钟一帧的全圆盘文件。Buffalo 测到约 470 KB/s，但那次连的是 CDN 节点，不代表 FTP 主机本身的速度。
-- **拿到账号后先实测**：
-  1. 单个 L2 文件多大、从 Buffalo 拉一次多久；
-  2. 配了 `REMOTE_DATA_DIRECTORY`（其余模式按需从 AWS 读）时，本地下载的葵花数据能否正常查到；
-  3. 数据卷一天涨多少，要不要定期清理（Buffalo 数据盘剩约 26 GB）；
-  4. 容器里直接跑子命令的方式：`--help` 在常驻容器里 `exec` 两分钟没返回，改用一次性容器试，别在常驻容器里试。
+### 账号与实测（2026-09-20，Buffalo）
+
+账号已有（用户自有，UID 是注册邮箱把 `@` 换成 `_`，口令是 JAXA 发给所有用户的同一个默认串）。
+凭据只存在 Buffalo 的 `/root/.ptree.netrc`（600），不进仓库、不进日志。
+
+| 项 | 实测 |
+| --- | --- |
+| 路径 | `/pub/himawari/L2/PAR/021/{YYYYMM}/{DD}/{HH}/H09_{YYYYMMDD}_{hhmm}_RFL021_FLDK.02801_02401.nc` |
+| 一帧大小 | 46.6 MB（00:00 UTC）→ 54.1 MB（01:30 UTC），白天更大；同目录另有 1 km 日本区 `rFL021` |
+| 落地延迟 | 01:30 那帧的 `Last-Modified` 是 01:51:45，约 **22 分钟** |
+| 下载耗时 | Buffalo 10.6 s（约 5 MB/s）；北京 20–30 KB/s，一帧要半小时，不可用 |
+| 下载器一轮 | 42 s（含首次取 136 MB 的扫描时刻辅助文件 `AuxilaryData.nc`，之后复用）；转换 1.74 s；`--memory=1500m` 够用 |
+| 落盘 | 每帧约 **13 MB**；分块 `omFileLength = 288` 步 = **48 小时一个 `chunk_*.om`** |
+| 出网 | 144 帧/天 × 约 50 MB ≈ **7.4 GB/天**（约 220 GB/月），HostPapa 套餐额度待确认 |
+
+**保留策略**（2026-09-20 用户定：卫星只留 6 小时、不展示历史）：删除粒度是 48 小时的块，删不到单帧。
+所以只保留正在写的那个块，上一个块轮换后 6 小时删掉（`find … -name 'chunk_*.om' -mmin +360 -delete`），
+占用上限约一个满块 ≈ 3.7 GB。不能不删 —— 数据盘剩 26 GB，而 Open-Meteo 的 `CACHE_SIZE` 设的是 32 GB
+（`cache.bin` 已 25 GB，还会继续涨），两边一起会把盘撑满，进而拖垮线上依赖的气象服务。
+
+踩过的坑：
+- 镜像 ENTRYPOINT 已经是 `./openmeteo-api`，`docker run` 只传子命令，再写一遍会报 `Unknown command`。
+  子命令列表里确认有 `download-jaxa-himawari`。
+- `--run` 传 ISO 时刻报 `InvalidDateFromat`，格式没试出来；不用它也行，不带参数会按 `last.txt` 自动追帧（单轮最多跑 8 分钟）。
+- 不要在常驻容器里 `docker compose exec` 跑子命令（`--help` 两分钟不返回）；用一次性容器。
+- 到 Buffalo 的 ssh 长连接会被切断（8 分钟的下载跑一半断过），远端长任务要 `nohup` 后台跑、再轮询日志。
 
 **产品本身的限制**：JAXA 标注 SWR 是 beta 版、**不做质量保证**；P-Tree 没有服务等级承诺。
 所以卫星值只作实况参考，拿不到就退回预报，不影响任何主数字；精度按下文「校准」先对账再上线。
