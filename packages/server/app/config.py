@@ -219,6 +219,17 @@ class Settings(BaseSettings):
     # 记录接口最多等回算这么久；超时先回「回算中」，回算在后台跑完。小程序请求超时 10 秒
     measured_refresh_budget_s: float = 6.0
 
+    # 卫星辐照实况（葵花 L2 SWR）。docs/19 §四
+    satellite_irradiance_enabled: bool = True
+    satellite_irradiance_model: str = "jma_jaxa_himawari"
+    # 葵花数据只在自建实例里（Buffalo 上的定时任务入库），官方那条路没有这个模型。
+    # 留空则用 open_meteo_archive_base；主源不是自建时把这里显式指到自建地址。
+    open_meteo_satellite_base: str = ""
+    # 最新一帧比这还旧就算过期：JAXA 落地约 22 分钟 + 我们 10 分钟拉一次，正常在半小时内
+    satellite_irradiance_stale_minutes: int = 90
+    # 上游 10 分钟一帧，缓存短于一帧即可；同格点的电站共用
+    ttl_satellite_irradiance: int = 300
+
     # 指标模型参数，见 docs/07 §七。可配置，不硬编码
     model_v4_start_date: date = date(2026, 9, 10)
 

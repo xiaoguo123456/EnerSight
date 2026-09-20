@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.home import AlertSummary
-from app.schemas.satellite import SatelliteCloudResponse
+from app.schemas.satellite import SatelliteCloudResponse, SatelliteIrradiance
 from app.schemas.station import StationSummary
 
 
@@ -35,4 +35,7 @@ class CurrentAlertResponse(BaseModel):
     satellite: SatelliteCloudResponse | None = Field(description="上游不可用时为 null")
     satellite_status: Literal["ok", "unavailable"] = Field(
         description="unavailable 表示数据源暂时拿不到；夜间有红外，不再是空态"
+    )
+    irradiance: SatelliteIrradiance | None = Field(
+        description="卫星辐照实况；关掉开关时为 null，其余情况看 irradiance.status。docs/19 §四"
     )

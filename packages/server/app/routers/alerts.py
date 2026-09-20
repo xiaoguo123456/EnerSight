@@ -16,7 +16,7 @@ from app.schemas.alert import AlertListResponse, CurrentAlertResponse
 from app.schemas.common import Coord
 from app.schemas.envelope import CoordQuery, Envelope, envelope
 from app.services import alerts as svc
-from app.services import satellite, weather
+from app.services import satellite, satellite_irradiance, weather
 from app.services.home import default_station
 from app.services.station import get_station, to_summary
 
@@ -78,6 +78,8 @@ async def current_alert(
     # 卫星拿不到（夜间、上游故障）不影响预报类预警，云图置 null
     sat = await satellite.load_scene_safely(http, station, base)
     scene = sat.scene
+    # 卫星辐照与云图各走各的，一个拿不到不影响另一个
+    irradiance = await satellite_irradiance.get(http, station, fc.tz)
     # 读请求顺手扫一次，保证首次访问就有结果；定时任务负责常态刷新
     await svc.scan_station(db, station, fc, sat)
     await db.commit()
@@ -95,6 +97,7 @@ async def current_alert(
             cloud_motion=cloud_motion,
             satellite=satellite.to_response(scene, station, fc.tz, coord) if scene else None,
             satellite_status=sat.status,
+            irradiance=irradiance,
         ),
         coord,
     )

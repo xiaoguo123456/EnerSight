@@ -39,6 +39,9 @@ HOURLY_FIELDS = [
 # 点预报统一取 15 分钟，字段与历史小时资料一致；国内数据由上游插值生成。
 MINUTELY_FIELDS = HOURLY_FIELDS.copy()
 
+# 卫星辐照只要这三个：总辐照是反演量，直射与散射由 Open-Meteo 同一套分解给出。docs/19 §四
+SATELLITE_FIELDS = ["shortwave_radiation", "direct_radiation", "diffuse_radiation"]
+
 
 # 请求模型 → 元数据 slug。gfs_global 由 0.13° 与 0.25° 两套拼成，起报不同，以 0.13° 为准。
 # best_match 在境内实测等于 ecmwf_ifs，由 services.model_resolution 每日复核。docs/17 §二
@@ -141,6 +144,27 @@ class OpenMeteoProvider:
             params["cell_selection"] = cell_selection
         return await self._get(f"{settings.open_meteo_base}/forecast", params)
 
+    async def satellite_radiation(
+        self, latitude: float, longitude: float, *, start: date, end: date
+    ) -> dict:
+        """葵花卫星反演的地表辐照，10 分钟一帧。docs/19 §四
+
+        两个坑：`temporal_resolution=native` 不带就只回小时均值；这个模型只在自建实例里，
+        所以 `allow_fallback=False`，绝不退回官方（那边没有这个模型，只会回 400）。
+        """
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "hourly": ",".join(SATELLITE_FIELDS),
+            "temporal_resolution": "native",
+            "models": settings.satellite_irradiance_model,
+            "timezone": "UTC",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
+        base = settings.open_meteo_satellite_base or settings.open_meteo_archive_base
+        return await self._get(f"{base}/archive", params, allow_fallback=False)
+
     async def model_meta(self, slug: str) -> ModelMeta | None:
         """模型元数据。拿不到返回 None，不阻塞预报；调用方按「无法确认起报」处理。"""
         try:
@@ -167,7 +191,7 @@ class OpenMeteoProvider:
         }
         return await self._get(f"{settings.open_meteo_archive_base}/archive", params)
 
-    async def _get(self, url: str, params: dict) -> dict:
+    async def _get(self, url: str, params: dict, *, allow_fallback: bool | None = None) -> dict:
         """带退避重试。经本机代理出网时偶发 TLS 拒连/超时，不重试会白丢一个站一整轮。
 
         只重试传输错误与 5xx。429 是配额、400 是坐标越界，重试都无用 —— 对 429
@@ -178,7 +202,9 @@ class OpenMeteoProvider:
             if attempt:
                 await asyncio.sleep(settings.upstream_backoff_seconds * attempt)
             try:
-                res = await weather_get(self._client, url, params=params)
+                res = await weather_get(
+                    self._client, url, params=params, allow_fallback=allow_fallback
+                )
             except httpx.HTTPError as exc:
                 last = exc
                 continue

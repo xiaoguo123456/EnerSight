@@ -768,6 +768,8 @@ export interface components {
              * @enum {string}
              */
             satellite_status: "ok" | "unavailable";
+            /** @description 卫星辐照实况；关掉开关时为 null，其余情况看 irradiance.status。docs/19 §四 */
+            irradiance: components["schemas"]["SatelliteIrradiance"] | null;
         };
         /** CurrentWeather */
         CurrentWeather: {
@@ -1903,6 +1905,50 @@ export interface components {
             start_at: string;
             /** End At */
             end_at: string;
+        };
+        /**
+         * SatelliteIrradiance
+         * @description 卫星反演的地表辐照实况。docs/19 §四
+         *
+         *     葵花 L2 短波辐射，5 km 格点、10 分钟一帧，时间标签是区间末的 10 分钟均值，
+         *     与预报辐射同口径。只作实况展示，不参与指数与发电计算。
+         */
+        SatelliteIrradiance: {
+            /**
+             * Ghi W M2
+             * @description 总辐照；非 ok 状态为 null
+             */
+            ghi_w_m2: number | null;
+            /** Direct W M2 */
+            direct_w_m2: number | null;
+            /** Diffuse W M2 */
+            diffuse_w_m2: number | null;
+            /**
+             * Clear Sky Ghi W M2
+             * @description 同时刻晴空基准，夜间与缺测为 null
+             */
+            clear_sky_ghi_w_m2: number | null;
+            /**
+             * Clear Sky Index
+             * @description 实况 / 晴空，0–1 之间；界面显示「晴空的 78%」
+             */
+            clear_sky_index: number | null;
+            /**
+             * Observed At
+             * @description 卫星观测时刻，按站点当地时区；非 ok 状态为 null
+             */
+            observed_at: string | null;
+            /**
+             * Status
+             * @description night 夜间无可见光反演；stale 最新一帧过旧；unavailable 上游拿不到
+             * @enum {string}
+             */
+            status: "ok" | "night" | "stale" | "unavailable";
+            /**
+             * Source
+             * @description 署名文案，界面必须展示
+             */
+            source: string;
         };
         /** ScalarSample */
         ScalarSample: {

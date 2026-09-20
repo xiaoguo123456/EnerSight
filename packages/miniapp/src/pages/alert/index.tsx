@@ -6,7 +6,7 @@ import type { AlertLevel } from '@enersight/core/types'
 import { alertsApi } from '@/api/alerts'
 import {
   AlertCard, AlertRecordList, CloudMotionStats, EmptyState, ErrorState, PageTitleBar,
-  SectionHeader, SegmentedTabs, Skeleton, Icon,
+  SatelliteNowcast, SectionHeader, SegmentedTabs, Skeleton, Icon,
 } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import { useStationStore } from '@/store'
@@ -86,6 +86,11 @@ export default function AlertCenter() {
               <Text className="alerts__calm-title">当前未触发预警</Text>
             </View>
           )
+        )}
+
+        {/* 无预警时卫星实况就是这一页的 Hero；有预警时它退到预警卡之下。docs/19 §四 */}
+        {cur.status === 'success' && cur.data.irradiance && (
+          <SatelliteNowcast data={cur.data.irradiance} hero={!cur.data.alert} />
         )}
 
         {/* 直接展示，与当前预警并行请求，不等待其冷启动。 */}

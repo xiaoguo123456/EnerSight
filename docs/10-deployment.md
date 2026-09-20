@@ -726,3 +726,29 @@ usage={'direct': 2554.0, '103.237.102.191': 1, '14.251.13.20': 1, ...}
 - 对明早冷启动一轮 2,747 个坐标的估算：全局预算 480 单位/分钟摊到 8 个出口，
   每出口约 60 单位/分钟，离自设的 300/分钟和实测的 600/分钟触发点都还远；
   按日算每出口约 343 单位，对 5,000/天的自设上限也宽松。**前提是这 8 个出口能活过整轮。**
+
+---
+
+## 卫星辐照入库（Buffalo，2026-09-20）
+
+葵花 L2 短波辐射由 Buffalo 那台自己拉、自己入库，后端只是按坐标查自建实例。
+口径与授权见 [19 §四](./19-forecast-uncertainty-and-observations.md)，这里只记运维事实。
+
+| 项 | 位置 |
+| --- | --- |
+| 拉取脚本 | `/usr/local/bin/ptree-himawari.sh`（700） |
+| 凭据 | `/root/.ptree.env`（600）。**不进仓库、不进日志**，仓库是公开的 |
+| 定时 | `ptree-himawari.timer`，每 10 分钟（`OnCalendar=*:2/10`），`flock` 防重入 |
+| 落盘 | 卷 `open-meteo_open-meteo-data` 的 `jma_jaxa_himawari_70e_10min/`，每帧约 13 MB |
+| 保留 | 脚本每轮删 6 小时没再写过的 `chunk_*.om`。分块是 48 小时一个，所以实际上限约 3.7 GB |
+| 出网 | 约 7.4 GB/天。套餐 7 TB/月，占比很小 |
+
+为什么必须删：数据盘只剩 26 GB，而 `CACHE_SIZE` 设的是 32 GB（`cache.bin` 已 25 GB 且还在涨），
+不清理会连自建气象服务一起拖垮。
+
+应用侧只要 `ENERSIGHT_OPEN_METEO_SATELLITE_BASE`，留空则用 `ENERSIGHT_OPEN_METEO_ARCHIVE_BASE`。
+测试与生产的归档基址已经指向自建实例，不用另配；主源换回官方时必须把这一项显式指到自建，
+否则卫星辐照会一直是 `unavailable`（官方没有这个模型）。
+
+排查：`systemctl list-timers ptree-himawari.timer`、`journalctl -u ptree-himawari.service -n 50`。
+别在常驻容器里 `docker compose exec` 跑下载子命令（`--help` 都不返回），用一次性容器。

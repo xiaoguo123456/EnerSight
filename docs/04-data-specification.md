@@ -332,6 +332,20 @@ https://api.open-meteo.com/data/{slug}/static/meta.json
 | 更新频率 | 10 分钟 |
 | 时间戳展示 | 预警页卫星云图左上角「2024-07-20 14:00」 |
 
+云图走 JMA 的网页瓦片，**辐照走另一条链路**：JAXA P-Tree 的 L2 短波辐射（SWR），
+由 Buffalo 上的定时任务每 10 分钟入库到自建 Open-Meteo，后端按坐标查。口径与授权见
+[19 §四](./19-forecast-uncertainty-and-observations.md)。
+
+| 项 | 值 |
+| --- | --- |
+| 产品 | JAXA 葵花 L2 SWR v2.1（同一文件里还有 PAR、UVA、UVB、气溶胶） |
+| 分辨率 | 0.05°（约 5 km），10 分钟一帧 |
+| 落地延迟 | 约 22 分钟（实测），加我们 10 分钟的拉取间隔，实况约半小时 |
+| 查询 | `{自建}/archive?models=jma_jaxa_himawari&temporal_resolution=native`，**不带 native 只回小时均值** |
+| 字段 | `shortwave_radiation`、`direct_radiation`、`diffuse_radiation`（后两者由 Open-Meteo 分解） |
+| 出网 | 一帧约 50 MB × 144 帧/天 ≈ 7.4 GB/天，只在 Buffalo 出，不经北京 |
+| 署名 | 「JAXA / P-Tree」，与云图的「日本气象厅」一样不能删 |
+
 
 使用：
 

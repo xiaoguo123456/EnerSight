@@ -870,6 +870,18 @@ interface CurrentAlertResponse {
   cloud_motion: CloudMotion | null      // 仅卫星短临预警有
   satellite: SatelliteCloudResponse | null
   satellite_status: "ok" | "unavailable"   // satellite 为 null 只有上游拿不到一种情况
+  irradiance: SatelliteIrradiance | null   // 关掉开关才是 null，其余看 status
+}
+
+interface SatelliteIrradiance {          // 葵花 L2 短波辐射，docs/19 §四
+  ghi_w_m2: number | null                // 非 ok 状态一律 null，不给 0
+  direct_w_m2: number | null
+  diffuse_w_m2: number | null
+  clear_sky_ghi_w_m2: number | null      // 同时刻晴空基准
+  clear_sky_index: number | null         // 实况 / 晴空，界面显示「晴空的 44%」
+  observed_at: string | null             // 卫星观测时刻，站点当地时区
+  status: "ok" | "night" | "stale" | "unavailable"
+  source: string                         // 署名文案，界面必须展示
 }
 
 interface CloudMotion {
@@ -884,7 +896,9 @@ interface CloudMotion {
 
 无预警时 `alert` 为 `null`，`satellite` 仍返回（预警页始终展示云图）。
 
-**已落地。** 夜间有红外，云图全天可用；`satellite` 为 `null` 仅在上游拿不到时
+**已落地。** `irradiance` 是 10 分钟一帧的卫星反演辐照，时间标签是区间末的 10 分钟均值，
+与预报辐射同口径；**只作展示**，当前功率与当日累计仍用预报，等 [07 §8.1](./07-metrics.md) 回测达标再切。
+夜间有红外，云图全天可用；`satellite` 为 `null` 仅在上游拿不到时
 （`satellite_status = "unavailable"`），此时已生效的卫星预警**不会被解除**，最多保留 2 小时
 （外推时效上限）；拿到云图确认云已散才解除。`cloud_motion` 的 `direction` 是云团**去向**，
 `direction_detail` 说明来向与速度，如「自东北方向移来，约 32 km/h」。

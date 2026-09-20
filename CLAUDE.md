@@ -189,6 +189,9 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
   代理池试验时会漏出直连，见 10「气象出网」
 - ❌ 把 `minutely_15` 混进主请求 —— 只有单站 7 天预测要它，混进去等于让每次后台扫描
   都为它付权重。走 `get_forecast(..., fine=True)`
+- ❌ 查卫星辐照不带 `temporal_resolution=native` —— 只会回小时均值，实况要等整点过完；
+  也别让它退回官方（`allow_fallback=False`），葵花只在自建实例里，官方那条路只回 400。见 19 §四
+- ❌ 拿卫星辐照去改当前功率或当日累计 —— 现在只展示；要等 PVOD 回测达标（07 §8.1）
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）
 - ❌ 卫星拿不到时清掉卫星预警 —— 未知 ≠ 消失，`apply_detections(satellite_known=False)`
 - ❌ 用 `floor` 的整点去取辐射 / 光伏出力 / 晴空指数 —— 它们是前一小时均值标在区间末，
@@ -341,6 +344,7 @@ Buffalo 那台是我们独占的：Ubuntu 24.04、3 vCPU、3.9 GB 内存、磁�
 | predictions/station | ✅ | 单站未来 7 天逐日预测，首页懒加载；`basis` 带模型起报时刻；公开电站与全目录带省级限电参考（限电第二层，界面默认关，见 17 §四） |
 | predictions/fleet | ✅ | 全目录未来 7 天 `days[]`，顶层仍是今日；按目标日 + 签发日留档 |
 | predictions/station 三模式 + history | ✅ | 默认 ECMWF / ICON / GFS 三家同算，主数字取中位那家，起报统一报三家中最早的；`/history` 读留档给预报演变；我的电站每日 08:30 签发（19 §一、§二） |
+| alerts/current 的 irradiance | ✅ | 葵花 L2 SWR 经 Buffalo 定时任务入自建 Open-Meteo，按坐标查；预警页「卫星实况」卡，只展示不参与计算（19 §四） |
 | stations/{id}/measured | ✅ | 我的电站记日电量 / 月电量，回算模型同期值，留一法拟合乘性系数，作用于 7 天预测、首页今日、当前功率与累积；指数与留档不乘（19 §三、07 §九） |
 
 已落地的关键实现：

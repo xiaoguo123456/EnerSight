@@ -1,0 +1,30 @@
+.sat-now {
+  padding: 14px 16px 12px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  &__title { font-size: 14px; font-weight: 600; color: var(--color-text); }
+  &__time { margin-left: auto; font-size: 11px; color: var(--color-text-weak); }
+
+  &__body { display: flex; align-items: baseline; gap: 8px; }
+  &__value { display: flex; align-items: baseline; }
+  &__num { @include metric-value(28px); }
+  &__unit { font-size: 12px; color: var(--color-text-sub); margin-left: 3px; }
+  &__ratio { font-size: 12px; color: var(--color-text-sub); }
+
+  &__split { font-size: 12px; color: var(--color-text-sub); }
+  &__empty { font-size: 13px; color: var(--color-text-sub); padding: 2px 0 4px; }
+  // 署名是 JAXA 利用条款要求，不能删
+  &__source { font-size: 11px; color: var(--color-text-weak); }
+
+  // 无预警时这张卡是页面唯一的 Hero，数字放大；有预警时它退居预警卡之下
+  &--hero &__num { font-size: 40px; }
+}

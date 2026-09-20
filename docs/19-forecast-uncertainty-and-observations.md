@@ -428,10 +428,13 @@ P-Tree 存档回溯到 2015，可直接与 `enersight-validation-data` 里 PVOD 
 
 ### 接口
 
+**挂在 `/v1/alerts/current` 上，不挂云图接口**（2026-09-20 改）：预警页的第一个请求就是它，
+而云图要拉瓦片、重采样，慢得多；Hero 卡不该等云图。
+
 ```ts
-interface SatelliteCloudResponse {
+interface CurrentAlertResponse {
   // …现有字段
-  irradiance: SatelliteIrradiance | null
+  irradiance: SatelliteIrradiance | null   // 关掉开关才是 null
 }
 interface SatelliteIrradiance {
   ghi_w_m2: number | null
@@ -439,7 +442,7 @@ interface SatelliteIrradiance {
   diffuse_w_m2: number | null
   clear_sky_ghi_w_m2: number | null
   clear_sky_index: number | null
-  observed_at: string
+  observed_at: string | null                // 非 ok 状态为 null
   status: 'ok' | 'night' | 'stale' | 'unavailable'
   source: string                            // 署名文案
 }
@@ -454,8 +457,10 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
   `PageTitleBar`，列入待确认，随时可改。
 - **页面结构**：无预警时 Hero 改为「卫星实况」卡（此前只有一句「当前未触发预警」，页面大部分时间是空的）；
   有预警时预警卡仍是 Hero，卫星实况卡在其下。一页仍只有一个 Hero。
-- **「卫星实况」卡**：辐照大数字 + 「晴空的 78%」+ 观测时间；下方 `CloudMotionStats` 三宫格保持；再下 `SatelliteTimeline` 不变。
-- 电站详情「当前气象」卡底部加一行「卫星辐照 612 W/m² · 14:20」。首页四宫格的辐射项不换来源，环比口径不动。
+- **「卫星实况」卡**（`SatelliteNowcast`，**已落地 2026-09-20**）：辐照大数字 + 「晴空的 44%」+ 观测时间 +
+  直射 / 散射一行 + 署名；无预警时 `hero` 放大数字。下方 `CloudMotionStats` 三宫格保持；再下 `SatelliteTimeline` 不变。
+- 电站详情「当前气象」卡底部加一行「卫星辐照 612 W/m² · 14:20」（**未做**，等回测达标一起）。
+  首页四宫格的辐射项不换来源，环比口径不动。
 
 
 ## 五、气溶胶归因与积灰损失
@@ -568,7 +573,7 @@ current_power_source: 'forecast' | 'satellite' | 'measured'
 | --- | --- | --- |
 | M1 ✅ | 三模式默认、区间带与三家并列、预报演变、`issue_outlooks`、留档清理、各链路口径统一 | 第一、二节验收项全过；H5 截图已看，开发者工具截图待合入主仓库后补 |
 | M2 ✅ | 随手记、订正、实测对账页 | 真实上游数据走通记录 → 回算 → 拟合 → 订正生效；H5 截图已看，开发者工具截图待合入主仓库后补 |
-| M3 | 卫星辐照：Buffalo 跑 Open-Meteo 自带的葵花下载器、后端取值、PVOD 回测、预警页卫星实况卡；达标后当前功率与当日累计切换 | 已有 P-Tree 账号（2026-09-19 密码待找回）；对外展示前需事务局答复（§四「授权」第 1 步）；回测结论写入 07 §8.1 |
+| M3 | 卫星辐照：Buffalo 下载器 ✅、后端取值 ✅、预警页卫星实况卡 ✅（2026-09-20）；**剩 PVOD 回测**，达标后才做当前功率与当日累计切换 | 已有 P-Tree 账号（2026-09-19 密码待找回）；对外展示前需事务局答复（§四「授权」第 1 步）；回测结论写入 07 §8.1 |
 | M4 | 空气质量接入、气溶胶归因、积灰卡、`precipitation` 字段 | 敦煌 / 拉萨 / 苏州三点归因数值合理；04 §二字段表已更新 |
 
 M1 与 M2 共用签发任务，先后做；M3 的回测不依赖归档，找回 P-Tree 密码即可开工，对外展示等事务局答复；M4 独立可并行。
