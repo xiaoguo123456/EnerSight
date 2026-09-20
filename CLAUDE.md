@@ -220,6 +220,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
 - ❌ `core/` 里用 TS 构造器参数属性（`constructor(readonly x)`）—— Taro 的 babel 链路不认
 - ❌ 公开数据接口要求登录，或让游客自动 `wx.login` —— 游客可看公开数据，只有我的电站与导出需要登录；
   自建电站接口用 `CurrentUserDep`，公开接口用 `OptionalUserDep` 或不取身份，见 09 §4.3
+- ❌ 让本机记着的电站 id 永远失效 —— 换环境、目录下线、站被删都会让每个页面停在
+  「站点不存在」；`STATION_NOT_FOUND` 要清掉 `stationStore.currentId` 退回默认站，见 05 §7.2
 - ❌ 用 emoji 当图标 —— 用 `<Icon name="..."/>`，字形随系统变化不可控
 - ❌ 改了 pvlib 模型参数或分档断点不重跑 `scripts/calibrate.py` —— 校准结论要跟着更新到 07 §8.1
 - ❌ 改完 UI 不看结果就交付 —— H5 跑 `make shot`，小程序跑 `devtools-shot.sh`，实际查看 PNG
