@@ -11,8 +11,11 @@
   &__capacity-label { font-size: 12px; color: var(--color-text-sub); }
   &__capacity-value { font-size: 24px; font-weight: 600; @include numeric; }
   &__capacity-unit { font-size: 13px; font-weight: 400; color: var(--color-text-sub); }
-  &__actions { display: flex; gap: 10px; margin-top: 18px; }
-  &__action { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border-radius: 10px; font-size: 13px; color: #475569; background: var(--color-bg); }
+  // 自建电站有五个操作，375pt 上一行放不下。flex:1 会把盒子压得比文字还窄，
+  // 而文字是 nowrap，于是图标和隔壁的字贴在一起（2026-09-20 实测）。
+  // 改成允许换行，并给每个操作一个能放下「四字 + 图标」的最小宽度。
+  &__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  &__action { flex: 1 1 auto; min-width: 92px; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 8px; border-radius: 10px; font-size: 13px; color: #475569; background: var(--color-bg); }
   &__action--primary { background: #eaf3ff; color: #1264d6; }
   &__weather-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; .section-header { margin-bottom: 16px; } }
   &__updated { font-size: 11px; color: var(--color-text-sub); }
