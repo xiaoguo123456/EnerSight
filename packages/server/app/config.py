@@ -197,7 +197,9 @@ class Settings(BaseSettings):
     prediction_archive_retention_days: int = 45
     # 我的电站每日签发时刻（UTC+8）：全目录轮次之后、单点缓存新时段内
     issue_outlooks_hour: int = 8
-    issue_outlooks_concurrency: int = 4
+    # 并发 4 时峰值有十几份逐时数据同时在内存里（每站三个成员），生产容器余量不够，
+    # 2026-09-20 降到 2。这个任务不赶时间，慢一倍无所谓
+    issue_outlooks_concurrency: int = 2
 
     # 实测订正。docs/19 §三
     correction_min_days: int = 7  # 日电量至少几条有效记录才拟合
