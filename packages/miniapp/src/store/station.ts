@@ -18,6 +18,8 @@ interface StationState {
   remember: (station: StationSummary) => void
   clearRecent: () => void
   setCurrent: (id: string) => void
+  /** 服务端说这座站不在了（换环境、目录下线、站被删）：忘掉它，下次请求走默认站 */
+  dropCurrent: (id: string) => void
   restore: () => void
   /** 退出登录或删除数据后，移除本机记住的自建电站 */
   forgetOwn: () => void
@@ -47,6 +49,12 @@ export const useStationStore = create<StationState>((set) => ({
     try { Taro.setStorageSync(CURRENT_KEY, id) } catch { /* 不阻断站点切换 */ }
     set({ currentId: id })
   },
+  dropCurrent: (id) => set((state) => {
+    // 只忘掉「当前这座」。分享进来的别人的站 404 不该改写本机选择
+    if (state.currentId !== id) return {}
+    try { Taro.removeStorageSync(CURRENT_KEY) } catch { /* 存储不可用只清内存 */ }
+    return { currentId: null }
+  }),
   forgetOwn: () => set((state) => {
     const keep = (s: StationSummary) => !s.is_own && !OWN_ID.test(s.id)
     const favorites = state.favorites.filter(keep)

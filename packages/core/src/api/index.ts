@@ -40,6 +40,11 @@ export interface ClientOptions {
   relogin: () => Promise<string>
   timeoutMs?: number
   maxRetries?: number
+  /**
+   * 请求最终失败时回调一次（重试与续登都已尝试过）。用于各端做与业务相关的兜底，
+   * 例如本机记住的电站在服务端已不存在时忘掉它。抛错不影响原错误的传播。
+   */
+  onError?: (error: ApiError, request: { url: string; query?: RequestOptions['query'] }) => void
 }
 
 export class ApiError extends Error {
@@ -138,6 +143,11 @@ export function createClient(opts: ClientOptions): ApiClient {
 
     if (err.retryable && attempt < maxRetries) {
       return send<T>(method, url, query, body, attempt + 1, didRelogin)
+    }
+    try {
+      opts.onError?.(err, { url, query })
+    } catch {
+      // 兜底回调自己的问题不能盖掉真正的错误
     }
     throw err
   }

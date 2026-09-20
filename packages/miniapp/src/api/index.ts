@@ -6,6 +6,7 @@ import Taro from '@tarojs/taro'
 import { ApiError, createClient, type HttpAdapter, type TokenStore } from '@enersight/core/api'
 
 import { servedModel, useWeatherModel } from '@/store/weatherModel'
+import { useStationStore } from '@/store/station'
 
 export const TOKEN_KEY = 'enersight_token'
 /** 用户主动登录过才允许后台续登；游客浏览公开数据不自动登录。docs/09 §4.3 */
@@ -78,6 +79,19 @@ async function relogin(): Promise<string> {
   return wechatLogin()
 }
 
+/**
+ * 本机记着的电站在服务端已经没有了 —— 换了后端环境、目录里下线、或者自建站被删。
+ * 不清掉的话每个按电站取数的页面都只剩一个永远失败的「重试」，用户没有出路。
+ * 清掉后 currentId 变 null，页面的依赖跟着变，会自动改用默认电站重取。
+ */
+function forgetMissingStation(err: ApiError, req: { query?: Record<string, unknown> }): void {
+  if (err.code !== 'STATION_NOT_FOUND') return
+  const current = useStationStore.getState().currentId
+  if (!current) return
+  const asked = req.query?.station_id
+  if (asked === undefined || asked === current) useStationStore.getState().dropCurrent(current)
+}
+
 export const api = createClient({
   baseUrl: process.env.TARO_APP_API_BASE ?? '',
   // 小程序底图是腾讯地图，固定用 GCJ-02。转换由服务端完成，
@@ -86,10 +100,11 @@ export const api = createClient({
   adapter,
   tokenStore,
   relogin,
+  onError: forgetMissingStation,
 })
 
 /** 图层与历史影像允许较长计算时间，不自动重试，防止冷请求倍增。 */
 export const imageryApi = createClient({
   baseUrl: process.env.TARO_APP_API_BASE ?? '', coord: 'gcj02', adapter, tokenStore, relogin,
-  timeoutMs: 40_000, maxRetries: 0,
+  onError: forgetMissingStation, timeoutMs: 40_000, maxRetries: 0,
 })

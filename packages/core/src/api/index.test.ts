@@ -71,3 +71,42 @@ describe('登录恢复', () => {
     expect(relogin).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('最终失败回调', () => {
+  const base = {
+    baseUrl: 'https://api.test',
+    coord: 'gcj02' as const,
+    tokenStore: { async get() { return null }, async set() {}, async clear() {} },
+    relogin: async () => 'token',
+  }
+
+  it('请求彻底失败时带上请求信息回调一次', async () => {
+    const seen: { code: string; station?: unknown }[] = []
+    const client = createClient({
+      ...base,
+      maxRetries: 0,
+      adapter: {
+        async request() {
+          return { status: 404, body: { error: { code: 'STATION_NOT_FOUND', message: '站点不存在' } } }
+        },
+      },
+      onError: (err, req) => seen.push({ code: err.code, station: req.query?.station_id }),
+    })
+    await expect(client.get('/v1/home', { station_id: 'gone' })).rejects.toThrow('站点不存在')
+    expect(seen).toEqual([{ code: 'STATION_NOT_FOUND', station: 'gone' }])
+  })
+
+  it('回调自己抛错不会盖掉原错误', async () => {
+    const client = createClient({
+      ...base,
+      maxRetries: 0,
+      adapter: {
+        async request() {
+          return { status: 404, body: { error: { code: 'STATION_NOT_FOUND', message: '站点不存在' } } }
+        },
+      },
+      onError: () => { throw new Error('回调自己坏了') },
+    })
+    await expect(client.get('/v1/home')).rejects.toThrow('站点不存在')
+  })
+})
