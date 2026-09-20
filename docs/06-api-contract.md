@@ -809,6 +809,8 @@ interface TrendSeries {
   y_max: number | null         // 固定纵轴上限；null 表示自适应
   points: TrendPoint[]
   hub_height: number | null    // 换算所用轮毂高度 m；仅 hub_wind_speed 有值
+  satellite: TrendPoint[] | null   // 卫星实况辐照，与 points 等长同序
+  satellite_source: string | null  // 署名文案；有 satellite 时界面必须展示
 }
 
 interface TrendPoint {
@@ -822,6 +824,12 @@ interface TrendPoint {
 
 **已落地。** `24h` 今日 00:00 至明日 00:00 逐小时 25 点；`7d` 今日 00:00 起 7 天逐 3 小时
 56 点（粒度待产品确认，服务端 `trend_7d_step_hours` 可调）。
+
+`satellite` 只在 `metric=radiation`、`range=24h`、`day_offset=0` 时可能有值，其余一律 null
+（[19 §四](./19-forecast-uncertainty-and-observations.md)）。它与 `points` **等长同序**，
+未来时段、夜间、上游缺帧的点为 null；卫星只留最近几小时，所以通常只有当天已过去的一段有值。
+旧版客户端拿逐小时曲线时两条线一起降采样，不会一条 25 点一条 97 点。
+它只作展示，不参与指数与发电估算。
 
 
 ---

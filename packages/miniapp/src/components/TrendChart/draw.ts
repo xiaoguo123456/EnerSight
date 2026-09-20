@@ -11,6 +11,13 @@ export interface ChartData {
   /** 等间隔序列：逐小时 25 点对应 00:00 – 24:00，或 15 分钟 96 点。缺测用 null，断线不补 0 */
   values: (number | null)[]
   comparison?: (number | null)[]
+  /** 两条线在气泡里的名字；不传按「可发 / 上网」。卫星实况曲线传「预报 / 卫星实况」 */
+  labels?: { value: string; comparison: string }
+  /**
+   * 对比线低于主线的时段打底纹。只有「可发 vs 上网」是这个语义（被限掉的部分），
+   * 预报与卫星实况的差不是损失，不能打 —— 阴天整条都会被涂上。
+   */
+  shortfallShade?: boolean
   /**
    * 三模式的逐点包络，与 values 等长同序。两端任一为 null 的点不画，按段断开。
    * 只是视觉范围，不参与任何求和 —— 主数字来自 values 所属的那一家。docs/19 §一
@@ -30,8 +37,18 @@ export function fromTrendSeries(t: {
   unit: string
   y_max: number | null
   resolution_minutes?: number
+  /** 卫星实况，与 points 等长同序；只有今日辐射曲线有。docs/19 §四 */
+  satellite?: { time?: string; value: number | null }[] | null
 }): ChartData {
-  return { values: t.points.map((p) => p.value), times: t.points.every(p => p.time) ? t.points.map(p => p.time!) : undefined, unit: t.unit, yMax: t.y_max, stepMinutes: t.resolution_minutes ?? 60 }
+  // 服务端保证等长同序，这里再核一次长度：对不上就不画，错位的曲线比没有更糟
+  const satellite = t.satellite && t.satellite.length === t.points.length ? t.satellite : null
+  return {
+    values: t.points.map((p) => p.value),
+    comparison: satellite ? satellite.map((p) => p.value) : undefined,
+    labels: satellite ? { value: '预报', comparison: '卫星实况' } : undefined,
+    times: t.points.every(p => p.time) ? t.points.map(p => p.time!) : undefined,
+    unit: t.unit, yMax: t.y_max, stepMinutes: t.resolution_minutes ?? 60,
+  }
 }
 
 export interface ChartTheme {
@@ -135,7 +152,7 @@ export function draw(
   const py = (v: number) => y0 + ih - (v / max) * ih
 
   // 出力约束区间使用浅色底，不把缺测画成限电。
-  if (data.comparison) {
+  if (data.comparison && data.shortfallShade) {
     ctx.fillStyle = 'rgba(245, 158, 11, 0.10)'
     data.comparison.forEach((v, i) => {
       const base = data.values[i]
@@ -281,9 +298,10 @@ export function draw(
 
   // 气泡：两行（时刻 / 数值+单位），贴边时自动收进画布内
   const title = timeLabel(active)
-  const value = `${data.comparison ? '可发 ' : ''}${Number(av.toFixed(2))} ${data.unit}`
+  const names = data.labels ?? { value: '可发', comparison: '上网' }
+  const value = `${data.comparison ? `${names.value} ` : ''}${Number(av.toFixed(2))} ${data.unit}`
   const cv = data.comparison?.[active]
-  const compareValue = data.comparison ? `上网 ${cv == null ? '—' : Number(cv.toFixed(2))} ${data.unit}` : ''
+  const compareValue = data.comparison ? `${names.comparison} ${cv == null ? '—' : Number(cv.toFixed(2))} ${data.unit}` : ''
   ctx.font = '11px sans-serif'
   const tw = Math.max(ctx.measureText(title).width, ctx.measureText(value).width, ctx.measureText(compareValue).width)
   const bw = tw + 14

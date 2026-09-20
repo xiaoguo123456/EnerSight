@@ -1,0 +1,16 @@
+// 趋势卡自带的图例与署名：这个组件在首页与电站详情两处用，不能靠页面样式
+.trend-series {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--font-caption);
+  color: var(--color-primary);
+}
+// 卫星实况那条线在图上是绿色（draw.ts 的 comparison），图例跟着它
+.trend-series__sat { color: var(--color-energy); }
+// 署名是 JAXA 利用条款要求，不能删
+.trend-source {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--font-caption-sm, 11px);
+  color: var(--color-text-weak);
+}

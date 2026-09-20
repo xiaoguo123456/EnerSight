@@ -1,4 +1,4 @@
-import { Button, View } from '@tarojs/components'
+import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useState } from 'react'
 import { weatherCsv } from '@enersight/core/format'
@@ -8,10 +8,11 @@ import { useRequest } from '@/hooks/useRequest'
 import { exportCsv } from '@/utils/exportCsv'
 import { requireLogin } from '@/utils/requireLogin'
 import { ErrorState, InfoTip, SectionHeader, SegmentedTabs, Skeleton, TrendChart, fromTrendSeries } from '@/components'
+import './index.scss'
 const OPTIONS = [{ value: 'radiation', label: '辐射' }, { value: 'wind_speed', label: '10米风速' }, { value: 'cloud_cover', label: '云量' }]
 const INFO = {
   title: '24 小时气象趋势',
-  content: '时间轴为电站当地时间，00:00 到次日 00:00，每 15 分钟一点。风速为离地 10 米预报风速；发电预测优先采用各高度层风速换算到风机轮毂高度，仅有 10 米风速时外推估算，不能直接用本图风速判断是否发电。辐射为前 15 分钟平均值，标在区间末。',
+  content: '时间轴为电站当地时间，00:00 到次日 00:00，每 15 分钟一点。风速为离地 10 米预报风速；发电预测优先采用各高度层风速换算到风机轮毂高度，仅有 10 米风速时外推估算，不能直接用本图风速判断是否发电。辐射为前 15 分钟平均值，标在区间末。绿色「卫星实况」是葵花卫星反演的地表辐照（JAXA / P-Tree），10 分钟一帧、只有今天、且只覆盖最近几小时，与预报差得多说明云比预报的多；它只作参考，不参与发电估算。',
 }
 /**
  * 父级以站点 ID 为 key；每次指标或日期变化独立请求，旧结果不能充当新指标。传 exportName 时可导出全部指标。
@@ -48,7 +49,12 @@ export function StationTrend({ stationId, type, initial, version = 0, exportName
     <View style={{ marginTop: compact ? '4px' : '14px', minHeight: '150px' }}>
       {req.status === 'error' ? <ErrorState error={req.error} onRetry={req.reload} />
         : req.status !== 'success' || req.data.metric !== metric ? <Skeleton height={150} lines={3} />
-        : <TrendChart key={`${stationId}-${metric}-${dayOffset}-${version}`} id={`trend-${stationId.replace(/[^a-zA-Z0-9]/g, '')}-${dayOffset}-${version}`} data={fromTrendSeries(req.data)} />}
+        : <>
+          {/* 卫星实况只有今日辐射有；署名是 JAXA 条款要求，不能删。docs/19 §四 */}
+          {req.data.satellite && <View className="trend-series"><Text>预报</Text><Text className="trend-series__sat">卫星实况</Text></View>}
+          <TrendChart key={`${stationId}-${metric}-${dayOffset}-${version}`} id={`trend-${stationId.replace(/[^a-zA-Z0-9]/g, '')}-${dayOffset}-${version}`} data={fromTrendSeries(req.data)} />
+          {req.data.satellite && req.data.satellite_source && <Text className="trend-source">{req.data.satellite_source}</Text>}
+        </>}
     </View>
     {exportName && req.status === 'success' && <View className="forecast-actions"><Button className="forecast-action" disabled={exporting} onClick={exportWeather}>{exporting ? '正在导出…' : '导出气象 CSV'}</Button></View>}
   </View>

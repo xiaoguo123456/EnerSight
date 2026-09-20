@@ -53,22 +53,34 @@ def hourly_power(points: list[PowerPoint]) -> list[PowerPoint]:
     return [PowerPoint(time=h.isoformat(), value=_mean(v, 4)) for h, v in groups.items()]
 
 
-def hourly_trend(series: TrendSeries) -> TrendSeries:
-    """瞬时量取整点值；辐射是区间均值标在区间末，取整点及之前三格平均（首点只有自身一格）。"""
-    if series.resolution_minutes != 15:
-        return series
-    pts = series.points
+def _hourly_points(pts: list[TrendPoint], metric: TrendMetric) -> list[TrendPoint]:
     out: list[TrendPoint] = []
     for i, p in enumerate(pts):
         if datetime.fromisoformat(p.time).minute:
             continue
-        if series.metric == TrendMetric.RADIATION:
+        if metric == TrendMetric.RADIATION:
             window = [q.value for q in pts[max(0, i - 3) : i + 1]]
             value = _mean(window, len(window))
         else:
             value = p.value
         out.append(TrendPoint(time=p.time, value=value))
-    return series.model_copy(update={"points": out, "resolution_minutes": 60})
+    return out
+
+
+def hourly_trend(series: TrendSeries) -> TrendSeries:
+    """瞬时量取整点值；辐射是区间均值标在区间末，取整点及之前三格平均（首点只有自身一格）。
+
+    卫星实况要跟着一起降，否则两条线一条 25 点、一条 97 点，前端按下标就错位了。
+    """
+    if series.resolution_minutes != 15:
+        return series
+    update: dict[str, object] = {
+        "points": _hourly_points(series.points, series.metric),
+        "resolution_minutes": 60,
+    }
+    if series.satellite is not None:
+        update["satellite"] = _hourly_points(series.satellite, series.metric)
+    return series.model_copy(update=update)
 
 
 def _curve[C: GenerationPrediction | FleetDay | DailyOutlook](m: C) -> C:

@@ -38,6 +38,14 @@ class TrendSeries(BaseModel):
     y_max: float | None = Field(description="固定纵轴上限；null 表示自适应。由服务端下发")
     points: list[TrendPoint]
     hub_height: float | None = Field(description="m，换算所用轮毂高度；仅 hub_wind_speed 有值")
+    satellite: list[TrendPoint] | None = Field(
+        default=None,
+        description="卫星实况辐照，与 points 等长同序；仅 metric=radiation 的今日曲线有，"
+        "其余为 null。未来时段与夜间的点为 null。docs/19 §四",
+    )
+    satellite_source: str | None = Field(
+        default=None, description="卫星数据署名文案；有 satellite 时必须展示"
+    )
 
 
 class CurrentWeather(BaseModel):

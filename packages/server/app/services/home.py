@@ -25,7 +25,7 @@ from app.schemas.home import (
 from app.schemas.measured import CorrectionApplied
 from app.schemas.prediction import GenerationPrediction
 from app.schemas.station import StationMetrics, StationSummary
-from app.services import accumulate, alerts, correction, energy, weather
+from app.services import accumulate, alerts, correction, energy, satellite_irradiance, weather
 from app.services.station import from_catalog, get_station, to_summary
 from app.services.weather_text import describe_transition
 
@@ -95,6 +95,7 @@ def build_trend(
     range_: TrendRange = TrendRange.H24,
     day_offset: int = 0,
     hub_height: float | None = None,
+    satellite: list[float | None] | None = None,
 ) -> TrendSeries:
     """按输入步长返回趋势；15 分钟预报的 24h 为 97 点、7d 为 672 点。
 
@@ -120,6 +121,10 @@ def build_trend(
         col, unit, y_max = _TREND_SPEC[metric]
         values = df[col]
     points = [TrendPoint(time=ts.isoformat(), value=_num(v)) for ts, v in values.items()]
+    # 卫星实况与主曲线等长同序；长度对不上就不给，免得前端按下标错位
+    sat = None
+    if satellite is not None and len(satellite) == len(points):
+        sat = [TrendPoint(time=p.time, value=v) for p, v in zip(points, satellite, strict=True)]
     return TrendSeries(
         metric=metric,
         unit=unit,
@@ -128,6 +133,8 @@ def build_trend(
         points=points,
         resolution_minutes=fc.step_minutes,
         hub_height=hub_height if metric == TrendMetric.HUB_WIND_SPEED else None,
+        satellite=sat,
+        satellite_source=satellite_irradiance.SOURCE if sat else None,
     )
 
 
@@ -286,7 +293,13 @@ async def build_home(
         station=v.summary,
         index=v.index,
         weather=v.current,
-        trends=build_trend(v.forecast, TrendMetric.RADIATION),
+        trends=build_trend(
+            v.forecast,
+            TrendMetric.RADIATION,
+            satellite=await satellite_irradiance.series(
+                http, station, v.forecast.day_with_midnight(0).index, v.forecast.step_minutes
+            ),
+        ),
         alert=await alerts.current_alert(db, station.id, v.forecast.tz),
     )
 

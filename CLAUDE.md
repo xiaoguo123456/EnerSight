@@ -191,6 +191,8 @@ ISO 8601 带时区偏移 `2026-09-07T14:00:00+08:00`，按站点当地时区。
   都为它付权重。走 `get_forecast(..., fine=True)`
 - ❌ 查卫星辐照不带 `temporal_resolution=native` —— 只会回小时均值，实况要等整点过完；
   也别让它退回官方（`allow_fallback=False`），葵花只在自建实例里，官方那条路只回 400。见 19 §四
+- ❌ 卫星曲线只降主曲线不降它自己 —— 旧版客户端走 `curve_resolution` 降为逐小时，
+  两条线要一起降，否则 25 点对 97 点，前端按下标错位
 - ❌ 拿卫星辐照去改当前功率或当日累计 —— 现在只展示；要等 PVOD 回测达标（07 §8.1）
 - ❌ 看图像亮度判昼夜 —— 缺帧黑图会误判；按太阳高度角（`services/satellite.is_day`）
 - ❌ 卫星拿不到时清掉卫星预警 —— 未知 ≠ 消失，`apply_detections(satellite_known=False)`

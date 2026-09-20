@@ -90,7 +90,7 @@ function PowerCurve({ points, grid, band, id, title, step = 60, onExport }: { po
     </View>
     {grid && <View className="forecast-series"><Text>可发</Text><Text className="forecast-series__grid">预计上网</Text></View>}
     {bandData && !grid && <View className="forecast-series"><Text>中位模式</Text><Text className="forecast-series__band">三模式区间</Text></View>}
-    <TrendChart id={id} key={id} height={180} data={{ values: values.map(scale), comparison: compare?.map(scale), band: bandData, times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
+    <TrendChart id={id} key={id} height={180} data={{ values: values.map(scale), comparison: compare?.map(scale), shortfallShade: true, band: bandData, times: points.map(p => p.time), unit: unit.label, yMax: null, stepMinutes: step }} />
     {table && <View className="forecast-details">
       {onExport && <View className="forecast-actions"><Button className="forecast-action" onClick={onExport}>导出七天 CSV</Button></View>}
       <View className="forecast-table">{points.map((p, i) => <View key={p.time} className="forecast-row"><Text>{p.time.slice(11,16)}</Text><Text>可发 {p.value == null ? '—' : (p.value / unit.divisor).toFixed(2)} {unit.label}{compare ? ` · 上网 ${compare[i] == null ? '—' : (compare[i]! / unit.divisor).toFixed(2)} ${unit.label}` : ''}</Text></View>)}</View>

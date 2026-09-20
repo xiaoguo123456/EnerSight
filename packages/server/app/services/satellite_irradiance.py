@@ -83,6 +83,59 @@ async def _fetch(http: httpx.AsyncClient, station: Station) -> dict:
     )
 
 
+async def _raw(http: httpx.AsyncClient, station: Station) -> dict:
+    """同一格点的原始响应共用：卡片取最新一格，曲线取整天，不必拉两次。"""
+    key = f"sat-raw:{station.latitude:.2f},{station.longitude:.2f}"
+    return await _cache.get_or_load(key, lambda: _fetch(http, station))
+
+
+def _resample(raw: dict, index: pd.DatetimeIndex, step_minutes: int) -> list[float | None]:
+    """10 分钟的卫星值重采样到趋势的时间轴上。
+
+    两边都是「区间末标注的区间均值」。10 与 15 不整除，所以先摊到 5 分钟的子区间
+    （一个 10 分钟均值覆盖两个子区间），再按目标区间取平均 —— 等价于假设区间内恒定，
+    不做插值。子区间缺一个就给 null：宁可断线，也不能拿半个区间冒充整区间的均值。
+    """
+    block = raw.get("hourly")
+    if not isinstance(block, dict):
+        return [None] * len(index)
+    times = block.get("time") or []
+    values = block.get("shortwave_radiation") or []
+    fine: dict[pd.Timestamp, float] = {}
+    for i, label in enumerate(times):
+        value = values[i] if i < len(values) else None
+        if value is None:
+            continue
+        end = pd.Timestamp(str(label), tz="UTC").tz_convert(index.tz)
+        # 这一格覆盖 (end-10min, end]，摊成两个 5 分钟子区间
+        for k in (1, 0):
+            fine[end - pd.Timedelta(minutes=5 * k)] = float(value)
+    subs = max(1, step_minutes // 5)
+    out: list[float | None] = []
+    for end in index:
+        parts = [fine.get(end - pd.Timedelta(minutes=5 * k)) for k in range(subs)]
+        out.append(round(sum(parts) / subs, 1) if all(p is not None for p in parts) else None)  # type: ignore[arg-type]
+    return out
+
+
+async def series(
+    http: httpx.AsyncClient, station: Station, index: pd.DatetimeIndex, step_minutes: int
+) -> list[float | None] | None:
+    """趋势曲线上的卫星实况。整条拿不到返回 None，页面就不画这条线。
+
+    只有今天有数据（Buffalo 上只留最近几小时），未来时段与夜间自然是 null。
+    """
+    if not settings.satellite_irradiance_enabled or len(index) == 0:
+        return None
+    try:
+        raw = await _raw(http, station)
+    except Exception as exc:  # noqa: BLE001  曲线是附加信息，拿不到就不画
+        log.warning("卫星辐照曲线取数失败：%s", exc)
+        return None
+    out = _resample(raw, index, step_minutes)
+    return out if any(v is not None for v in out) else None
+
+
 async def get(http: httpx.AsyncClient, station: Station, tz: str) -> SatelliteIrradiance | None:
     """这座电站此刻的卫星辐照。关了开关返回 None；其余情况一律给对象 + status。"""
     if not settings.satellite_irradiance_enabled:
@@ -91,11 +144,11 @@ async def get(http: httpx.AsyncClient, station: Station, tz: str) -> SatelliteIr
     if not is_day(station.latitude, station.longitude, now):
         # 夜间没有可见光反演，不是故障
         return _none("night")
-    key = f"sat-ghi:{station.latitude:.2f},{station.longitude:.2f}"
+    key = f"sat-now:{station.latitude:.2f},{station.longitude:.2f}"
 
     async def _load() -> SatelliteIrradiance:
         try:
-            raw = await _fetch(http, station)
+            raw = await _raw(http, station)
         except Exception as exc:  # noqa: BLE001  卫星是锦上添花，任何失败都只降级
             log.warning("卫星辐照取数失败：%s", exc)
             return _none("unavailable")

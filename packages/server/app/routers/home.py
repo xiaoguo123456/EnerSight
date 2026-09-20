@@ -24,7 +24,7 @@ from app.schemas.home import (
 )
 from app.schemas.prediction import FleetPrediction, ForecastEvolution, StationOutlook
 from app.services import home as svc
-from app.services import weather
+from app.services import satellite_irradiance, weather
 from app.services.station import get_station
 
 router = APIRouter(prefix="/v1", tags=["home"])
@@ -63,7 +63,18 @@ async def get_trends(
         from app.metrics import wind
 
         hub = station.hub_height if station.hub_height is not None else wind.default_hub_height()
-    return envelope(svc.build_trend(fc, metric, range_, day_offset, hub), coord)
+    sat = await _satellite_series(request.app.state.http, station, fc, metric, range_, day_offset)
+    return envelope(svc.build_trend(fc, metric, range_, day_offset, hub, sat), coord)
+
+
+async def _satellite_series(
+    http, station, fc, metric: TrendMetric, range_: TrendRange, day_offset: int
+) -> list[float | None] | None:
+    """只有今天的辐射曲线才有卫星实况：卫星只留最近几小时，7 天与往后的日子都没有。"""
+    if metric != TrendMetric.RADIATION or range_ != TrendRange.H24 or day_offset != 0:
+        return None
+    df = fc.day_with_midnight(0)
+    return await satellite_irradiance.series(http, station, df.index, fc.step_minutes)
 
 
 @router.get("/stations/{station_id}/detail", response_model=Envelope[StationDetailResponse])
@@ -81,7 +92,16 @@ async def get_station_detail(
             station=v.summary,
             weather=v.current,
             index=v.index,
-            trends=svc.build_trend(v.forecast, TrendMetric.RADIATION),
+            trends=svc.build_trend(
+                v.forecast,
+                TrendMetric.RADIATION,
+                satellite=await satellite_irradiance.series(
+                    request.app.state.http,
+                    station,
+                    v.forecast.day_with_midnight(0).index,
+                    v.forecast.step_minutes,
+                ),
+            ),
             updated_at=v.current.observed_at if v.current else v.forecast.now().isoformat(),
             basis=v.forecast.basis(),
         ),
