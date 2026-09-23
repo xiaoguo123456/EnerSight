@@ -10,7 +10,7 @@ type Region = { southwest: { latitude: number; longitude: number }; northeast: {
 type Preview = { id: number; images: { url: string; style: Record<string, string> }[] }
 
 /** 原生端贴图；模拟器按地图视野投影预览图片，加载完成才显示图例。 */
-export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean) {
+export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean, cloudMode: 'auto' | 'satellite' = 'auto') {
   const model = useWeatherModel(s => s.model)
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
   const [coverage, setCoverage] = useState('')
@@ -74,7 +74,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     setCoverage(response.coverage || '')
     setAttribution(response.source || '')
     setModelName(response.model || '')
-    setSourceLabel(response.model ? `${response.model} · ${response.resolution_km} km 预报` : '')
+    setSourceLabel(response.model ? `${response.model} · ${response.resolution_km} km 预报` : response.source ? '卫星实况' : '')
     const region = regionRef.current
     if (region && response.samples?.length) {
       const merc = (lat: number) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))
@@ -89,7 +89,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       setSamples(selected.map(p => ({ left: `${p.x}%`, top: `${p.y}%`, text: p.text })))
     }
     if (response.wind_vectors?.length && regionRef.current) setWind({ vectors: response.wind_vectors, region: regionRef.current })
-    setLegend(response.legend); setObservedAt(response.observed_at); setLoading(false)
+    setLegend(response.legend.colors.length ? response.legend : null); setObservedAt(response.observed_at); setLoading(false)
   }, [])
   const imageLoaded = useCallback((id: number, index: number) => {
     const p = pending.current
@@ -111,13 +111,14 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     try {
       const region = await new Promise<Region>((resolve, reject) => ctx.getRegion({ success: resolve, fail: reject }))
       if (mine !== seq.current) return
-      if (layer === 'cloud' && (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5)) throw new Error('当前视野过大，请放大地图查看气象分布')
+      if (layer === 'cloud' && cloudMode === 'auto' && (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5)) throw new Error('当前视野过大，请放大地图查看气象分布')
+      if (layer === 'cloud' && cloudMode === 'satellite' && (region.northeast.longitude - region.southwest.longitude > 89 || region.northeast.latitude - region.southwest.latitude > 69)) throw new Error('卫星视野过大，请缩小地区范围')
       requestedRegion.current = region
       regionRef.current = region
       const response = await layersApi.get(layer, {
         west: region.southwest.longitude, south: region.southwest.latitude,
         east: region.northeast.longitude, north: region.northeast.latitude,
-      }, 8)
+      }, 8, cloudMode)
       if (mine !== seq.current) return
       const images = response.frames[0]?.images
       if (!images?.length) throw new Error('当前视野暂无图层数据')
@@ -136,7 +137,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
           return new Promise<void>((resolve, reject) => {
             const result = ctx.addGroundOverlay({
             id, src: img.url, bounds: { southwest: img.bounds.sw, northeast: img.bounds.ne },
-            opacity: layer === 'cloud' ? 0.65 : 1, zIndex: 1,
+            opacity: layer === 'cloud' ? (cloudMode === 'satellite' ? 0.85 : 0.65) : 1, zIndex: 1,
             success: () => resolve(), fail: reject,
             })
             result?.then?.(() => resolve(), reject)
@@ -155,7 +156,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     } catch (e) {
       fail(mine, String((e as any)?.errMsg ?? (e as Error)?.message ?? '图层加载失败'))
     }
-  }, [mapId, layer, active, isPreview, clear, discardStaged, fail, finish, model])
+  }, [mapId, layer, active, isPreview, clear, discardStaged, fail, finish, model, cloudMode])
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   // 原生贴图更新也会发出 end；比较实际视野，既兼容无 causedBy 的模拟器事件，也避免循环请求。

@@ -249,7 +249,7 @@ Authorization: Bearer <token>
 
 | 类别 | 接口 | 不带 token 时 |
 | --- | --- | --- |
-| 公开，不取身份 | `GET /v1/stations/public`、`/v1/stations/catalog`、`/v1/predictions/fleet`、`/v1/predictions/fleet/history`、`/v1/map/layers/{layer}`、`/v1/geo/reverse` | 正常返回 |
+| 公开，不取身份 | `GET /v1/stations/public`、`/v1/stations/catalog`、`/v1/predictions/fleet`、`/v1/predictions/fleet/history`、`/v1/map/layers/{layer}`、`/v1/geo/reverse`、`/v1/geo/province-bounds` | 正常返回 |
 | 公开，身份可选 | `GET /v1/home`、`/v1/trends`、`/v1/stations/{id}/detail`、`/v1/predictions/station`、`/v1/map/overview`、`/v1/alerts`、`/v1/alerts/current`、`/v1/satellite/cloud`、`/v1/satellite/cloud/history`、`/v1/reports/{id}`、`/v1/geo/search` | 公开电站正常返回；自建电站返回 `401 LOGIN_REQUIRED`；默认电站只从公开目录选，地址搜索不含自建电站 |
 | 需要登录 | `GET` / `POST /v1/stations`、`PATCH` / `DELETE /v1/stations/{id}`、`DELETE /v1/me` | `401 UNAUTHORIZED` |
 
@@ -754,6 +754,7 @@ interface Legend {
   要么全是预报云量（图例标题「云量预报」）。只要有一块拿不到卫星就整层退回预报 ——
   卫星是亮度拉伸的相对强度、预报是云量百分比，两种量混在同一个响应里，
   一个图例解释不了，`observed_at` 也会一半是观测时刻一半是预报时刻
+- `cloud?source=satellite` 为地图卫星实况模式：按视野生成一张 JMA Himawari 真彩（白天）或红外（夜间）影像，所有像素来自同一观测帧；不回退云量预报。返回 `source=日本气象厅 / JMA Himawari-9` 与实际 `observed_at`。支持省域视野，最大 90°×70°；超限返回 400，卫星不可用返回 502。
 
 
 ### 7.3 卫星云图（预警页）
@@ -973,6 +974,7 @@ interface ReportSummary {
 ```
 GET /v1/geo/search?keyword={k}&coord=gcj02
 GET /v1/geo/reverse?latitude={lat}&longitude={lng}&coord=wgs84
+GET /v1/geo/province-bounds?provinces=江苏省,浙江省&coord=gcj02
 ```
 
 ```ts
@@ -997,6 +999,11 @@ interface GeoReverseResponse {
   city: string
   district: string
 }
+
+interface ProvinceBoundsResponse {
+  provinces: string[]
+  bounds: { sw: { latitude: number; longitude: number }; ne: { latitude: number; longitude: number } }
+}
 ```
 
 地图页搜索框「搜索城市 / 坐标 / 站点」：
@@ -1005,6 +1012,8 @@ interface GeoReverseResponse {
 **已落地。** 未配置腾讯 key 时降级：`/reverse` 返回 503，`/search` 只匹配站点与坐标。
 腾讯用 GCJ-02，服务端在调用前后转换，客户端无感知。建站时自动逆地理填 `address`，
 失败不阻塞，定时任务每小时补。
+
+`province-bounds` 不依赖腾讯 key，使用 geoBoundaries 中国 ADM1（Public Domain，2019）边界的外接矩形；多省返回并集，境内按 `coord` 在服务端转换。省域只用于地图定位，不代表公开电站覆盖。
 
 
 ---
@@ -1138,6 +1147,6 @@ export function createClient(adapter: HttpAdapter, opts: ClientOptions): ApiClie
 
 HRES 支持全国 bbox，一屏最多 12 张图；`zoom` 保留兼容，实际层级按 bbox 的覆盖成本选择。
 空间范围 60–150°E、0–65°N，部分超出时覆盖外透明；完全超出返回 400 `MAP_OUTSIDE_COVERAGE`。
-云图仍采用原链路，超过 24° 返回 400，不随本次 HRES 改造改变卫星范围。
+云图默认模式仍采用原链路，超过 24° 返回 400；`source=satellite` 单独支持省域实况，不影响 HRES 图层。
 当前 COG 未就绪且无两小时内旧成果时返回 503 `MAP_PREPARING`；旧有效时刻须 `stale=true`，
 `observed_at` 必须显示成果真实有效时刻，不改写为请求时间。没有在线下载原始场的隐式兜底。

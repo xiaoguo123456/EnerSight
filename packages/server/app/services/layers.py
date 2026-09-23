@@ -7,12 +7,14 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from app.cache import AsyncTTLCache
+from app.errors import UpstreamUnavailable
 from app.geo import wgs84_to_gcj02
 from app.render import grid as g
 from app.render import tiles
 from app.render.colormap import SCALES
 from app.satellite import himawari
-from app.satellite.reproject import reproject
+from app.satellite.reproject import reproject, to_png
 from app.schemas.common import Coord, LayerType
 from app.schemas.layer import (
     Bounds,
@@ -27,6 +29,7 @@ from app.weather_model import current_model
 
 # 渲染上限：气象网格 0.25°，再放大没有信息量。docs/05 §6.5
 MAX_ZOOM = 8
+_satellite_images = AsyncTTLCache(maxsize=64, ttl_seconds=120)
 
 
 def _bounds(block: g.Block, coord: Coord) -> Bounds:
@@ -114,17 +117,80 @@ async def _ensure_satellite_tile(
     return f"{base_url}/tiles/{rel}", mosaic.observed_at.isoformat(timespec="minutes"), False
 
 
+async def _satellite_image(
+    http: httpx.AsyncClient,
+    bbox: tuple[float, float, float, float],
+    coord: Coord,
+    base_url: str,
+) -> LayerResponse:
+    """一屏一帧的真实卫星影像；不把上游故障伪装成云量预报。"""
+    w, s, e, n = bbox
+    box = (math.floor(w), math.floor(s), math.ceil(e), math.ceil(n))
+    key = "_".join(str(x) for x in box)
+
+    async def load() -> tuple[str, str, str]:
+        latest = await himawari.latest_time(http)
+        lat_c, lon_c = (box[1] + box[3]) / 2, (box[0] + box[2]) / 2
+        day = satellite.analysis_band(lat_c, lon_c, latest) == "visible"
+        band = "truecolor" if day else "infrared"
+        mosaic = await himawari.fetch_latest_mosaic(http, band, box)
+        time_key = f"{mosaic.observed_at:%Y%m%dT%H%M}_{band}"
+        path = tiles.tile_path("cloud-image", key, time_key)
+        if not path.exists():
+            loop = asyncio.get_running_loop()
+            rep = await loop.run_in_executor(None, reproject, mosaic, box, 1024)
+            if band == "infrared":
+                rep = await loop.run_in_executor(None, satellite.stretch_infrared, rep)
+            png = await loop.run_in_executor(None, to_png, rep.rgb)
+            tiles.write_tile(path, png)
+        rel = path.relative_to(tiles.tile_dir()).as_posix()
+        return f"{base_url}/tiles/{rel}", mosaic.observed_at.isoformat(timespec="minutes"), band
+
+    try:
+        url, observed_at, band = await _satellite_images.get_or_load(f"{base_url}:{key}", load)
+    except Exception as exc:
+        raise UpstreamUnavailable("卫星实况暂不可用，请稍后重试") from exc
+    # 图片范围可能不是 4°，直接对四角执行出口转换，不复用 Block 的 span。
+    def pt(lat: float, lon: float) -> LatLng:
+        if coord == Coord.GCJ02:
+            lon, lat = wgs84_to_gcj02(lon, lat)
+        return LatLng(latitude=lat, longitude=lon)
+
+    return LayerResponse(
+        layer=LayerType.CLOUD,
+        observed_at=observed_at,
+        unit=None,
+        legend=Legend(title="卫星影像", type="gradient", stops=None, labels=None, colors=[]),
+        frames=[
+            LayerFrame(
+                images=[
+                    LayerImage(
+                        url=url,
+                        bounds=Bounds(sw=pt(box[1], box[0]), ne=pt(box[3], box[2])),
+                    )
+                ]
+            )
+        ],
+        frame_interval_ms=None,
+        source="日本气象厅 / JMA Himawari-9",
+        coverage="真彩影像" if band == "truecolor" else "红外影像",
+    )
+
+
 async def build_layer(
     http: httpx.AsyncClient,
     layer: LayerType,
     bbox: tuple[float, float, float, float],
     coord: Coord,
     base_url: str,
+    cloud_source: str = "auto",
 ) -> LayerResponse:
     if layer in (LayerType.TEMPERATURE, LayerType.WIND, LayerType.RADIATION):
         from app.services.hres_layer import build
 
         return await build(http, layer, bbox, coord, base_url)
+    if layer == LayerType.CLOUD and cloud_source == "satellite":
+        return await _satellite_image(http, bbox, coord, base_url)
     w, s, e, n = bbox
     span = max(4, math.ceil(max(e - w, n - s) / 4) * 4)
     blocks = g.blocks_for_bbox(w, s, e, n, span)  # 一屏最多几块，防止恶意 bbox 拉爆

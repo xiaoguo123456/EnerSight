@@ -1,6 +1,6 @@
 """图层接口。docs/06 §7.2"""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
 
@@ -36,10 +36,14 @@ async def get_layer(
     bbox: Annotated[str, Query(description="west,south,east,north")],
     zoom: Annotated[int, Query(ge=1, le=20)] = 7,
     coord: CoordQuery = Coord.WGS84,
+    source: Literal["auto", "satellite"] = "auto",
 ) -> Envelope[LayerResponse]:
     box = _parse_bbox(bbox, coord, convert=layer == LayerType.CLOUD)
-    if layer == LayerType.CLOUD and (box[2] - box[0] > 24 or box[3] - box[1] > 24):
+    width, height = box[2] - box[0], box[3] - box[1]
+    if layer == LayerType.CLOUD and source == "auto" and (width > 24 or height > 24):
         raise ApiError("INVALID_PARAM", "云图视野过大，请放大地图", 400)
+    if layer == LayerType.CLOUD and source == "satellite" and (width > 90 or height > 70):
+        raise ApiError("INVALID_PARAM", "卫星视野过大，请缩小地区范围", 400)
     base = str(request.base_url).rstrip("/")
-    data = await svc.build_layer(request.app.state.http, layer, box, coord, base)
+    data = await svc.build_layer(request.app.state.http, layer, box, coord, base, source)
     return envelope(data, coord)

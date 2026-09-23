@@ -46,22 +46,30 @@ function Change({ label, percent }: { label: string; percent: number | null | un
 }
 
 /** 同目标日、同场站样本的签发变化；只读留档，游客可看。docs/20 */
-export function FleetSignals({ date, model, provinces, onProvince, refreshKey }: {
+export function FleetSignals({ date, model, provinces, fallbackProvince, onProvince, refreshKey }: {
   date: string
   model: Parameters<typeof servedModel>[0]
   provinces: string[]
+  fallbackProvince?: string
   onProvince: (province: string) => void
   refreshKey: string
 }) {
   const scope = provinces.join(',')
   const [open, setOpen] = useState(false)
   const setLayer = useMapStore(s => s.setActiveLayer)
+  const setCloudMode = useMapStore(s => s.setCloudMode)
+  const setProvinceFocus = useMapStore(s => s.setProvinceFocus)
   const req = useRequest(() => api.get<FleetSignalResponse>('/v1/predictions/fleet/signals', {
     date, weather_model: servedModel(model), ...(scope ? { provinces: scope } : {}),
   }), [date, model, scope, refreshKey])
 
   const data = req.status === 'success' ? req.data : null
-  const showCloud = () => { setLayer('cloud'); void Taro.switchTab({ url: '/pages/map/index' }) }
+  const showCloud = () => {
+    setLayer('cloud')
+    setCloudMode('satellite')
+    setProvinceFocus(provinces.length ? provinces : fallbackProvince ? [fallbackProvince] : [])
+    void Taro.switchTab({ url: '/pages/map/index' })
+  }
   const chart = data?.hours ?? []
   const unit = powerChartUnit(chart.flatMap(h => [h.current_kw, h.previous_kw]))
   const details = data?.evolution ?? []
