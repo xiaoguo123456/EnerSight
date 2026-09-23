@@ -6,15 +6,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 
-# 先只拷依赖清单，代码变了不用重装依赖
+# 依赖层只取清单，业务代码变化不重新生成虚拟环境
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
-
-COPY app ./app
-COPY scripts/prepare_map.py scripts/check_map_runtime.py ./scripts/
-COPY alembic ./alembic
-COPY alembic.ini ./
-RUN uv sync --frozen --no-dev
 
 
 FROM python:3.12-slim AS runtime
@@ -26,7 +20,11 @@ RUN apt-get update \
     && useradd --create-home --uid 10001 enersight
 
 WORKDIR /app
-COPY --from=builder --chown=enersight:enersight /app /app
+COPY --from=builder --chown=enersight:enersight /app/.venv /app/.venv
+COPY --chown=enersight:enersight app /app/app
+COPY --chown=enersight:enersight scripts/prepare_map.py scripts/check_map_runtime.py /app/scripts/
+COPY --chown=enersight:enersight alembic /app/alembic
+COPY --chown=enersight:enersight alembic.ini /app/alembic.ini
 COPY --chown=enersight:enersight docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh && mkdir -p /app/data && chown enersight:enersight /app/data
 
