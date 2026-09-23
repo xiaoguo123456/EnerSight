@@ -11,7 +11,7 @@ from app.schemas.geo import ProvinceBoundsResponse
 from app.schemas.layer import Bounds, LatLng
 
 DATA_FILE = Path(__file__).resolve().parents[1] / "geo" / "province_bounds.json"
-ALIASES = {"香港特别行政区": "香港", "澳门特别行政区": "澳门"}
+ALIASES = {"香港特别行政区": "香港", "澳门特别行政区": "澳门", "台湾": "台湾省"}
 
 
 @lru_cache(maxsize=1)
