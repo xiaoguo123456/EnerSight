@@ -22,6 +22,8 @@
 后端或部署配置推送到 main 后，`.github/workflows/test.yml` 自动检查、构建并部署测试；
 生产仍然手动指定提交。测试新增 Secrets 为 `TEST_SSH_HOST` 和 `TEST_SSH_KNOWN_HOSTS`，
 其余沿用本仓库已有部署凭据。测试环境不配置人工审批闸门。
+测试镜像先在 GitHub runner 上构建并加载，再单独推送 ACR；推送失败最多重试一次，
+仅使用仓库返回的 SHA256 摘要验证和部署镜像。镜像未验证前不更新测试容器。
 
 首次部署需先创建测试数据库和专属普通账号、填写服务器 `.env`（权限 600），
 并在花花狗 Nginx 的 server 块加入 `gateway/enersight-test.location.conf` 中的 location。
