@@ -1,0 +1,5 @@
+# 测试环境代码补丁：仅在发布工作流确认依赖和运行时未变、应用文件未删除后使用。
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+COPY --chown=enersight:enersight app /app/app
