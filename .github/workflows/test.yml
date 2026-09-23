@@ -91,22 +91,46 @@ jobs:
           registry: ${{ secrets.ACR_REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
-      - name: 构建并推送固定提交镜像
+      - name: 构建固定提交镜像并加载到运行器
         id: build
         uses: docker/build-push-action@v6
+        timeout-minutes: 15
         with:
           context: packages/server
           platforms: linux/amd64
-          push: true
+          load: true
+          push: false
           tags: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ needs.checks.outputs.tag }}
           cache-from: type=gha,scope=test
           cache-to: type=gha,mode=max,scope=test
+      - name: 推送镜像并取得仓库摘要
+        id: push
+        timeout-minutes: 35
+        env:
+          REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          TAG: ${{ needs.checks.outputs.tag }}
+        run: |
+          IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG"
+          LOG="$RUNNER_TEMP/enersight-push.log"
+          for attempt in 1 2; do
+            : > "$LOG"
+            if timeout 15m docker push "$IMAGE" 2>&1 | tee "$LOG"; then
+              DIGEST="$(sed -nE 's/.*digest: (sha256:[a-f0-9]{64}).*/\1/p' "$LOG" | tail -n 1)"
+              [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
+              echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if (( attempt < 2 )); then sleep 20; fi
+          done
+          echo '测试镜像推送两次均失败，测试容器未更新' >&2
+          exit 1
       - name: 验证实际测试镜像启动和地图运行库
         env:
           REGISTRY: ${{ secrets.ACR_REGISTRY }}
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
           TAG: ${{ needs.checks.outputs.tag }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG@$DIGEST"
           docker run --rm --memory 768m --cpus 1 --network none \
@@ -126,7 +150,7 @@ jobs:
           PULL_REGISTRY: ${{ secrets.ACR_PULL_REGISTRY }}
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
           TAG: ${{ needs.checks.outputs.tag }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           [[ "$TEST_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
           IMAGE="$PULL_REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG@$DIGEST"
