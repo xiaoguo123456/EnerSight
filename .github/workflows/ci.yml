@@ -37,10 +37,16 @@ jobs:
         with:
           context: packages/server
           platforms: linux/amd64
+          load: true
           push: false
           tags: enersight/api:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: 验证镜像内应用和地图运行库
+        run: >-
+          docker run --rm --memory 768m --cpus 1 --network none
+          --entrypoint /app/.venv/bin/python enersight/api:ci
+          -m scripts.check_map_runtime
 
   postgres:
     name: PostgreSQL 16 兼容性
