@@ -22,7 +22,12 @@ from app.schemas.home import (
     TrendRange,
     TrendSeries,
 )
-from app.schemas.prediction import FleetPrediction, ForecastEvolution, StationOutlook
+from app.schemas.prediction import (
+    FleetPrediction,
+    FleetSignalResponse,
+    ForecastEvolution,
+    StationOutlook,
+)
 from app.services import home as svc
 from app.services import satellite_irradiance, weather
 from app.services.station import get_station
@@ -215,6 +220,23 @@ async def fleet_prediction(
     return envelope(
         await fleet.ensure_scoped(request.app.state.http, current_model.get(), picked), coord
     )
+
+
+@router.get("/predictions/fleet/signals", response_model=Envelope[FleetSignalResponse])
+async def fleet_signals(
+    target: Annotated[date | None, Query(alias="date")] = None,
+    provinces: Annotated[str, Query(max_length=512)] = "",
+):
+    """全目录风光变化：只读已签发快照，不触发上游或预测任务。docs/20"""
+    import asyncio
+
+    from app.services import fleet_signals as signals
+    from app.weather_model import current_model
+
+    day = target or datetime.now(ZoneInfo("Asia/Shanghai")).date() + timedelta(days=1)
+    picked = [name.strip() for name in provinces.split(",") if name.strip()]
+    data = await asyncio.to_thread(signals.summary, current_model.get(), day, picked)
+    return envelope(data, Coord.WGS84)
 
 
 @router.get("/predictions/fleet/history")

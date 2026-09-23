@@ -1,5 +1,7 @@
 # 04 数据说明文档 · Data Specification
 
+> 全目录同目标日签发差异、覆盖哈希与区域变化信号的补充口径见 [20](./20-fleet-signals.md)。
+
 > EnerSight AI 新能源气象遥感分析平台 · 文档包 V1.0
 >
 > 本文档已对照 `packages/ui/` 下的 6 张设计稿更新。

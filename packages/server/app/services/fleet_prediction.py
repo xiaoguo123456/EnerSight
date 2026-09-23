@@ -1,6 +1,7 @@
 """公共目录区域预测快照。单实例后台队列，原子落盘，失败场站不记为零。"""
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -263,11 +264,13 @@ class RegionDetail:
             "common_capacity": 0.0,
             # 内蒙古按蒙西/蒙东分区折算，事后无法由省级合计反推，所以存折算结果不存利用率
             "grid": province_grid.FleetAccumulator([date.fromisoformat(x) for x in self.dates]),
+            "covered_ids": [set() for _ in self.dates],
         }
         return d
 
     def add(self, p, k: int, curve, energy_kwh: float) -> None:
         d = self._of(province_of(p))
+        d["covered_ids"][k].add(p.id)
         d["power"][k] += curve
         d["covered"][k] += 1
         d["capacity"][k] += p.capacity_kw
@@ -299,6 +302,9 @@ class RegionDetail:
                     round(float(d["common"][k]), 3) if d["common_count"] else None
                 ),
                 "province_grid": grid.model_dump() if grid else None,
+                "coverage_digest": hashlib.sha256(
+                    "\n".join(sorted(d["covered_ids"][k])).encode()
+                ).hexdigest(),
             }
         return out
 
@@ -723,7 +729,7 @@ async def build(http, model: str, day: str, plants) -> None:
     from app.services import fleet_history
 
     fleet_history.capture(out.model_dump(), calculation_version(day))
-    fleet_history.capture_leads(out.model_dump())
+    fleet_history.capture_leads(out.model_dump(), detail.dump(day), coverage_by_plant)
     await asyncio.to_thread(raw_cache.prune_before, date.fromisoformat(day) - timedelta(days=2))
     await asyncio.to_thread(
         prune_dated_cache,

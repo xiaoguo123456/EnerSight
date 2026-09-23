@@ -199,6 +199,7 @@ X-Resolution-Minutes: 15
 | 15 | GET | `/v1/geo/search` | 地点搜索 | §十一 |
 | 16 | GET | `/v1/geo/reverse` | 逆地理编码 | §十一 |
 | 17 | GET | `/v1/stations/catalog` | 公开电站目录 | §5.5 |
+| 18 | GET | `/v1/predictions/fleet/signals` | 全目录风光变化与签发演变，只读留档 | [20](./20-fleet-signals.md) |
 
 
 ---

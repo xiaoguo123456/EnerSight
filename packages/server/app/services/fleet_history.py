@@ -144,7 +144,7 @@ def backfill_regions() -> int:
 
 
 @locked
-def capture_leads(snapshot):
+def capture_leads(snapshot, detail=None, coverage_by_plant=None):
     """每次签发保留完整逐日曲线与来源，不覆盖早先签发结果。"""
     if snapshot.get("model") not in MODELS or snapshot.get("status") not in ("ready", "partial"):
         return
@@ -165,6 +165,26 @@ def capture_leads(snapshot):
             total_capacity_kw=snapshot.get("total_capacity_kw"),
             common_covered_count=snapshot.get("common_covered_count"),
         )
+        if coverage_by_plant is not None:
+            ids = sorted(
+                plant_id for plant_id, covered_dates in coverage_by_plant.items()
+                if d["date"] in covered_dates
+            )
+            row["coverage_digest"] = hashlib.sha256("\n".join(ids).encode()).hexdigest()
+        else:
+            row["coverage_digest"] = None
+        regions = (detail or {}).get("regions") or {}
+        row["region_series"] = {
+            name: {
+                "power_kw": values["days"][d["date"]]["power_kw"],
+                "solar_kwh": values["days"][d["date"]]["solar_kwh"],
+                "wind_kwh": values["days"][d["date"]]["wind_kwh"],
+                "covered_capacity_kw": values["days"][d["date"]]["covered_capacity_kw"],
+                "coverage_digest": values["days"][d["date"]].get("coverage_digest"),
+            }
+            for name, values in regions.items()
+            if d["date"] in values.get("days", {})
+        }
         if not path.exists():
             write(path, row)
 
