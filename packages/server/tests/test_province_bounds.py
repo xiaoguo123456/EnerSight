@@ -26,3 +26,9 @@ async def test_未知省份不猜测范围(client):
     response = await client.get("/v1/geo/province-bounds", params={"provinces": "地区待补充"})
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "INVALID_PARAM"
+
+
+async def test_目录台湾名称能定位到省域(client):
+    response = await client.get("/v1/geo/province-bounds", params={"provinces": "台湾"})
+    assert response.status_code == 200
+    assert response.json()["data"]["provinces"] == ["台湾省"]

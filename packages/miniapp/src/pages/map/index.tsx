@@ -38,13 +38,19 @@ export default function MapPage() {
   const model = useWeatherModel(s => s.model)
   const activeLayer = useMapStore((s) => s.activeLayer)
   const cloudMode = useMapStore((s) => s.cloudMode)
+  const setCloudMode = useMapStore((s) => s.setCloudMode)
   const provinceFocus = useMapStore((s) => s.provinceFocus)
+  const setProvinceFocus = useMapStore((s) => s.setProvinceFocus)
   const consumeProvinceFocus = useMapStore((s) => s.consumeProvinceFocus)
   const saveLayer = useMapStore((s) => s.setActiveLayer)
   const [layer, setLayer] = useState<MapLayer>(activeLayer)
   const [layerPanelOpen, setLayerPanelOpen] = useState(false)
   const [pageVisible, setPageVisible] = useState(true)
-  useDidHide(() => setPageVisible(false))
+  useDidHide(() => {
+    setPageVisible(false)
+    setCloudMode('auto')
+    setProvinceFocus([])
+  })
   const [collapsed, setCollapsed] = useState(() => {
     try { const saved = Taro.getStorageSync(PANEL_KEY); return typeof saved === 'boolean' ? saved : true } catch { return true }
   })
