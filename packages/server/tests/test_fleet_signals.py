@@ -137,6 +137,44 @@ def test_同一次起报重算不制造变化(monkeypatch, tmp_path):
     assert result.reason == "等待下一轮可比预测"
 
 
+def test_跨日沿用旧签发不展示旧变化和关注提醒(monkeypatch, tmp_path):
+    today = datetime.now(TZ).date()
+    target = (today + timedelta(days=1)).isoformat()
+    ids = {"江苏省": ["a"]}
+    _capture(monkeypatch, tmp_path, target, today - timedelta(days=2), 100, 100, ids)
+    _capture(monkeypatch, tmp_path, target, today - timedelta(days=1), 120, 90, ids)
+
+    result = fleet_signals.summary("best_match", date.fromisoformat(target), [])
+    assert result.reason == "沿用旧签发，等待今日更新"
+    assert result.generated_at is not None
+    assert result.combined is None
+    assert result.regions == []
+    assert result.evolution == []
+
+
+def test_多省筛选缺省份时保留原范围并不给部分合计(monkeypatch, tmp_path):
+    today = datetime.now(TZ).date()
+    target = (today + timedelta(days=1)).isoformat()
+    _capture(
+        monkeypatch,
+        tmp_path,
+        target,
+        today - timedelta(days=1),
+        100,
+        100,
+        {"江苏省": ["a"], "山东省": ["b"]},
+    )
+    _capture(monkeypatch, tmp_path, target, today, 120, 90, {"江苏省": ["a"]})
+
+    result = fleet_signals.summary(
+        "best_match", date.fromisoformat(target), ["江苏省", "山东省"]
+    )
+    assert result.provinces == ["江苏省", "山东省"]
+    assert result.reason == "所选地区暂无完整预测"
+    assert result.combined is None
+    assert result.regions == []
+
+
 def test_模型分歧按实际底层来源去重(monkeypatch, tmp_path):
     today = datetime.now(TZ).date()
     target = (today + timedelta(days=1)).isoformat()

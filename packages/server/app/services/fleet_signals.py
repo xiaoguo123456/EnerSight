@@ -276,11 +276,8 @@ def summary(model: str, target: date, provinces: list[str]) -> FleetSignalRespon
     rows = _distinct(_rows(model, target.isoformat()))
     current = rows[0] if rows else None
     picked = list(dict.fromkeys(provinces))
-    if current and picked:
-        known = set(current.get("region_series") or {}) - {UNKNOWN_REGION}
-        picked = [name for name in picked if name in known]
-        if not picked:
-            raise ApiError("INVALID_PARAM", "所选地区暂无预测", 400)
+    known = set(current.get("region_series") or {}) - {UNKNOWN_REGION} if current else set()
+    missing_scope = bool(current and picked and any(name not in known for name in picked))
     result = FleetSignalResponse(
         date=target.isoformat(),
         provinces=picked,
@@ -300,6 +297,12 @@ def summary(model: str, target: date, provinces: list[str]) -> FleetSignalRespon
         reason="该日暂无签发预测" if not current else "等待下一轮可比预测",
     )
     if not current:
+        return result
+    if _local_time(current["generated_at"]).date() < today:
+        result.reason = "沿用旧签发，等待今日更新"
+        return result
+    if missing_scope:
+        result.reason = "所选地区暂无完整预测"
         return result
     result.evolution = _evolution(rows, current, picked)
     result.model_range = _model_range(target.isoformat(), current, picked)
