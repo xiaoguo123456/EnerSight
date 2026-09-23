@@ -127,6 +127,7 @@ jobs:
           fi
       - name: 构建固定提交镜像并加载到运行器
         id: build
+        if: steps.image_plan.outputs.file == 'packages/server/Dockerfile'
         uses: docker/build-push-action@v6
         timeout-minutes: 15
         with:
@@ -139,8 +140,23 @@ jobs:
           tags: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ needs.checks.outputs.tag }}
           cache-from: type=gha,scope=test
           cache-to: type=gha,mode=max,scope=test
+      - name: 增量镜像直接推送仓库
+        id: overlay_push
+        if: steps.image_plan.outputs.file == 'deploy/Dockerfile.test-overlay'
+        uses: docker/build-push-action@v6
+        timeout-minutes: 20
+        with:
+          context: packages/server
+          file: deploy/Dockerfile.test-overlay
+          build-args: BASE_IMAGE=${{ steps.image_plan.outputs.base_image }}
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ needs.checks.outputs.tag }}
+          cache-from: type=gha,scope=test
       - name: 推送镜像并取得仓库摘要
         id: push
+        if: steps.image_plan.outputs.file == 'packages/server/Dockerfile'
         timeout-minutes: 35
         env:
           REGISTRY: ${{ secrets.ACR_REGISTRY }}
@@ -162,14 +178,25 @@ jobs:
           done
           echo '测试镜像推送两次均失败，测试容器未更新' >&2
           exit 1
+      - name: 校验发布镜像摘要
+        id: release_digest
+        env:
+          OVERLAY_DIGEST: ${{ steps.overlay_push.outputs.digest }}
+          FULL_DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          DIGEST="${OVERLAY_DIGEST:-$FULL_DIGEST}"
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: 验证实际测试镜像启动和地图运行库
         env:
           REGISTRY: ${{ secrets.ACR_REGISTRY }}
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
           TAG: ${{ needs.checks.outputs.tag }}
-          DIGEST: ${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.release_digest.outputs.digest }}
+          BUILD_FILE: ${{ steps.image_plan.outputs.file }}
         run: |
           IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG@$DIGEST"
+          if [[ "$BUILD_FILE" == 'deploy/Dockerfile.test-overlay' ]]; then docker pull "$IMAGE"; fi
           docker run --rm --memory 768m --cpus 1 --network none \
             --entrypoint /app/.venv/bin/python "$IMAGE" -m scripts.check_map_runtime
       - name: 准备已验证的 SSH 凭据
@@ -187,7 +214,7 @@ jobs:
           PULL_REGISTRY: ${{ secrets.ACR_PULL_REGISTRY }}
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
           TAG: ${{ needs.checks.outputs.tag }}
-          DIGEST: ${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.release_digest.outputs.digest }}
         run: |
           [[ "$TEST_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
           IMAGE="$PULL_REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG@$DIGEST"
