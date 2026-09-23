@@ -1,5 +1,42 @@
 interface Point { latitude: number; longitude: number }
 interface Region { southwest: Point; northeast: Point }
+
+/** 地图中心和整数缩放：按墨卡托投影把行政范围放进扣除浮层后的可见区域。 */
+export function fitMapBounds(
+  bounds: { sw: Point; ne: Point },
+  viewport: { width: number; height: number },
+  padding: [number, number, number, number],
+): Point & { scale: number } {
+  const [top, right, bottom, left] = padding
+  const availableWidth = viewport.width - left - right
+  const availableHeight = viewport.height - top - bottom
+  const { sw, ne } = bounds
+  if (!Number.isFinite(availableWidth) || !Number.isFinite(availableHeight)
+    || availableWidth <= 0 || availableHeight <= 0
+    || !Number.isFinite(sw.latitude) || !Number.isFinite(sw.longitude)
+    || !Number.isFinite(ne.latitude) || !Number.isFinite(ne.longitude)
+    || sw.latitude >= ne.latitude || sw.longitude >= ne.longitude) {
+    throw new Error('省域范围或地图尺寸无效')
+  }
+  const mercatorY = (lat: number) => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2
+  const west = (sw.longitude + 180) / 360
+  const east = (ne.longitude + 180) / 360
+  const north = mercatorY(ne.latitude)
+  const south = mercatorY(sw.latitude)
+  const scale = Math.max(3, Math.min(18, Math.floor(Math.min(
+    Math.log2(availableWidth / (256 * (east - west))),
+    Math.log2(availableHeight / (256 * (south - north))),
+  ))))
+  const worldPixels = 256 * 2 ** scale
+  const centerX = (west + east) / 2 - (left - right) / (2 * worldPixels)
+  const centerY = (north + south) / 2 - (top - bottom) / (2 * worldPixels)
+  return {
+    longitude: centerX * 360 - 180,
+    latitude: Math.atan(Math.sinh(Math.PI * (1 - 2 * centerY))) * 180 / Math.PI,
+    scale,
+  }
+}
+
 /** 北向、无倾斜地图的墨卡托视野坐标；超出视野部分由容器裁切。 */
 export function projectLayerImage(region: Region, bounds: { sw: Point; ne: Point }): Record<string, string> {
   const y = (lat: number) => Math.log(Math.tan(Math.PI / 4 + Math.max(-85, Math.min(85, lat)) * Math.PI / 360))

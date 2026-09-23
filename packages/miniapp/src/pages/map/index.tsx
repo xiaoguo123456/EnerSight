@@ -4,7 +4,7 @@ import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import { formatBeijingTime, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
 import { mapRegionPhase } from '@enersight/core/map'
-import type { CatalogPlant, GeoPlace } from '@enersight/core/types'
+import type { CatalogPlant, GeoPlace, ProvinceBoundsResponse } from '@enersight/core/types'
 import {
   EmptyState, Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, Skeleton, StatusBadge,
 } from '@/components'
@@ -46,10 +46,12 @@ export default function MapPage() {
   const [layer, setLayer] = useState<MapLayer>(activeLayer)
   const [layerPanelOpen, setLayerPanelOpen] = useState(false)
   const [pageVisible, setPageVisible] = useState(true)
+  const [satelliteScope, setSatelliteScope] = useState<ProvinceBoundsResponse['bounds'] | null>(null)
   useDidHide(() => {
     setPageVisible(false)
     setCloudMode('auto')
     setProvinceFocus([])
+    setSatelliteScope(null)
   })
   const [collapsed, setCollapsed] = useState(() => {
     try { const saved = Taro.getStorageSync(PANEL_KEY); return typeof saved === 'boolean' ? saved : true } catch { return true }
@@ -91,7 +93,10 @@ export default function MapPage() {
       try {
         const result = await geoApi.provinceBounds(focus.names)
         await new Promise(resolve => setTimeout(resolve, 150))
-        if (!cancelled) await viewport.fitBounds(result.bounds, [90, 24, sheetHeight + 24, 24])
+        if (!cancelled) {
+          await viewport.fitBounds(result.bounds, [90, 24, sheetHeight + 24, 24])
+          if (!cancelled) setSatelliteScope(result.bounds)
+        }
       } catch {
         if (!cancelled) void Taro.showToast({ title: '省域定位失败', icon: 'none' })
       } finally {
@@ -104,7 +109,7 @@ export default function MapPage() {
 
   // 「站点」图层只显示 marker，不贴图
   const dataLayer = layer === 'station' ? null : layer
-  const overlay = useMapLayer('main-map', dataLayer, pageVisible && req.status === 'success' && !provinceFocus, cloudMode)
+  const overlay = useMapLayer('main-map', dataLayer, pageVisible && req.status === 'success' && !provinceFocus, cloudMode, satelliteScope)
   // 公开电站 marker：任何图层下都显示，视野内最多 100 个
   useEffect(() => { const timer = setTimeout(() => void overlay.viewportChanged(), 250); return () => clearTimeout(timer) }, [center.latitude, center.longitude, scale, sheetHeight])
   const catalog = useCatalogMarkers('main-map', true, scale)
@@ -282,7 +287,7 @@ export default function MapPage() {
             title: '图层数据', showCancel: false,
             content: `${overlay.sourceLabel || '卫星云图'}\n${formatBeijingTime(overlay.observedAt)}（北京时间）\n${overlay.attribution}\n${overlay.coverage}${overlay.stale ? '\n当前显示缓存预报' : ''}`,
           })
-        }}><Text>{overlay.loading ? '图层加载中…' : overlay.error ? (dataLayer === 'cloud' && cloudMode === 'satellite' ? '卫星实况不可用 · 重试' : /正在后台准备/.test(overlay.errorMessage) ? '图层准备中 · 重试' : '图层暂不可用 · 重试') : overlay.observedAt ? `${overlay.modelName || overlay.sourceLabel || '云图'} · ${formatBeijingTime(overlay.observedAt).slice(-5)}${overlay.stale ? ' · 缓存' : ''} ⓘ` : '等待图层数据'}</Text></View>}
+        }}><Text>{overlay.loading ? '图层加载中…' : overlay.error ? (dataLayer === 'cloud' && cloudMode === 'satellite' ? /卫星视野过大/.test(overlay.errorMessage) ? '卫星视野过大 · 放大后重试' : '卫星实况不可用 · 重试' : /正在后台准备/.test(overlay.errorMessage) ? '图层准备中 · 重试' : '图层暂不可用 · 重试') : overlay.observedAt ? `${overlay.modelName || overlay.sourceLabel || '云图'} · ${formatBeijingTime(overlay.observedAt).slice(-5)}${overlay.stale ? ' · 缓存' : ''} ⓘ` : '等待图层数据'}</Text></View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>

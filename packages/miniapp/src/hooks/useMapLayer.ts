@@ -7,10 +7,11 @@ import { layersApi } from '@/api/layers'
 import { sameMapRegion, projectLayerImage } from '@enersight/core/map'
 
 type Region = { southwest: { latitude: number; longitude: number }; northeast: { latitude: number; longitude: number } }
+type Bounds = { sw: Region['southwest']; ne: Region['northeast'] }
 type Preview = { id: number; images: { url: string; style: Record<string, string> }[] }
 
 /** 原生端贴图；模拟器按地图视野投影预览图片，加载完成才显示图例。 */
-export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean, cloudMode: 'auto' | 'satellite' = 'auto') {
+export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean, cloudMode: 'auto' | 'satellite' = 'auto', satelliteScope: Bounds | null = null) {
   const model = useWeatherModel(s => s.model)
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
   const [coverage, setCoverage] = useState('')
@@ -111,13 +112,15 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     try {
       const region = await new Promise<Region>((resolve, reject) => ctx.getRegion({ success: resolve, fail: reject }))
       if (mine !== seq.current) return
-      if (layer === 'cloud' && cloudMode === 'auto' && (region.northeast.longitude - region.southwest.longitude > 23.5 || region.northeast.latitude - region.southwest.latitude > 23.5)) throw new Error('当前视野过大，请放大地图查看气象分布')
-      if (layer === 'cloud' && cloudMode === 'satellite' && (region.northeast.longitude - region.southwest.longitude > 89 || region.northeast.latitude - region.southwest.latitude > 69)) throw new Error('卫星视野过大，请缩小地区范围')
+      const requestRegion = layer === 'cloud' && cloudMode === 'satellite' && satelliteScope
+        ? { southwest: satelliteScope.sw, northeast: satelliteScope.ne } : region
+      if (layer === 'cloud' && cloudMode === 'auto' && (requestRegion.northeast.longitude - requestRegion.southwest.longitude > 23.5 || requestRegion.northeast.latitude - requestRegion.southwest.latitude > 23.5)) throw new Error('当前视野过大，请放大地图查看气象分布')
+      if (layer === 'cloud' && cloudMode === 'satellite' && (requestRegion.northeast.longitude - requestRegion.southwest.longitude > 89 || requestRegion.northeast.latitude - requestRegion.southwest.latitude > 69)) throw new Error('卫星视野过大，请缩小地区范围')
       requestedRegion.current = region
       regionRef.current = region
       const response = await layersApi.get(layer, {
-        west: region.southwest.longitude, south: region.southwest.latitude,
-        east: region.northeast.longitude, north: region.northeast.latitude,
+        west: requestRegion.southwest.longitude, south: requestRegion.southwest.latitude,
+        east: requestRegion.northeast.longitude, north: requestRegion.northeast.latitude,
       }, 8, cloudMode)
       if (mine !== seq.current) return
       const images = response.frames[0]?.images
@@ -156,7 +159,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     } catch (e) {
       fail(mine, String((e as any)?.errMsg ?? (e as Error)?.message ?? '图层加载失败'))
     }
-  }, [mapId, layer, active, isPreview, clear, discardStaged, fail, finish, model, cloudMode])
+  }, [mapId, layer, active, isPreview, clear, discardStaged, fail, finish, model, cloudMode, satelliteScope?.sw.latitude, satelliteScope?.sw.longitude, satelliteScope?.ne.latitude, satelliteScope?.ne.longitude])
 
   const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
   // 原生贴图更新也会发出 end；比较实际视野，既兼容无 causedBy 的模拟器事件，也避免循环请求。

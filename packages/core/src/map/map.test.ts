@@ -1,6 +1,37 @@
 import { describe, it, expect } from 'vitest'
-import { projectLayerImage, interpolateWind, mapRegionKey, mapRegionPhase, sameMapRegion } from './index'
+import { fitMapBounds, projectLayerImage, interpolateWind, mapRegionKey, mapRegionPhase, sameMapRegion } from './index'
 const region = { southwest: { latitude: 30, longitude: 110 }, northeast: { latitude: 34, longitude: 114 } }
+
+describe('省域地图视野', () => {
+  const viewport = { width: 375, height: 520 }
+  const padding: [number, number, number, number] = [90, 24, 92, 24]
+  const screen = (point: { latitude: number; longitude: number }, camera: ReturnType<typeof fitMapBounds>) => {
+    const y = (lat: number) => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2
+    const pixels = 256 * 2 ** camera.scale
+    return {
+      x: viewport.width / 2 + (point.longitude - camera.longitude) / 360 * pixels,
+      y: viewport.height / 2 + (y(point.latitude) - y(camera.latitude)) * pixels,
+    }
+  }
+  it.each([
+    ['内蒙古', { sw: { latitude: 37, longitude: 97 }, ne: { latitude: 53, longitude: 126 } }],
+    ['云南', { sw: { latitude: 21.5, longitude: 97.5 }, ne: { latitude: 29.3, longitude: 106.2 } }],
+    ['相邻两省', { sw: { latitude: 29, longitude: 114 }, ne: { latitude: 36, longitude: 123 } }],
+  ])('%s 的四边均留在可见区域内', (_name, bounds) => {
+    const camera = fitMapBounds(bounds, viewport, padding)
+    const sw = screen(bounds.sw, camera)
+    const ne = screen(bounds.ne, camera)
+    expect(sw.x).toBeGreaterThanOrEqual(padding[3])
+    expect(ne.x).toBeLessThanOrEqual(viewport.width - padding[1])
+    expect(ne.y).toBeGreaterThanOrEqual(padding[0])
+    expect(sw.y).toBeLessThanOrEqual(viewport.height - padding[2])
+  })
+  it('无效省界和画布不能产生无穷视野', () => {
+    expect(() => fitMapBounds({ sw: region.southwest, ne: region.southwest }, viewport, padding)).toThrow()
+    expect(() => fitMapBounds({ sw: region.southwest, ne: region.northeast }, { width: 10, height: 10 }, padding)).toThrow()
+  })
+})
+
 describe('图层预览投影', () => {
   it('同一范围准确覆盖视野', () => expect(projectLayerImage(region, { sw: region.southwest, ne: region.northeast })).toEqual({ left: '0%', top: '0%', width: '100%', height: '100%' }))
   it('东侧半幅保持准确宽度', () => expect(projectLayerImage(region, { sw: { latitude: 30, longitude: 112 }, ne: region.northeast }).left).toBe('50%'))
