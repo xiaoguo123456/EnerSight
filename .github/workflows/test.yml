@@ -111,6 +111,7 @@ jobs:
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
           TAG: ${{ needs.checks.outputs.tag }}
         run: |
+          set -o pipefail
           IMAGE="$REGISTRY/$NAMESPACE/$IMAGE_NAME:$TAG"
           LOG="$RUNNER_TEMP/enersight-push.log"
           for attempt in 1 2; do
