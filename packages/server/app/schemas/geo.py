@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.layer import Bounds
+
 # plant = 公开电站目录里的场站，可一键添加为自己的站点
 GeoPlaceType = Literal["city", "poi", "station", "coordinate", "plant"]
 
@@ -26,3 +28,8 @@ class GeoReverseResponse(BaseModel):
     province: str
     city: str
     district: str
+
+
+class ProvinceBoundsResponse(BaseModel):
+    provinces: list[str]
+    bounds: Bounds

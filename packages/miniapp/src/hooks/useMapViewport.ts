@@ -4,6 +4,7 @@ import { mapRegionPhase } from '@enersight/core/map'
 
 type Point = { latitude: number; longitude: number }
 type Camera = Point & { scale: number }
+type Bounds = { sw: Point; ne: Point }
 type Station = Point & { id: string }
 const INITIAL: Camera = { latitude: 31.3, longitude: 120.62, scale: 9 }
 const validPoint = (p: any): p is Point => Number.isFinite(p?.latitude) && Math.abs(p.latitude) <= 90
@@ -13,6 +14,7 @@ const validPoint = (p: any): p is Point => Number.isFinite(p?.latitude) && Math.
 export function useMapViewport(mapId: string, station?: Station, selectedId?: string | null) {
   const [camera, setCamera] = useState<Camera>(INITIAL)
   const revision = useRef(0)
+  const fitting = useRef(false)
   const centeredStation = useRef<string>()
   const save = useCallback((next: Camera) => {
     if (!validPoint(next) || !Number.isFinite(next.scale)) return
@@ -45,6 +47,7 @@ export function useMapViewport(mapId: string, station?: Station, selectedId?: st
   }, [mapId])
 
   const regionChanged = useCallback(async (event: any) => {
+    if (fitting.current) return
     const phase = mapRegionPhase(event)
     const detail = event?.detail ?? event
     const cause = detail?.causedBy ?? event?.causedBy
@@ -64,5 +67,25 @@ export function useMapViewport(mapId: string, station?: Station, selectedId?: st
       if (mine === revision.current) save({ ...current, scale: Math.min(18, Math.max(3, current.scale + delta)) })
     } catch { /* 读取失败时保持视野，避免只改 scale 导致中心回跳。 */ }
   }, [read, save])
-  return { camera, moveTo, regionChanged, zoom }
+  const fitBounds = useCallback(async (bounds: Bounds, padding: number[]) => {
+    const mine = ++revision.current
+    fitting.current = true
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const result = Taro.createMapContext(mapId).includePoints({
+          points: [bounds.sw, bounds.ne], padding,
+          success: () => resolve(), fail: reject,
+        })
+        result?.then?.(() => resolve(), reject)
+      })
+      if (mine !== revision.current) return
+      // 程序改变视野会触发 causedBy=update；主动读取并同步受控属性。
+      await new Promise(resolve => setTimeout(resolve, 100))
+      const actual = await read()
+      if (mine === revision.current) save(actual)
+    } finally {
+      fitting.current = false
+    }
+  }, [mapId, read, save])
+  return { camera, moveTo, fitBounds, regionChanged, zoom }
 }

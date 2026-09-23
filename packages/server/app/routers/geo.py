@@ -14,11 +14,20 @@ from app.errors import DataUnavailable
 from app.geo import gcj02_to_wgs84
 from app.schemas.common import Coord
 from app.schemas.envelope import CoordQuery, Envelope, envelope
-from app.schemas.geo import GeoReverseResponse, GeoSearchResponse
+from app.schemas.geo import GeoReverseResponse, GeoSearchResponse, ProvinceBoundsResponse
 from app.services import geo as svc
+from app.services.province_bounds import province_bounds as get_province_bounds
 
 router = APIRouter(prefix="/v1/geo", tags=["geo"])
 DbDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.get("/province-bounds", response_model=Envelope[ProvinceBoundsResponse])
+async def province_bounds(
+    provinces: Annotated[str, Query(min_length=1, max_length=512)],
+    coord: CoordQuery = Coord.WGS84,
+) -> Envelope[ProvinceBoundsResponse]:
+    return envelope(get_province_bounds(provinces, coord), coord)
 
 
 @router.get("/search", response_model=Envelope[GeoSearchResponse])

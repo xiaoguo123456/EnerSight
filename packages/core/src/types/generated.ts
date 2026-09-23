@@ -393,6 +393,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/geo/province-bounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Province Bounds */
+        get: operations["province_bounds_v1_geo_province_bounds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/geo/search": {
         parameters: {
             query?: never;
@@ -1057,6 +1074,11 @@ export interface components {
         /** Envelope[MeasuredSummary] */
         Envelope_MeasuredSummary_: {
             data: components["schemas"]["MeasuredSummary"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[ProvinceBoundsResponse] */
+        Envelope_ProvinceBoundsResponse_: {
+            data: components["schemas"]["ProvinceBoundsResponse"];
             meta: components["schemas"]["Meta"];
         };
         /** Envelope[PublicStationListResponse] */
@@ -1875,6 +1897,12 @@ export interface components {
             time: string;
             /** Value */
             value: number | null;
+        };
+        /** ProvinceBoundsResponse */
+        ProvinceBoundsResponse: {
+            /** Provinces */
+            provinces: string[];
+            bounds: components["schemas"]["Bounds"];
         };
         /**
          * ProvinceGrid
@@ -3246,6 +3274,39 @@ export interface operations {
             };
         };
     };
+    province_bounds_v1_geo_province_bounds_get: {
+        parameters: {
+            query: {
+                provinces: string;
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ProvinceBoundsResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_v1_geo_search_get: {
         parameters: {
             query: {
@@ -3323,6 +3384,7 @@ export interface operations {
                 zoom?: number;
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
+                source?: "auto" | "satellite";
             };
             header?: never;
             path: {

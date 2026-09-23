@@ -37,6 +37,9 @@ export default function MapPage() {
   useAppShare()
   const model = useWeatherModel(s => s.model)
   const activeLayer = useMapStore((s) => s.activeLayer)
+  const cloudMode = useMapStore((s) => s.cloudMode)
+  const provinceFocus = useMapStore((s) => s.provinceFocus)
+  const consumeProvinceFocus = useMapStore((s) => s.consumeProvinceFocus)
   const saveLayer = useMapStore((s) => s.setActiveLayer)
   const [layer, setLayer] = useState<MapLayer>(activeLayer)
   const [layerPanelOpen, setLayerPanelOpen] = useState(false)
@@ -74,9 +77,28 @@ export default function MapPage() {
   const center = viewport.camera
   const scale = center.scale
 
+  useEffect(() => {
+    if (!pageVisible || !provinceFocus || req.status === 'loading') return
+    let cancelled = false
+    const focus = provinceFocus
+    const run = async () => {
+      try {
+        const result = await geoApi.provinceBounds(focus.names)
+        await new Promise(resolve => setTimeout(resolve, 150))
+        if (!cancelled) await viewport.fitBounds(result.bounds, [90, 24, sheetHeight + 24, 24])
+      } catch {
+        if (!cancelled) void Taro.showToast({ title: '省域定位失败', icon: 'none' })
+      } finally {
+        if (!cancelled) consumeProvinceFocus(focus.id)
+      }
+    }
+    void run()
+    return () => { cancelled = true }
+  }, [pageVisible, provinceFocus?.id, req.status, sheetHeight, viewport.fitBounds, consumeProvinceFocus])
+
   // 「站点」图层只显示 marker，不贴图
   const dataLayer = layer === 'station' ? null : layer
-  const overlay = useMapLayer('main-map', dataLayer, pageVisible && req.status === 'success')
+  const overlay = useMapLayer('main-map', dataLayer, pageVisible && req.status === 'success' && !provinceFocus, cloudMode)
   // 公开电站 marker：任何图层下都显示，视野内最多 100 个
   useEffect(() => { const timer = setTimeout(() => void overlay.viewportChanged(), 250); return () => clearTimeout(timer) }, [center.latitude, center.longitude, scale, sheetHeight])
   const catalog = useCatalogMarkers('main-map', true, scale)
@@ -203,7 +225,7 @@ export default function MapPage() {
 
         {overlay.preview && <View className="map-page__preview">
           {overlay.preview.images.map((img, i) => <Image key={`${overlay.preview!.id}-${i}`}
-            className="map-page__preview-image" src={img.url} mode="scaleToFill" style={{ ...img.style, opacity: dataLayer === 'cloud' ? .65 : 1 }}
+            className="map-page__preview-image" src={img.url} mode="scaleToFill" style={{ ...img.style, opacity: dataLayer === 'cloud' ? cloudMode === 'satellite' ? .85 : .65 : 1 }}
             onLoad={() => overlay.imageLoaded(overlay.preview!.id, i)}
             onError={() => overlay.imageError(overlay.preview!.id, '图层图片加载失败，请重试')} />)}
         </View>}
@@ -254,7 +276,7 @@ export default function MapPage() {
             title: '图层数据', showCancel: false,
             content: `${overlay.sourceLabel || '卫星云图'}\n${formatBeijingTime(overlay.observedAt)}（北京时间）\n${overlay.attribution}\n${overlay.coverage}${overlay.stale ? '\n当前显示缓存预报' : ''}`,
           })
-        }}><Text>{overlay.loading ? '图层加载中…' : overlay.error ? (/正在后台准备/.test(overlay.errorMessage) ? '图层准备中 · 重试' : '图层暂不可用 · 重试') : overlay.observedAt ? `${overlay.modelName || '云图'} · ${formatBeijingTime(overlay.observedAt).slice(-5)}${overlay.stale ? ' · 缓存' : ''} ⓘ` : '等待图层数据'}</Text></View>}
+        }}><Text>{overlay.loading ? '图层加载中…' : overlay.error ? (dataLayer === 'cloud' && cloudMode === 'satellite' ? '卫星实况不可用 · 重试' : /正在后台准备/.test(overlay.errorMessage) ? '图层准备中 · 重试' : '图层暂不可用 · 重试') : overlay.observedAt ? `${overlay.modelName || overlay.sourceLabel || '云图'} · ${formatBeijingTime(overlay.observedAt).slice(-5)}${overlay.stale ? ' · 缓存' : ''} ⓘ` : '等待图层数据'}</Text></View>}
 
         {overlay.legend && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>

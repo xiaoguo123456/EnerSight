@@ -11,7 +11,7 @@ function compile(file, dependencies) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS },
   }).outputText
-  vm.runInNewContext(code, { exports, require: name => dependencies[name] })
+  vm.runInNewContext(code, { exports, require: name => dependencies[name], setTimeout: fn => fn() })
   return exports
 }
 const map = compile(path.resolve(root, '../core/src/map/index.ts'), {})
@@ -126,4 +126,21 @@ test('程序更新不产生定位循环，读取失败不改变视野', async ()
   await h.render().zoom(1)
   await h.render().regionChanged({ type: 'end', causedBy: 'drag' })
   assert.deepEqual(camera(h.render()), away)
+})
+
+test('省域适配后同步地图真实视野，刷新同站数据不会跳回场站', async () => {
+  const h = setup()
+  const bounds = { sw: { latitude: 35, longitude: 97 }, ne: { latitude: 53, longitude: 126 } }
+  let called
+  h.ctx.includePoints = ({ points, padding, success }) => {
+    called = { points, padding }
+    h.native({ latitude: 44, longitude: 111.5, scale: 4 })
+    success()
+  }
+  await h.render().fitBounds(bounds, [90, 24, 92, 24])
+  assert.deepEqual(JSON.parse(JSON.stringify(called)), {
+    points: [bounds.sw, bounds.ne], padding: [90, 24, 92, 24],
+  })
+  assert.deepEqual(camera(h.render()), { latitude: 44, longitude: 111.5, scale: 4 })
+  assert.deepEqual(camera(h.station({ ...stationA })), { latitude: 44, longitude: 111.5, scale: 4 })
 })
