@@ -16,6 +16,7 @@ import { StationTrend } from '@/components/StationTrend'
 import { exportCsv } from '@/utils/exportCsv'
 import { requireLogin } from '@/utils/requireLogin'
 import './index.scss'
+import { FleetSignals } from './FleetSignals'
 
 const RESOLVED_LABEL: Record<string, string> = { ecmwf_ifs: 'ECMWF IFS 9 km', ncep_gfs013: 'GFS 0.13°', ncep_gfs025: 'GFS 0.25°', dwd_icon: 'ICON 13 km' }
 const COMPACT_MODEL: Record<string, string> = { ecmwf_ifs: 'ECMWF', ncep_gfs013: 'GFS', ncep_gfs025: 'GFS', dwd_icon: 'ICON' }
@@ -259,7 +260,8 @@ export default function Home() {
   const [showAllRegions, setShowAllRegions] = useState(false)
   // 地区筛选只在本次浏览内有效：记住了下次进来会看到一个自己忘了开的筛选
   const [provinces, setProvinces] = useState<string[]>([])
-  const [fleetDay, setFleetDay] = useState(0)
+  // 风光变化默认看次日；今日仍可从七日条切回。docs/20
+  const [fleetDay, setFleetDay] = useState(1)
   // 本站七天预测的选中日；下方 24 小时气象趋势取同一天
   const [stationDay, setStationDay] = useState(0)
   // 气象趋势默认展开，收起只在本次浏览内有效
@@ -359,6 +361,7 @@ export default function Home() {
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
           {!!provinces.length && <RegionFilter names={provinces} onRemove={regionClick} onClear={() => applyProvinces([])} />}
+          {selectedFleet && <FleetSignals date={selectedFleet.date} model={model} provinces={provinces} availableRegions={regions.map(r => r.province).filter(name => name !== UNKNOWN_REGION)} onProvince={regionClick} refreshKey={f.generated_at} />}
           {scopeKey && scoped.status === 'error' ? <ErrorState error={scoped.error} onRetry={scoped.reload} />
             : !shownFleet ? <View className="home__card"><Skeleton height={220} lines={3} /></View>
             : <FleetForecast f={shownFleet} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={reloadFleet} refreshError={!!(scopeKey ? scoped.refreshError : fleet.refreshError)} provinceOn={provinceOn} onProvince={setProvinceOn} scopeLabel={scopeText(provinces)} onHistory={openHistory} />}

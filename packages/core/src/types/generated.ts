@@ -300,6 +300,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/predictions/fleet/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fleet Signals
+         * @description 全目录风光变化：只读已签发快照，不触发上游或预测任务。docs/20
+         */
+        get: operations["fleet_signals_v1_predictions_fleet_signals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/predictions/fleet/history": {
         parameters: {
             query?: never;
@@ -994,6 +1014,11 @@ export interface components {
             data: components["schemas"]["FleetPrediction"];
             meta: components["schemas"]["Meta"];
         };
+        /** Envelope[FleetSignalResponse] */
+        Envelope_FleetSignalResponse_: {
+            data: components["schemas"]["FleetSignalResponse"];
+            meta: components["schemas"]["Meta"];
+        };
         /** Envelope[ForecastEvolution] */
         Envelope_ForecastEvolution_: {
             data: components["schemas"]["ForecastEvolution"];
@@ -1283,6 +1308,111 @@ export interface components {
             periods: string[];
             /** Source */
             source: string;
+        };
+        /** FleetRegionSignal */
+        FleetRegionSignal: {
+            /** Province */
+            province: string;
+            solar: components["schemas"]["FleetSignalPair"] | null;
+            wind: components["schemas"]["FleetSignalPair"] | null;
+            combined: components["schemas"]["FleetSignalPair"] | null;
+        };
+        /** FleetSignalHour */
+        FleetSignalHour: {
+            /**
+             * Hour
+             * @description 北京时间整小时，ISO 8601
+             */
+            hour: string;
+            /** Current Kw */
+            current_kw: number;
+            /** Previous Kw */
+            previous_kw: number;
+            /**
+             * Change Capacity Percent
+             * @description 功率变化占相同样本装机容量的百分点
+             */
+            change_capacity_percent: number;
+        };
+        /** FleetSignalIssuance */
+        FleetSignalIssuance: {
+            /** Generated At */
+            generated_at: string;
+            /** Issued At */
+            issued_at: string | null;
+            /** Solar Kwh */
+            solar_kwh: number;
+            /** Wind Kwh */
+            wind_kwh: number;
+            /** Energy Kwh */
+            energy_kwh: number;
+        };
+        /** FleetSignalModel */
+        FleetSignalModel: {
+            /** Model */
+            model: string;
+            /** Energy Kwh */
+            energy_kwh: number;
+            /** Generated At */
+            generated_at: string;
+        };
+        /** FleetSignalPair */
+        FleetSignalPair: {
+            /** Current Kwh */
+            current_kwh: number;
+            /** Previous Kwh */
+            previous_kwh: number;
+            /**
+             * Change Percent
+             * @description 上轮为零时为 null
+             */
+            change_percent: number | null;
+        };
+        /** FleetSignalRange */
+        FleetSignalRange: {
+            /** Members */
+            members: components["schemas"]["FleetSignalModel"][];
+            /** Low Kwh */
+            low_kwh: number;
+            /** High Kwh */
+            high_kwh: number;
+            /** Spread Percent */
+            spread_percent: number | null;
+        };
+        /** FleetSignalResponse */
+        FleetSignalResponse: {
+            /** Date */
+            date: string;
+            /** Provinces */
+            provinces: string[];
+            /** Generated At */
+            generated_at: string | null;
+            /** Previous Generated At */
+            previous_generated_at: string | null;
+            basis: components["schemas"]["ForecastBasis"] | null;
+            solar: components["schemas"]["FleetSignalPair"] | null;
+            wind: components["schemas"]["FleetSignalPair"] | null;
+            combined: components["schemas"]["FleetSignalPair"] | null;
+            /** Hours */
+            hours: components["schemas"]["FleetSignalHour"][];
+            /** Top Windows */
+            top_windows: components["schemas"]["FleetSignalWindow"][];
+            /** Regions */
+            regions: components["schemas"]["FleetRegionSignal"][];
+            /** Evolution */
+            evolution: components["schemas"]["FleetSignalIssuance"][];
+            model_range: components["schemas"]["FleetSignalRange"] | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /** FleetSignalWindow */
+        FleetSignalWindow: {
+            /** Start Hour */
+            start_hour: string;
+            /** End Hour */
+            end_hour: string;
+            /** Change Capacity Percent */
+            change_capacity_percent: number;
         };
         /**
          * ForecastBasis
@@ -2928,6 +3058,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_FleetPrediction_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fleet_signals_v1_predictions_fleet_signals_get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+                provinces?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_FleetSignalResponse_"];
                 };
             };
             /** @description Validation Error */

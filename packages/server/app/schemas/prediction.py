@@ -211,3 +211,67 @@ class FleetPrediction(GenerationPrediction):
     # 未来 7 天，days[0] 与顶层今日字段一致。docs/17 §二
     days: list[FleetDay] = Field(default_factory=list)
     message: str | None = None
+
+
+class FleetSignalPair(BaseModel):
+    current_kwh: float
+    previous_kwh: float
+    change_percent: float | None = Field(description="上轮为零时为 null")
+
+
+class FleetSignalHour(BaseModel):
+    hour: str = Field(description="北京时间整小时，ISO 8601")
+    current_kw: float
+    previous_kw: float
+    change_capacity_percent: float = Field(description="功率变化占相同样本装机容量的百分点")
+
+
+class FleetSignalWindow(BaseModel):
+    start_hour: str
+    end_hour: str
+    change_capacity_percent: float
+
+
+class FleetRegionSignal(BaseModel):
+    province: str
+    solar: FleetSignalPair | None
+    wind: FleetSignalPair | None
+    combined: FleetSignalPair | None
+
+
+class FleetSignalIssuance(BaseModel):
+    generated_at: str
+    issued_at: str | None
+    solar_kwh: float
+    wind_kwh: float
+    energy_kwh: float
+
+
+class FleetSignalModel(BaseModel):
+    model: str
+    energy_kwh: float
+    generated_at: str
+
+
+class FleetSignalRange(BaseModel):
+    members: list[FleetSignalModel]
+    low_kwh: float
+    high_kwh: float
+    spread_percent: float | None
+
+
+class FleetSignalResponse(BaseModel):
+    date: str
+    provinces: list[str]
+    generated_at: str | None
+    previous_generated_at: str | None
+    basis: ForecastBasis | None
+    solar: FleetSignalPair | None
+    wind: FleetSignalPair | None
+    combined: FleetSignalPair | None
+    hours: list[FleetSignalHour]
+    top_windows: list[FleetSignalWindow]
+    regions: list[FleetRegionSignal]
+    evolution: list[FleetSignalIssuance]
+    model_range: FleetSignalRange | None
+    reason: str | None
