@@ -361,7 +361,7 @@ export default function Home() {
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
           {!!provinces.length && <RegionFilter names={provinces} onRemove={regionClick} onClear={() => applyProvinces([])} />}
-          {selectedFleet && <FleetSignals date={selectedFleet.date} model={model} provinces={provinces} availableRegions={regions.map(r => r.province).filter(name => name !== UNKNOWN_REGION)} onProvince={regionClick} refreshKey={f.generated_at} />}
+          {selectedFleet && <FleetSignals date={selectedFleet.date} model={model} provinces={provinces} onProvince={regionClick} refreshKey={f.generated_at} />}
           {scopeKey && scoped.status === 'error' ? <ErrorState error={scoped.error} onRetry={scoped.reload} />
             : !shownFleet ? <View className="home__card"><Skeleton height={220} lines={3} /></View>
             : <FleetForecast f={shownFleet} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={reloadFleet} refreshError={!!(scopeKey ? scoped.refreshError : fleet.refreshError)} provinceOn={provinceOn} onProvince={setProvinceOn} scopeLabel={scopeText(provinces)} onHistory={openHistory} />}

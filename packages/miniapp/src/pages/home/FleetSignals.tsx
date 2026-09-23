@@ -1,6 +1,6 @@
-import { Button, Picker, Text, View } from '@tarojs/components'
+import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { formatBeijingTime, formatEnergy, powerChartUnit } from '@enersight/core/format'
 import type { FleetSignalResponse } from '@enersight/core/types'
 import { api } from '@/api'
@@ -9,25 +9,10 @@ import { useRequest } from '@/hooks/useRequest'
 import { useMapStore } from '@/store'
 import { servedModel } from '@/store/weatherModel'
 
-const WATCH_KEY = 'enersight_signal_watch'
-const THRESHOLD_KEY = 'enersight_signal_threshold'
-const THRESHOLDS = [5, 10, 20]
 const MODELS: Record<string, string> = {
   best_match: '自动', ecmwf_ifs: 'ECMWF', icon_global: 'ICON', gfs_global: 'GFS',
 }
 
-function readWatch(): string[] {
-  try {
-    const value = Taro.getStorageSync(WATCH_KEY)
-    return Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string') : []
-  } catch { return [] }
-}
-function readThreshold(): number {
-  try {
-    const value = Number(Taro.getStorageSync(THRESHOLD_KEY))
-    return THRESHOLDS.includes(value) ? value : 10
-  } catch { return 10 }
-}
 function changeText(percent: number | null | undefined) {
   if (percent == null) return '—'
   if (Math.abs(percent) < 0.05) return '基本持平'
@@ -61,33 +46,21 @@ function Change({ label, percent }: { label: string; percent: number | null | un
 }
 
 /** 同目标日、同场站样本的签发变化；只读留档，游客可看。docs/20 */
-export function FleetSignals({ date, model, provinces, availableRegions, onProvince, refreshKey }: {
+export function FleetSignals({ date, model, provinces, onProvince, refreshKey }: {
   date: string
   model: Parameters<typeof servedModel>[0]
   provinces: string[]
-  availableRegions: string[]
   onProvince: (province: string) => void
   refreshKey: string
 }) {
   const scope = provinces.join(',')
   const [open, setOpen] = useState(false)
-  const [watch, setWatch] = useState<string[]>(readWatch)
-  const [threshold, setThreshold] = useState(readThreshold)
   const setLayer = useMapStore(s => s.setActiveLayer)
   const req = useRequest(() => api.get<FleetSignalResponse>('/v1/predictions/fleet/signals', {
     date, weather_model: servedModel(model), ...(scope ? { provinces: scope } : {}),
   }), [date, model, scope, refreshKey])
-  useEffect(() => { try { Taro.setStorageSync(WATCH_KEY, watch) } catch { /* 本机存储不可用时仍可浏览 */ } }, [watch])
-  useEffect(() => { try { Taro.setStorageSync(THRESHOLD_KEY, threshold) } catch { /* 同上 */ } }, [threshold])
 
   const data = req.status === 'success' ? req.data : null
-  const alerts = data?.regions.filter(r => watch.includes(r.province) && r.combined?.change_percent != null && Math.abs(r.combined.change_percent) >= threshold) ?? []
-  const firstAlert = alerts[0]
-  const toggleWatch = (name: string) => setWatch(previous => previous.includes(name) ? previous.filter(x => x !== name) : [...previous, name])
-  const addRegion = (index: number) => {
-    const region = availableRegions[index]
-    if (region && !watch.includes(region)) setWatch(previous => [...previous, region])
-  }
   const showCloud = () => { setLayer('cloud'); void Taro.switchTab({ url: '/pages/map/index' }) }
   const chart = data?.hours ?? []
   const unit = powerChartUnit(chart.flatMap(h => [h.current_kw, h.previous_kw]))
@@ -105,7 +78,6 @@ export function FleetSignals({ date, model, provinces, availableRegions, onProvi
       : <View className="fleet-signal__state" onClick={() => void req.reload()}>变化信号暂不可用 · 点击重试</View>)}
     {req.refreshError && data && <View className="fleet-signal__state" onClick={() => void req.reload()}>刷新失败 · 当前保留上次结果</View>}
     {data && <>
-      {firstAlert && <View className="fleet-signal__notice" onClick={() => onProvince(firstAlert.province)}><Icon name="bell" size={15} color="#98521a" /><Text>{alerts.map(r => r.province).join('、')}变化达到 {threshold}%</Text><Icon name="chevronRight" size={13} /></View>}
       <View className="fleet-signal__pair">
         <Change label="光伏" percent={data.solar?.change_percent} />
         <Change label="风电" percent={data.wind?.change_percent} />
@@ -126,7 +98,6 @@ export function FleetSignals({ date, model, provinces, availableRegions, onProvi
         {data.regions.slice(0, open ? 10 : 4).map(item => <View className="fleet-signal__region" key={item.province}>
           <View className="fleet-signal__region-name" onClick={() => onProvince(item.province)}><Text>{item.province}</Text><Icon name="chevronRight" size={13} color="#9ca3af" /></View>
           <Text className={`fleet-signal__delta fleet-signal__delta--${direction(item.combined?.change_percent)}`}>{changeText(item.combined?.change_percent)}</Text>
-          <View className={`fleet-signal__watch${watch.includes(item.province) ? ' fleet-signal__watch--on' : ''}`} role="button" aria-label={watch.includes(item.province) ? `取消关注${item.province}` : `关注${item.province}`} onClick={() => toggleWatch(item.province)}><Icon name="bell" size={16} color={watch.includes(item.province) ? '#1677ff' : '#64748b'} /></View>
         </View>)}
       </View>}
 
@@ -145,8 +116,6 @@ export function FleetSignals({ date, model, provinces, availableRegions, onProvi
           {data.model_range ? <><Text className="fleet-signal__model-range">{energyRange(data.model_range.low_kwh, data.model_range.high_kwh)} · {data.model_range.members.length} 个模型</Text><Text className="fleet-signal__model-list">{data.model_range.members.map(m => `${MODELS[m.model] ?? m.model} ${energyText(m.energy_kwh)}`).join(' · ')}</Text></> : <Text className="fleet-signal__state">暂无同日可比模型</Text>}
         </View>
         <View className="fleet-signal__tools">
-          {availableRegions.length > 0 && <Picker mode="selector" range={availableRegions} onChange={e => addRegion(Number(e.detail.value))}><View className="fleet-signal__tool"><Icon name="bell" size={15} /><Text>关注地区</Text></View></Picker>}
-          {watch.length > 0 && <Picker mode="selector" range={THRESHOLDS.map(value => `变化 ≥ ${value}%`)} value={THRESHOLDS.indexOf(threshold)} onChange={e => setThreshold(THRESHOLDS[Number(e.detail.value)] ?? 10)}><View className="fleet-signal__tool"><Text>提醒阈值 {threshold}%</Text><Icon name="chevronDown" size={13} /></View></Picker>}
           <View className="fleet-signal__tool" role="button" onClick={showCloud}><Icon name="satellite" size={15} /><Text>卫星云图</Text></View>
           <View className="fleet-signal__tool" role="button" onClick={() => void Taro.switchTab({ url: '/pages/alert/index' })}><Icon name="cloud" size={15} /><Text>站点短临</Text></View>
         </View>
