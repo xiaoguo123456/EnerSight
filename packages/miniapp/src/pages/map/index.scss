@@ -160,6 +160,10 @@
 
 .map-page__collapse { display: flex; justify-content: center; align-items: center; gap: 6px; min-height: 28px; font-size: 11px; color: var(--color-text-sub); }
 .map-page__data-state { position: absolute; left: 12px; top: 60px; max-width: 220px; background: #fff; border-radius: 6px; padding: 6px 8px; font-size: 11px; color: #475569; }
+.map-page__cloud-player { position: absolute; left: 12px; right: 60px; height: 44px; display: flex; align-items: center; gap: 2px; padding: 0 6px; border-radius: var(--radius-thumb); background: #fff; box-shadow: var(--shadow-float); }
+.map-page__cloud-play { width: 44px; height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--color-primary); }
+.map-page__cloud-slider { flex: 1; min-width: 0; margin: 0; }
+.map-page__cloud-time { min-width: 35px; padding-right: 4px; font-size: 11px; color: var(--color-text-sub); text-align: right; }
 
 .map-page__sheet-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-page__sheet-spacer { display: none; }
@@ -175,7 +179,7 @@
 .map-page__preview-image { position: absolute; max-width: none; pointer-events: none; }
 // 原生 Canvas 同层渲染时显式排列，粒子不能穿过搜索框、图例和详情。
 .map-page__search, .map-page__coverage, .map-page__data-state,
-.map-page__legend, .map-page__tools, .map-page__sheet,
+.map-page__legend, .map-page__cloud-player, .map-page__tools, .map-page__sheet,
 .map-page__picked, .map-page .layer-ctrl { z-index: 2; }
 
 // 数值标签对应预报采样点，与色阶共同阅读。

@@ -444,6 +444,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/map/layers/cloud/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cloud History */
+        get: operations["cloud_history_v1_map_layers_cloud_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/map/layers/{layer}": {
         parameters: {
             query?: never;
@@ -1064,6 +1081,11 @@ export interface components {
         /** Envelope[LoginResponse] */
         Envelope_LoginResponse_: {
             data: components["schemas"]["LoginResponse"];
+            meta: components["schemas"]["Meta"];
+        };
+        /** Envelope[MapCloudHistoryResponse] */
+        Envelope_MapCloudHistoryResponse_: {
+            data: components["schemas"]["MapCloudHistoryResponse"];
             meta: components["schemas"]["Meta"];
         };
         /** Envelope[MapOverviewResponse] */
@@ -1763,6 +1785,14 @@ export interface components {
             token: string;
             /** Expires In */
             expires_in: number;
+        };
+        /** MapCloudHistoryResponse */
+        MapCloudHistoryResponse: {
+            /**
+             * Times
+             * @description 近三小时可用省域卫星帧，升序，最多 10 帧
+             */
+            times: string[];
         };
         /**
          * MapOverviewResponse
@@ -3376,6 +3406,38 @@ export interface operations {
             };
         };
     };
+    cloud_history_v1_map_layers_cloud_history_get: {
+        parameters: {
+            query?: {
+                /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
+                coord?: components["schemas"]["Coord"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MapCloudHistoryResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_layer_v1_map_layers__layer__get: {
         parameters: {
             query: {
@@ -3385,6 +3447,7 @@ export interface operations {
                 /** @description 响应中经纬度的坐标系。小程序传 gcj02 */
                 coord?: components["schemas"]["Coord"];
                 source?: "auto" | "satellite";
+                at?: string | null;
             };
             header?: never;
             path: {
