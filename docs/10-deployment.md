@@ -364,7 +364,7 @@ Buffalo 内存限额已从 3g 提到 3900m（机器共 3,915 MB、另有 2 GB sw
 
 1. codegen 一致性、TypeScript 和 Ruff 检查、单元测试。
 2. PostgreSQL 16 临时测试库上执行全量迁移、`alembic check`，验证逐日发电重复写入、实测保护和报告 JSON 更新，测试事务回滚。
-3. 构建 `linux/amd64` 镜像并推送 ACR，标签为提交前 12 位；部署时附带构建输出的 SHA256 摘要。
+3. 构建 `linux/amd64` 镜像并加载到运行器，再向 ACR 推送；单次上传限时 15 分钟，失败最多重试一次。标签为提交前 12 位，部署使用 ACR 返回的 SHA256 摘要；上传或摘要校验失败时不更新生产容器。
 4. 上传自身 Compose 与脚本，通过 SSH 拉镜像和更新 API。
 5. 等待 Docker 健康状态以及 `/ready` 数据库就绪检查，成功后将镜像写入 `.release.env`，上一版本写入 `.previous-release.env`。
 
