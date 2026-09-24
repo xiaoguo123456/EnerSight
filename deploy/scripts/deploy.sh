@@ -16,6 +16,12 @@ case "$ENERSIGHT_DEPLOY_ENV" in
   *) echo "未知部署环境"; exit 1 ;;
 esac
 bash scripts/preflight.sh
+# 清理上次发布留下的旧镜像，防止磁盘满时连新镜像都拉不下来。
+repository=${IMAGE%@sha256:*}
+repository=${repository%:*}
+if ! bash scripts/cleanup-images.sh "$repository"; then
+  echo '旧镜像清理失败，继续发布；请检查磁盘空间。' >&2
+fi
 # 拉取成功后再保存版本和替换服务。
 docker compose pull api
 PREVIOUS=''
@@ -39,6 +45,9 @@ if docker compose up -d --no-deps api && wait_ready; then
   printf 'ENERSIGHT_IMAGE=%s\n' "$IMAGE" > .release.env
   chmod 600 .release.env
   echo "发布成功：$IMAGE"
+  if ! bash scripts/cleanup-images.sh "$repository"; then
+    echo '发布成功，但旧镜像清理失败；请检查磁盘空间。' >&2
+  fi
 else
   echo '发布未通过就绪检查。数据库迁移不会自动回退。' >&2
   if [[ -n "$PREVIOUS" ]]; then
