@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 仅清理本服务已失去标签的旧镜像；当前与上一健康版本保留在本机供回滚。
+# 仅清理本服务的旧镜像；当前与上一健康版本保留在本机供回滚。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,16 +18,30 @@ for file in .release.env .previous-release.env; do
   protected+=("$id")
 done
 
-images=$(docker image ls "$repository" --filter dangling=true --no-trunc --format '{{.ID}}')
 removed=0
+is_protected() {
+  local id=$1 saved
+  for saved in "${protected[@]}"; do
+    [[ "$id" != "$saved" ]] || return 0
+  done
+  return 1
+}
+
+# 先去掉旧版本的提交标签，再删没有标签的镜像；两个列表都限定在本仓库。
+tagged=$(docker image ls "$repository" --no-trunc --format '{{.Tag}} {{.ID}}')
+while read -r tag id; do
+  [[ -n "$id" ]] || continue
+  [[ "$tag" != '<none>' ]] || continue
+  if is_protected "$id"; then continue; fi
+  docker image rm "$repository:$tag" >/dev/null
+  ((removed += 1))
+done <<< "$tagged"
+
+dangling=$(docker image ls "$repository" --filter dangling=true --no-trunc --format '{{.ID}}')
 while IFS= read -r id; do
   [[ -n "$id" ]] || continue
-  keep=false
-  for saved in "${protected[@]}"; do
-    if [[ "$id" == "$saved" ]]; then keep=true; break; fi
-  done
-  if [[ "$keep" == true ]]; then continue; fi
+  if is_protected "$id"; then continue; fi
   docker image rm "$id" >/dev/null
   ((removed += 1))
-done <<< "$images"
+done <<< "$dangling"
 echo "已清理 EnerSight 旧镜像：$removed 个"

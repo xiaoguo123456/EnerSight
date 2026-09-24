@@ -368,7 +368,7 @@ Buffalo 内存限额已从 3g 提到 3900m（机器共 3,915 MB、另有 2 GB sw
 4. 上传自身 Compose 与脚本，通过 SSH 拉镜像和更新 API。
 5. 等待 Docker 健康状态以及 `/ready` 数据库就绪检查，成功后将镜像写入 `.release.env`，上一版本写入 `.previous-release.env`。
 
-发布使用 GitHub concurrency 和服务器 `flock` 双重串行。没有 `latest` 标签，也不执行全局 `docker prune`、其他项目 `compose down` 或全局容器重启。发布前及成功后只清理 EnerSight 仓库中已失去标签的旧镜像；当前和上一健康版本按镜像摘要保留在本机。清理失败会报警但不将已成功的发布判为失败。
+发布使用 GitHub concurrency 和服务器 `flock` 双重串行。没有 `latest` 标签，也不执行全局 `docker prune`、其他项目 `compose down` 或全局容器重启。发布前及成功后只清理 EnerSight 仓库中不再用于当前或上一健康版本的旧镜像，包含带历史提交标签及无标签的镜像；保留版本按镜像摘要识别。清理失败会报警但不将已成功的发布判为失败。
 
 日常手工查看：
 

@@ -25,7 +25,12 @@ case "$1 $2" in
   'image ls')
     [[ "$3" == "$MOCK_REPOSITORY" ]] || exit 1
     [[ "${MOCK_FAIL_LIST:-}" != 1 ]] || exit 1
-    printf '%s\n' sha256:current sha256:previous sha256:old ;;
+    if [[ " $* " == *' --filter dangling=true '* ]]; then
+      printf '%s\n' sha256:previous sha256:old-dangling
+    else
+      printf '%s\n' 'current sha256:current' 'previous sha256:previous' \
+        'oldtag sha256:old-tagged' '<none> sha256:old-dangling'
+    fi ;;
   'image rm')
     [[ "${MOCK_FAIL_RM:-}" != 1 ]] || exit 1
     printf '%s\n' "$3" >> "$MOCK_REMOVED" ;;
@@ -35,8 +40,8 @@ SH
 chmod +x "$tmp/bin/docker"
 export PATH="$tmp/bin:$PATH" MOCK_REPOSITORY="$repository" MOCK_REMOVED="$tmp/removed"
 bash "$tmp/deploy/scripts/cleanup-images.sh" "$repository" > "$tmp/output"
-[[ "$(cat "$tmp/removed")" == sha256:old ]]
-[[ "$(cat "$tmp/output")" == '已清理 EnerSight 旧镜像：1 个' ]]
+[[ "$(cat "$tmp/removed")" == "$repository:oldtag"$'\n''sha256:old-dangling' ]]
+[[ "$(cat "$tmp/output")" == '已清理 EnerSight 旧镜像：2 个' ]]
 
 : > "$tmp/removed"
 if MOCK_MISSING_PREVIOUS=1 bash "$tmp/deploy/scripts/cleanup-images.sh" "$repository" > /dev/null 2>&1; then
