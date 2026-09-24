@@ -60,3 +60,7 @@ class LayerResponse(BaseModel):
     wind_vectors: list[WindVector] | None = None
     stale: bool = False
     samples: list[ScalarSample] = Field(default_factory=list, description="预报采样点，非站点实测")
+
+
+class MapCloudHistoryResponse(BaseModel):
+    times: list[str] = Field(description="近三小时可用省域卫星帧，升序，最多 10 帧")

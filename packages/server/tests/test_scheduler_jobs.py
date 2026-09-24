@@ -44,6 +44,7 @@ def test_地图调度可独立开启且默认兼容总开关(monkeypatch, genera
         assert jobs == {"map_prepare"}
     else:
         assert "accumulate_generation" in jobs and "scan_alerts" in jobs
+        assert "prune_cloud_images" in jobs
         assert ("map_prepare" in jobs) == (expected == "all")
 
 

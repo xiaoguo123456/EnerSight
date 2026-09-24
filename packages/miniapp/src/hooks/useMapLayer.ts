@@ -11,7 +11,7 @@ type Bounds = { sw: Region['southwest']; ne: Region['northeast'] }
 type Preview = { id: number; images: { url: string; style: Record<string, string> }[] }
 
 /** 原生端贴图；模拟器按地图视野投影预览图片，加载完成才显示图例。 */
-export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean, cloudMode: 'auto' | 'satellite' = 'auto', satelliteScope: Bounds | null = null) {
+export function useMapLayer(mapId: string, layer: LayerType | null, active: boolean, cloudMode: 'auto' | 'satellite' = 'auto', satelliteScope: Bounds | null = null, frameAt: string | null = null) {
   const model = useWeatherModel(s => s.model)
   const [legend, setLegend] = useState<LayerResponse['legend'] | null>(null)
   const [coverage, setCoverage] = useState('')
@@ -37,6 +37,9 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
   const seq = useRef(0)
   const pending = useRef<{ id: number; remaining: Set<number>; response: LayerResponse } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>()
+  const frameAtRef = useRef(frameAt)
+  frameAtRef.current = frameAt
+  const previousFrameAt = useRef(frameAt)
 
   const discardStaged = useCallback(() => {
     const ctx = Taro.createMapContext(mapId)
@@ -63,10 +66,9 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     ++seq.current
     if (timer.current) clearTimeout(timer.current)
     discardStaged()
-    if (isPreview) clear()
     setLoading(false); setError(true); setErrorMessage(message)
     clientLog('map.overlay', message)
-  }, [clear, discardStaged, isPreview])
+  }, [discardStaged])
   const finish = useCallback((id: number, response: LayerResponse) => {
     if (id !== seq.current) return
     if (timer.current) clearTimeout(timer.current)
@@ -103,7 +105,7 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     const mine = ++seq.current
     if (timer.current) clearTimeout(timer.current)
     discardStaged()
-    if (isPreview || !layer || !active) clear()
+    if (!layer || !active) clear()
     setError(false); setErrorMessage('')
     if (!layer || !active) { setLoading(false); return }
     setLoading(true)
@@ -121,12 +123,16 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
       const response = await layersApi.get(layer, {
         west: requestRegion.southwest.longitude, south: requestRegion.southwest.latitude,
         east: requestRegion.northeast.longitude, north: requestRegion.northeast.latitude,
-      }, 8, cloudMode)
+      }, 8, cloudMode, frameAtRef.current)
       if (mine !== seq.current) return
       const images = response.frames[0]?.images
       if (!images?.length) throw new Error('当前视野暂无图层数据')
       if (isPreview) {
-        const projected = images.map((img) => ({ url: img.url, style: projectLayerImage(region, img.bounds) }))
+        const projected = await Promise.all(images.map(async (img) => ({
+          url: (await Taro.getImageInfo({ src: img.url })).path,
+          style: projectLayerImage(region, img.bounds),
+        })))
+        if (mine !== seq.current) return
         pending.current = { id: mine, remaining: new Set(images.map((_, i) => i)), response }
         setPreview({ id: mine, images: projected })
       } else {
@@ -161,7 +167,15 @@ export function useMapLayer(mapId: string, layer: LayerType | null, active: bool
     }
   }, [mapId, layer, active, isPreview, clear, discardStaged, fail, finish, model, cloudMode, satelliteScope?.sw.latitude, satelliteScope?.sw.longitude, satelliteScope?.ne.latitude, satelliteScope?.ne.longitude])
 
-  const refresh = useCallback(() => { if (debounce.current) clearTimeout(debounce.current); debounce.current = setTimeout(() => void load(), 600) }, [load])
+  const refresh = useCallback(() => {
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => void load(), cloudMode === 'satellite' ? 80 : 600)
+  }, [load, cloudMode])
+  useEffect(() => {
+    if (previousFrameAt.current === frameAt) return
+    previousFrameAt.current = frameAt
+    if (active && layer === 'cloud' && cloudMode === 'satellite') void load()
+  }, [frameAt, active, layer, cloudMode, load])
   // 原生贴图更新也会发出 end；比较实际视野，既兼容无 causedBy 的模拟器事件，也避免循环请求。
   const viewportChanged = useCallback(async () => {
     if (!active || !layer) return

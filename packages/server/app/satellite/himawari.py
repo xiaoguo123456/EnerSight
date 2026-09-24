@@ -119,22 +119,23 @@ async def previous_time(http: httpx.AsyncClient, when: datetime) -> datetime | N
 # ── 瓦片 ──
 
 
-def tile_url(when: datetime, band: str, x: int, y: int) -> str:
-    zoom = settings.himawari_zoom
+def tile_url(when: datetime, band: str, x: int, y: int, zoom: int | None = None) -> str:
+    zoom = zoom if zoom is not None else settings.himawari_zoom
     ts = when.strftime("%Y%m%d%H%M%S")
     return f"{settings.himawari_base}/{ts}/fd/{ts}/{BANDS[band]}/{zoom}/{x}/{y}.jpg"
 
 
 async def fetch_tile_bytes(
-    http: httpx.AsyncClient, when: datetime, band: str, x: int, y: int, sem: asyncio.Semaphore
+    http: httpx.AsyncClient, when: datetime, band: str, x: int, y: int,
+    sem: asyncio.Semaphore, zoom: int | None = None,
 ) -> bytes:
     """原始 JPEG 字节，按 (时刻, 波段, 瓦片) 缓存；归档直接落盘这份字节。"""
-    zoom = settings.himawari_zoom
+    zoom = zoom if zoom is not None else settings.himawari_zoom
     key = f"{when.strftime('%Y%m%d%H%M%S')}:{band}:{zoom}:{x}:{y}"
 
     async def _load() -> bytes:
         async with sem:
-            res = await _get(http, tile_url(when, band, x, y), 20)
+            res = await _get(http, tile_url(when, band, x, y, zoom), 20)
         if res.status_code != 200:
             # 该时刻在列表里但瓦片还没出来（或圆盘外）：当未就绪，调用方退回上一帧
             raise UpstreamUnavailable("卫星最新帧尚未就绪")
@@ -148,14 +149,19 @@ def decode_tile(data: bytes) -> np.ndarray:
 
 
 async def _fetch_tile(
-    http: httpx.AsyncClient, when: datetime, band: str, x: int, y: int, sem: asyncio.Semaphore
+    http: httpx.AsyncClient, when: datetime, band: str, x: int, y: int,
+    sem: asyncio.Semaphore, zoom: int | None = None,
 ) -> np.ndarray:
-    return decode_tile(await fetch_tile_bytes(http, when, band, x, y, sem))
+    if zoom is None:
+        return decode_tile(await fetch_tile_bytes(http, when, band, x, y, sem))
+    return decode_tile(await fetch_tile_bytes(http, when, band, x, y, sem, zoom))
 
 
-def tiles_for_bbox(bbox: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+def tiles_for_bbox(
+    bbox: tuple[float, float, float, float], zoom: int | None = None
+) -> tuple[int, int, int, int]:
     """覆盖 bbox 的瓦片范围 (x0, y0, x1, y1)，含端点。"""
-    zoom = settings.himawari_zoom
+    zoom = zoom if zoom is not None else settings.himawari_zoom
     w, s, e, n = bbox
     x0, y0 = (int(v) for v in lonlat_to_tile(w, n, zoom))
     x1, y1 = (int(v) for v in lonlat_to_tile(e, s, zoom))
@@ -168,13 +174,15 @@ async def fetch_mosaic(
     when: datetime,
     band: str,
     bbox: tuple[float, float, float, float],
+    zoom: int | None = None,
 ) -> Mosaic:
     """拼出覆盖 bbox（WGS84 w,s,e,n）的瓦片马赛克。"""
-    zoom = settings.himawari_zoom
-    x0, y0, x1, y1 = tiles_for_bbox(bbox)
+    requested_zoom = zoom
+    zoom = zoom if zoom is not None else settings.himawari_zoom
+    x0, y0, x1, y1 = tiles_for_bbox(bbox, zoom)
     sem = asyncio.Semaphore(CONCURRENCY)
     tasks = [
-        _fetch_tile(http, when, band, x, y, sem)
+        _fetch_tile(http, when, band, x, y, sem, requested_zoom)
         for y in range(y0, y1 + 1)
         for x in range(x0, x1 + 1)
     ]
@@ -187,17 +195,18 @@ async def fetch_mosaic(
 
 
 async def fetch_latest_mosaic(
-    http: httpx.AsyncClient, band: str, bbox: tuple[float, float, float, float]
+    http: httpx.AsyncClient, band: str, bbox: tuple[float, float, float, float],
+    zoom: int | None = None,
 ) -> Mosaic:
     """最新一帧；最新帧瓦片未就绪则退回上一帧。"""
     latest = await latest_time(http)
     try:
-        return await fetch_mosaic(http, latest, band, bbox)
+        return await fetch_mosaic(http, latest, band, bbox, zoom)
     except UpstreamUnavailable:
         prev = await previous_time(http, latest)
         if prev is None:
             raise
-        return await fetch_mosaic(http, prev, band, bbox)
+        return await fetch_mosaic(http, prev, band, bbox, zoom)
 
 
 def clear_cache() -> None:

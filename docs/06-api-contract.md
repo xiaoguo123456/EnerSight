@@ -754,7 +754,8 @@ interface Legend {
   要么全是预报云量（图例标题「云量预报」）。只要有一块拿不到卫星就整层退回预报 ——
   卫星是亮度拉伸的相对强度、预报是云量百分比，两种量混在同一个响应里，
   一个图例解释不了，`observed_at` 也会一半是观测时刻一半是预报时刻
-- `cloud?source=satellite` 为地图卫星实况模式：按视野生成一张 JMA Himawari 真彩（白天）或红外（夜间）影像，所有像素来自同一观测帧；不回退云量预报。返回 `source=日本气象厅 / JMA Himawari-9` 与实际 `observed_at`。支持省域视野，最大 90°×70°；超限返回 400，卫星不可用返回 502。
+- `cloud?source=satellite` 为地图卫星实况模式：按视野生成一张 JMA Himawari 真彩（白天）或红外（夜间）影像，所有像素来自同一观测帧；不回退云量预报。返回 `source=日本气象厅 / JMA Himawari-9` 与实际 `observed_at`。支持省域视野，最大 90°×70°；超限返回 400，卫星不可用返回 502。可带 `at=ISO8601` 请求近三小时内的可用历史帧；仅 `cloud&source=satellite` 接受 `at`，无效时刻返回 400。省域影像取 zoom 4 瓦片，输出 768px JPEG。
+- `GET /v1/map/layers/cloud/history` 返回 `{times: string[]}`，升序列出近三小时内最多 10 个真实可用观测时刻，包含最新时刻；此接口不生成图片，供客户端按需播放。
 
 
 ### 7.3 卫星云图（预警页）

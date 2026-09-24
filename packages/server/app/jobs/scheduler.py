@@ -455,6 +455,13 @@ def start(app: FastAPI) -> AsyncIOScheduler | None:
         if removed:
             log.info("prune_prediction: %d day folders", removed)
 
+    async def prune_cloud_images() -> None:
+        from app.render import tiles
+
+        removed = await asyncio.to_thread(tiles.prune_cloud_images)
+        if removed:
+            log.info("prune_cloud_images: %d images", removed)
+
     async def fit_corrections() -> None:
         from app.services import measured
 
@@ -474,6 +481,14 @@ def start(app: FastAPI) -> AsyncIOScheduler | None:
         prune_prediction,
         CronTrigger(hour=21, minute=40),
         id="prune_prediction",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        prune_cloud_images,
+        CronTrigger(hour=21, minute=50),
+        id="prune_cloud_images",
+        next_run_time=datetime.now(UTC) + timedelta(seconds=60),
         max_instances=1,
         coalesce=True,
     )
