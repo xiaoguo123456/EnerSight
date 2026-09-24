@@ -64,6 +64,7 @@ preview-stop:
 test:
 	pnpm -r test
 	cd packages/server && uv run pytest -q
+	bash deploy/tests/test-cleanup-images.sh
 
 lint:
 	pnpm -r typecheck
