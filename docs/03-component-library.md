@@ -759,6 +759,30 @@ AI分析报告数据摘要（发电量 / 等效利用小时 / CO₂减排 / 收�
 
 每项含主值 + 辅助说明。
 
+### TradeBrief
+
+交易晨报摘要卡。数据来自 `/v1/predictions/fleet/signals`，不要求用户录入交易数据。
+
+- 展示预测变化、重点时段、模型一致性和最新起报时间
+- 保留“平台目录估算”口径
+- 支持打开省级供给地图和生成分享卡片
+
+### PowerRiskRadar
+
+站点首页的未来 4 小时功率雷达。
+
+- 读取既有 15 分钟功率预测，显示 16 个时间点
+- 预警存在时显示预警等级，否则按区间波动幅度显示稳定或需关注
+- 不对预测数据做二次计算，峰谷只用于展示
+
+### ProvinceSupplyPanel
+
+全部电站首页的省级供给排行。直接复用 `FleetDay.regions`，点击省份进入地图筛选。
+
+### ShareCard
+
+交易晨报分享图片弹层。由 Canvas 绘制当前数据，优先调用平台分享能力，不支持时保存到相册。
+
 
 ---
 
@@ -902,6 +926,10 @@ AI报告卡。
 | MetricGrid | ● | ● | | ● | ● | ● |
 | TrendChart | ● | | | | ● | |
 | ForecastSpread | ● | | | | | |
+| TradeBrief | ● | | | | | |
+| PowerRiskRadar | ● | | | | | |
+| ProvinceSupplyPanel | ● | | | | | |
+| ShareCard | ● | | | | | |
 | RecordSheet | ● | | | | ●（实测对账） | |
 | AlertBanner | ● | | | | | |
 | QuickEntryGrid | ● | | | | ● | |

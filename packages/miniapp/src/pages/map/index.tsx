@@ -2,7 +2,7 @@ import { useAppShare } from '@/hooks/useAppShare'
 import { Map, View, Text, Input, Image, Slider } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
-import { formatBeijingTime, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
+import { formatBeijingTime, formatEnergy, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
 import { mapRegionPhase } from '@enersight/core/map'
 import type { CatalogPlant, FleetPrediction, GeoPlace, ProvinceBoundsResponse } from '@enersight/core/types'
 import {
@@ -347,7 +347,7 @@ export default function MapPage() {
           </View>
         )}
 
-        {supplyMap && supplyDay && <View className="map-page__supply"><View className="map-page__supply-head"><Text>省级新能源供给 · {supplyDay.date.slice(5).replace('-', '/')}</Text><View onClick={() => setSupplyMap(false)}><Icon name="x" size={15} color="#64748b" /></View></View>{[...(supplyDay.regions ?? [])].filter(r => r.province !== '地区待补充').sort((a, b) => b.energy_kwh - a.energy_kwh).slice(0, 5).map((r, i) => <View className="map-page__supply-row" key={r.province} onClick={() => setProvinceFocus([r.province])}><Text className="map-page__supply-rank">{i + 1}</Text><Text className="map-page__supply-name">{r.province}</Text><Text className="map-page__supply-value">{formatPower(r.covered_capacity_kw ?? 0).value} kW · {formatPower(r.energy_kwh / 24).value} kW</Text><Icon name="chevronRight" size={12} color="#9ca3af" /></View>)}</View>}
+        {supplyMap && supplyDay && <View className="map-page__supply"><View className="map-page__supply-head"><Text>省级新能源供给 · {supplyDay.date.slice(5).replace('-', '/')}</Text><View onClick={() => setSupplyMap(false)}><Icon name="x" size={15} color="#64748b" /></View></View>{[...(supplyDay.regions ?? [])].filter(r => r.province !== '地区待补充').sort((a, b) => b.energy_kwh - a.energy_kwh).slice(0, 5).map((r, i) => { const capacity = formatPower(r.covered_capacity_kw ?? 0); const energy = formatEnergy(r.energy_kwh); return <View className="map-page__supply-row" key={r.province} onClick={() => setProvinceFocus([r.province])}><Text className="map-page__supply-rank">{i + 1}</Text><Text className="map-page__supply-name">{r.province}</Text><Text className="map-page__supply-value">容量 {capacity.value} {capacity.unit} · 日电量 {energy.value} {energy.unit}</Text><Icon name="chevronRight" size={12} color="#9ca3af" /></View> })}</View>}
 
 
         <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />
