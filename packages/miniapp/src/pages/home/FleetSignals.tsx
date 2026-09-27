@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { formatBeijingTime, formatEnergy, powerChartUnit } from '@enersight/core/format'
 import type { FleetSignalResponse } from '@enersight/core/types'
 import { api } from '@/api'
-import { Icon, InfoTip, Skeleton, TrendChart } from '@/components'
+import { Icon, InfoTip, Skeleton, TradeBrief, TrendChart } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
 import { useMapStore } from '@/store'
 import { servedModel } from '@/store/weatherModel'
@@ -46,13 +46,14 @@ function Change({ label, percent }: { label: string; percent: number | null | un
 }
 
 /** 同目标日、同场站样本的签发变化；只读留档，游客可看。docs/20 */
-export function FleetSignals({ date, model, provinces, fallbackProvince, onProvince, refreshKey }: {
+export function FleetSignals({ date, model, provinces, fallbackProvince, onProvince, refreshKey, onShare }: {
   date: string
   model: Parameters<typeof servedModel>[0]
   provinces: string[]
   fallbackProvince?: string
   onProvince: (province: string) => void
   refreshKey: string
+  onShare?: (data: FleetSignalResponse) => void
 }) {
   const scope = provinces.join(',')
   const [open, setOpen] = useState(false)
@@ -74,7 +75,9 @@ export function FleetSignals({ date, model, provinces, fallbackProvince, onProvi
   const unit = powerChartUnit(chart.flatMap(h => [h.current_kw, h.previous_kw]))
   const details = data?.evolution ?? []
 
-  return <View className="home__card fleet-signal">
+  return <>
+    {data && <TradeBrief data={data} date={date} scopeLabel={scope || undefined} onShare={onShare ? () => onShare(data) : undefined} />}
+    <View className="home__card fleet-signal">
     <View className="fleet-signal__head">
       <View className="fleet-signal__title"><Icon name="lineChart" size={18} color="#1677ff" /><Text>风光变化 · {dateText(date)}</Text><InfoTip title="风光变化口径" content="对同一目标日、同一批目录场站的两次签发进行比较。只反映平台目录样本的气象预测变化，不代表全省实际出力或可交易电量。逐小时变化由 15 分钟插值曲线聚合；上升红、下降绿仅表示方向。" /></View>
       <Button className="forecast-action" onClick={() => setOpen(v => !v)}>{open ? '收起' : '详情'} <Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} /></Button>
@@ -130,5 +133,6 @@ export function FleetSignals({ date, model, provinces, fallbackProvince, onProvi
       <View className="fleet-signal__tool" role="button" onClick={() => void Taro.switchTab({ url: '/pages/alert/index' })}><Icon name="cloud" size={15} /><Text>站点短临</Text></View>
     </View>
     {data && <Text className="fleet-signal__foot">平台目录估算 · {data.generated_at ? `${formatBeijingTime(data.generated_at)} 更新` : '等待签发'}</Text>}
-  </View>
+    </View>
+  </>
 }

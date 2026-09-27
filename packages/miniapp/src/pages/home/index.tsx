@@ -3,14 +3,14 @@ import { Button, Picker, Switch, View, Text } from '@tarojs/components'
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
 import { powerChartUnit, powerCsv, thousands, formatBeijingTime, formatPercent, formatRadiation, formatTemperature, formatUtilization, formatWindSpeed, formatPower } from '@enersight/core/format'
-import type { DailyOutlook, EnsembleSummary, FleetDay, FleetPrediction, ForecastBasis, GenerationPrediction, StationOutlook, StationSummary } from '@enersight/core/types'
+import type { DailyOutlook, EnsembleSummary, FleetDay, FleetPrediction, FleetSignalResponse, ForecastBasis, GenerationPrediction, StationOutlook, StationSummary } from '@enersight/core/types'
 import { api } from '@/api'
 import { homeApi } from '@/api/home'
 import { stationsApi } from '@/api/stations'
-import { AlertBanner, ErrorState, ForecastSpread, Icon, InfoTip, MetricCard, MetricGrid, OutlookStrip, PageTitleBar, RecordSheet, SectionHeader, SegmentedTabs, Skeleton, StationTitleBar, TrendChart, dayLabel } from '@/components'
+import { AlertBanner, ErrorState, ForecastSpread, Icon, InfoTip, MetricCard, MetricGrid, OutlookStrip, PageTitleBar, PowerRiskRadar, ProvinceSupplyPanel, RecordSheet, SectionHeader, SegmentedTabs, ShareCard, Skeleton, StationTitleBar, TrendChart, dayLabel } from '@/components'
 import { ApiError } from '@enersight/core/api'
 import { useRequest } from '@/hooks/useRequest'
-import { useStationStore } from '@/store'
+import { useMapStore, useStationStore } from '@/store'
 import { servedModel, useWeatherModel, WEATHER_MODELS, weatherModelLabel } from '@/store/weatherModel'
 import { StationTrend } from '@/components/StationTrend'
 import { exportCsv } from '@/utils/exportCsv'
@@ -266,6 +266,7 @@ export default function Home() {
   const [stationDay, setStationDay] = useState(0)
   // 气象趋势默认展开，收起只在本次浏览内有效
   const [trendOpen, setTrendOpen] = useState(true)
+  const [shareData, setShareData] = useState<FleetSignalResponse | null>(null)
   const toggleTrend = () => setTrendOpen(v => !v)
   // 省级限电参考默认关；本站与全部电站共用一个开关
   const [provinceOn, setProvinceOnState] = useState(() => { try { return Taro.getStorageSync(PROVINCE_GRID_KEY) === true } catch { return false } })
@@ -276,6 +277,8 @@ export default function Home() {
   useDidShow(() => { setVisible(true); setVersion(v => v + 1) })
   useDidHide(() => setVisible(false))
   const currentId = useStationStore(s => s.currentId)
+  const setMapLayer = useMapStore(s => s.setActiveLayer)
+  const setProvinceFocus = useMapStore(s => s.setProvinceFocus)
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId, model])
   const outlook = useRequest(() => home.data?.station ? stationsApi.outlook(home.data.station.id, 7) : Promise.resolve(null), [home.data?.station?.id])
   const refreshStation = async () => { await Promise.all([home.reload(), outlook.reload()]); setVersion(v => v + 1) }
@@ -334,6 +337,12 @@ export default function Home() {
     if (!provinces.length && next.length) void Taro.pageScrollTo({ scrollTop: 0, duration: 0 })
     applyProvinces(next)
   }
+  const openSupplyMap = (province?: string) => {
+    const names = province ? [province] : provinces.length ? provinces : regions.slice(0, 1).map(r => r.province).filter(p => p !== UNKNOWN_REGION)
+    setMapLayer('cloud')
+    setProvinceFocus(names)
+    void Taro.switchTab({ url: '/pages/map/index' })
+  }
   return <View className="home">
     {scope === 'station' && station ? <StationTitleBar name={station.name} status={station.status} own={station.is_own} compact address={stationMeta} onSwitch={() => Taro.switchTab({ url: '/pages/station/index' })} /> : <PageTitleBar title={scope === 'fleet' ? '全目录发电预测' : '发电预测'} />}
     <View className="home__body">
@@ -346,6 +355,7 @@ export default function Home() {
       {scope === 'station' ? <>
         {home.status === 'error' ? <ErrorState error={home.error} onRetry={home.reload} /> : d?.has_station === false ? <View className="home__card"><Text>选择或添加一座电站，开始查看预测</Text><Button className="forecast-action" onClick={() => Taro.switchTab({ url: '/pages/station/index' })}>选择电站</Button></View> : !d || !station ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
           <StationForecast key={`${station.id}-${model}`} station={station} p={p} version={version} req={outlook} onReload={refreshStation} refreshError={!!home.refreshError} generatedAt={p?.generated_at} selected={stationDay} onSelect={setStationDay} provinceOn={provinceOn} onProvince={setProvinceOn} onRecord={station.is_own ? () => setRecording(true) : undefined} />
+          {stationDay === 0 && <PowerRiskRadar day={outlook.data?.days?.[0]} alert={d.alert} capacityKw={station.capacity} />}
           {d.alert && <AlertBanner title={d.alert.title} description={d.alert.description} onMore={() => Taro.switchTab({ url: '/pages/alert/index' })} />}
           {weather && <View className="home__card home__weather"><SectionHeader icon="cloudSun" title="气象依据" info={{ title: '气象依据', content: '取当前 15 分钟时段的预报值：气温、10 米风速、云量为瞬时值，辐射为对应区间的平均值。发电适宜度按全天气象条件估算，只反映气象，不含设备状态与限电。' }} /><MetricGrid>
             <MetricCard icon="cloudSun" label="天气" metric={formatTemperature(weather.temperature.value)} caption={weather.weather_text ?? undefined} />
@@ -361,10 +371,13 @@ export default function Home() {
       </> : <>
         {fleet.status === 'error' ? <ErrorState error={fleet.error} onRetry={fleet.reload} /> : !f ? <View className="home__card"><Skeleton height={220} lines={3} /></View> : <>
           {!!provinces.length && <RegionFilter names={provinces} onRemove={regionClick} onClear={() => applyProvinces([])} />}
-          {selectedFleet && <FleetSignals date={selectedFleet.date} model={model} provinces={provinces} fallbackProvince={regions.find(r => station?.address?.startsWith(r.province))?.province} onProvince={regionClick} refreshKey={f.generated_at} />}
+          {selectedFleet && <FleetSignals date={selectedFleet.date} model={model} provinces={provinces} fallbackProvince={regions.find(r => station?.address?.startsWith(r.province))?.province} onProvince={regionClick} refreshKey={f.generated_at} onShare={setShareData} />}
           {scopeKey && scoped.status === 'error' ? <ErrorState error={scoped.error} onRetry={scoped.reload} />
             : !shownFleet ? <View className="home__card"><Skeleton height={220} lines={3} /></View>
-            : <FleetForecast f={shownFleet} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={reloadFleet} refreshError={!!(scopeKey ? scoped.refreshError : fleet.refreshError)} provinceOn={provinceOn} onProvince={setProvinceOn} scopeLabel={scopeText(provinces)} onHistory={openHistory} />}
+            : <>
+              <FleetForecast f={shownFleet} selected={fleetDay} onSelect={setFleetDay} version={version} onReload={reloadFleet} refreshError={!!(scopeKey ? scoped.refreshError : fleet.refreshError)} provinceOn={provinceOn} onProvince={setProvinceOn} scopeLabel={scopeText(provinces)} onHistory={openHistory} />
+              {selectedFleet && <ProvinceSupplyPanel day={selectedFleet} onMap={() => openSupplyMap()} onProvince={openSupplyMap} />}
+            </>}
           {!!regions.length && <View className="home__card"><SectionHeader icon="map" title={`区域贡献 · ${selectedFleet ? fmtDate(selectedFleet) : '今日'}`} info={{ title: '区域贡献', content: '按电站所在省份汇总已覆盖电站的日电量，仅含已计算的电站。点击地区即在本页筛选，可多选，再点取消；清除后回到全国。省份不详的一档不参与筛选。' }} />{(showAllRegions ? regions : regions.slice(0,6)).map(r => {
             const on = provinces.includes(r.province)
             return <View className={`forecast-region${on ? ' forecast-region--on' : ''}`} key={r.province} hoverClass="pressed" onClick={() => regionClick(r.province)}>
@@ -376,5 +389,6 @@ export default function Home() {
       </>}
     </View>
     {station?.is_own && <RecordSheet stationId={station.id} capacityKw={station.capacity} visible={recording} onClose={() => setRecording(false)} onDone={s => { void refreshStation(); if (s.entries.some(e => e.status === 'pending')) setTimeout(() => void refreshStation(), 8000) }} />}
+    <ShareCard data={shareData} date={shareData?.date ?? ''} visible={!!shareData} onClose={() => setShareData(null)} />
   </View>
 }
