@@ -4,11 +4,12 @@ import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import { formatBeijingTime, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
 import { mapRegionPhase } from '@enersight/core/map'
-import type { CatalogPlant, GeoPlace, ProvinceBoundsResponse } from '@enersight/core/types'
+import type { CatalogPlant, FleetPrediction, GeoPlace, ProvinceBoundsResponse } from '@enersight/core/types'
 import {
   EmptyState, Icon, MapLayerControl, MapLegend, MetricCard, MetricGrid, Skeleton, StatusBadge,
 } from '@/components'
 import type { MapLayer } from '@/components'
+import { api } from '@/api'
 import { geoApi } from '@/api/geo'
 import { homeApi } from '@/api/home'
 import { layersApi } from '@/api/layers'
@@ -18,7 +19,7 @@ import { useMapViewport } from '@/hooks/useMapViewport'
 import { getSafeArea } from '@/hooks/useSafeArea'
 import { useRequest } from '@/hooks/useRequest'
 import { useMapStore, useStationStore } from '@/store'
-import { useWeatherModel } from '@/store/weatherModel'
+import { servedModel, useWeatherModel } from '@/store/weatherModel'
 import './index.scss'
 import { WindParticles } from '@/components/WindParticles'
 
@@ -39,6 +40,8 @@ export default function MapPage() {
   const model = useWeatherModel(s => s.model)
   const activeLayer = useMapStore((s) => s.activeLayer)
   const cloudMode = useMapStore((s) => s.cloudMode)
+  const supplyMap = useMapStore((s) => s.supplyMap)
+  const setSupplyMap = useMapStore((s) => s.setSupplyMap)
   const setCloudMode = useMapStore((s) => s.setCloudMode)
   const provinceFocus = useMapStore((s) => s.provinceFocus)
   const setProvinceFocus = useMapStore((s) => s.setProvinceFocus)
@@ -59,6 +62,7 @@ export default function MapPage() {
     setCloudMode('auto')
     setProvinceFocus([])
     setSatelliteScope(null)
+    setSupplyMap(false)
   })
   const [collapsed, setCollapsed] = useState(() => {
     try { const saved = Taro.getStorageSync(PANEL_KEY); return typeof saved === 'boolean' ? saved : true } catch { return true }
@@ -81,6 +85,7 @@ export default function MapPage() {
   const safe = getSafeArea()
   const currentId = useStationStore((s) => s.currentId)
   const req = useRequest(() => homeApi.mapOverview(currentId ?? undefined), [currentId])
+  const supplyReq = useRequest(() => supplyMap ? api.get<FleetPrediction>('/v1/predictions/fleet', { weather_model: servedModel(model) }) : Promise.resolve(null), [supplyMap, model])
 
   useEffect(() => { setPicked(null) }, [currentId])
   useDidShow(() => { setPageVisible(true); setPicked(null); setCloudPlaying(true) })
@@ -91,6 +96,7 @@ export default function MapPage() {
   const viewport = useMapViewport('main-map', station, currentId)
   const center = viewport.camera
   const scale = center.scale
+  const supplyDay = supplyReq.data?.days?.[1] ?? null
 
   useEffect(() => {
     if (!pageVisible || !provinceFocus) return
@@ -340,6 +346,8 @@ export default function MapPage() {
             ))}
           </View>
         )}
+
+        {supplyMap && supplyDay && <View className="map-page__supply"><View className="map-page__supply-head"><Text>省级新能源供给 · {supplyDay.date.slice(5).replace('-', '/')}</Text><View onClick={() => setSupplyMap(false)}><Icon name="x" size={15} color="#64748b" /></View></View>{[...(supplyDay.regions ?? [])].filter(r => r.province !== '地区待补充').sort((a, b) => b.energy_kwh - a.energy_kwh).slice(0, 5).map((r, i) => <View className="map-page__supply-row" key={r.province} onClick={() => setProvinceFocus([r.province])}><Text className="map-page__supply-rank">{i + 1}</Text><Text className="map-page__supply-name">{r.province}</Text><Text className="map-page__supply-value">{formatPower(r.covered_capacity_kw ?? 0).value} kW · {formatPower(r.energy_kwh / 24).value} kW</Text><Icon name="chevronRight" size={12} color="#9ca3af" /></View>)}</View>}
 
 
         <MapLayerControl onOpenChange={setLayerPanelOpen} value={layer} onChange={(value) => { if (value === layer) void overlay.refresh(); setLayer(value); if (value !== 'station') saveLayer(value) }} />

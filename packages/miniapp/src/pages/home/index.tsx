@@ -279,6 +279,7 @@ export default function Home() {
   const currentId = useStationStore(s => s.currentId)
   const setMapLayer = useMapStore(s => s.setActiveLayer)
   const setProvinceFocus = useMapStore(s => s.setProvinceFocus)
+  const setSupplyMap = useMapStore(s => s.setSupplyMap)
   const home = useRequest(() => homeApi.get(currentId ?? undefined), [currentId, model])
   const outlook = useRequest(() => home.data?.station ? stationsApi.outlook(home.data.station.id, 7) : Promise.resolve(null), [home.data?.station?.id])
   const refreshStation = async () => { await Promise.all([home.reload(), outlook.reload()]); setVersion(v => v + 1) }
@@ -340,6 +341,7 @@ export default function Home() {
   const openSupplyMap = (province?: string) => {
     const names = province ? [province] : provinces.length ? provinces : regions.slice(0, 1).map(r => r.province).filter(p => p !== UNKNOWN_REGION)
     setMapLayer('cloud')
+    setSupplyMap(true)
     setProvinceFocus(names)
     void Taro.switchTab({ url: '/pages/map/index' })
   }
