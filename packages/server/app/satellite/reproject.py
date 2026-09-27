@@ -48,3 +48,10 @@ def to_png(rgb: np.ndarray) -> bytes:
     buf = io.BytesIO()
     Image.fromarray(rgb, "RGB").save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+def to_jpeg(rgb: np.ndarray, quality: int = 85) -> bytes:
+    """省域地图贴图：缩小传输体积，保留连续云纹理。"""
+    buf = io.BytesIO()
+    Image.fromarray(rgb, "RGB").save(buf, format="JPEG", quality=quality, optimize=True)
+    return buf.getvalue()

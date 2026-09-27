@@ -1,6 +1,7 @@
 """把一块网格渲染成 PNG。CPU 密集，调用方放进 executor。docs/05 §6.2"""
 
 import io
+import time
 from pathlib import Path
 
 import numpy as np
@@ -57,3 +58,22 @@ def write_tile(path: Path, png: bytes) -> None:
 def tile_dir() -> Path:
     _TILE_DIR.mkdir(parents=True, exist_ok=True)
     return _TILE_DIR
+
+
+def prune_cloud_images(max_age_hours: int = 48, now: float | None = None) -> int:
+    """只清理省域卫星影像；不触碰其他图层、预警云图或归档。"""
+    root = _TILE_DIR / "cloud-image"
+    if not root.exists():
+        return 0
+    cutoff = (now if now is not None else time.time()) - max_age_hours * 3600
+    removed = 0
+    for path in root.rglob("*"):
+        if path.suffix not in {".jpg", ".png"}:
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except FileNotFoundError:
+            continue
+    return removed

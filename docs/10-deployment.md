@@ -368,7 +368,7 @@ Buffalo 内存限额已从 3g 提到 3900m（机器共 3,915 MB、另有 2 GB sw
 4. 上传自身 Compose 与脚本，通过 SSH 拉镜像和更新 API。
 5. 等待 Docker 健康状态以及 `/ready` 数据库就绪检查，成功后将镜像写入 `.release.env`，上一版本写入 `.previous-release.env`。
 
-发布使用 GitHub concurrency 和服务器 `flock` 双重串行。没有 `latest` 标签，也不执行全局 `docker prune`、其他项目 `compose down` 或全局容器重启。
+发布使用 GitHub concurrency 和服务器 `flock` 双重串行。没有 `latest` 标签，也不执行全局 `docker prune`、其他项目 `compose down` 或全局容器重启。发布前及成功后只清理 EnerSight 仓库中不再用于当前或上一健康版本的旧镜像，包含带历史提交标签及无标签的镜像；保留版本按镜像摘要识别。清理失败会报警但不将已成功的发布判为失败。
 
 日常手工查看：
 
@@ -488,6 +488,7 @@ Nginx 直出需要同步 `deploy/gateway/docker-compose.yml` 和 `services/eners
 新增只读挂载 `/opt/enersight/data/tiles:/srv/enersight-tiles:ro`。先更新挂载并重建网关，
 再验证 `nginx -t` 与 PNG 可访问；勿只更新 alias 而遗漏挂载。未启用直出时 FastAPI `/tiles`
 仍能提供相同图片，但会占用 API 静态文件请求。现有后端发布工作流不会自动修改共用网关。
+省域卫星影像位于 `data/tiles/cloud-image/`，定时任务每日清理 48 小时前生成的 JPG/旧 PNG；测试与生产共用这一保留规则，防止历史帧回放长期堆积。
 
 验收应包含：当前三个图层成果已就绪、全国/新疆视野、PNG 透明缺测、热缓存响应、
 小程序真机地面覆盖层与模拟器显示；不能只以 `/ready` 成功判断地图发布完成。

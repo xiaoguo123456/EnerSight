@@ -123,12 +123,12 @@ export function FleetSignals({ date, model, provinces, fallbackProvince, onProvi
           <Text className="fleet-signal__section-title">模型分歧</Text>
           {data.model_range ? <><Text className="fleet-signal__model-range">{energyRange(data.model_range.low_kwh, data.model_range.high_kwh)} · {data.model_range.members.length} 个模型</Text><Text className="fleet-signal__model-list">{data.model_range.members.map(m => `${MODELS[m.model] ?? m.model} ${energyText(m.energy_kwh)}`).join(' · ')}</Text></> : <Text className="fleet-signal__state">暂无同日可比模型</Text>}
         </View>
-        <View className="fleet-signal__tools">
-          <View className="fleet-signal__tool" role="button" onClick={showCloud}><Icon name="satellite" size={15} /><Text>卫星云图</Text></View>
-          <View className="fleet-signal__tool" role="button" onClick={() => void Taro.switchTab({ url: '/pages/alert/index' })}><Icon name="cloud" size={15} /><Text>站点短临</Text></View>
-        </View>
       </View>}
-      <Text className="fleet-signal__foot">平台目录估算 · {data.generated_at ? `${formatBeijingTime(data.generated_at)} 更新` : '等待签发'}</Text>
     </>}
+    <View className="fleet-signal__tools">
+      <View className="fleet-signal__tool" role="button" onClick={showCloud}><Icon name="satellite" size={15} /><Text>卫星云图</Text></View>
+      <View className="fleet-signal__tool" role="button" onClick={() => void Taro.switchTab({ url: '/pages/alert/index' })}><Icon name="cloud" size={15} /><Text>站点短临</Text></View>
+    </View>
+    {data && <Text className="fleet-signal__foot">平台目录估算 · {data.generated_at ? `${formatBeijingTime(data.generated_at)} 更新` : '等待签发'}</Text>}
   </View>
 }

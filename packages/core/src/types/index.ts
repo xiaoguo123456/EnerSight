@@ -49,6 +49,7 @@ export type CatalogSearchResponse = S['CatalogSearchResponse']
 
 export type LayerType = S['LayerType']
 export type LayerResponse = S['LayerResponse']
+export type MapCloudHistoryResponse = S['MapCloudHistoryResponse']
 export type LayerImage = S['LayerImage']
 export type Legend = S['Legend']
 export type SatelliteCloudResponse = S['SatelliteCloudResponse']

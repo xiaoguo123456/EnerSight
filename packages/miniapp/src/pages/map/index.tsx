@@ -1,5 +1,5 @@
 import { useAppShare } from '@/hooks/useAppShare'
-import { Map, View, Text, Input, Image } from '@tarojs/components'
+import { Map, View, Text, Input, Image, Slider } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import { formatBeijingTime, formatPower, formatRadiation, formatTemperature, formatWindSpeed } from '@enersight/core/format'
@@ -11,6 +11,7 @@ import {
 import type { MapLayer } from '@/components'
 import { geoApi } from '@/api/geo'
 import { homeApi } from '@/api/home'
+import { layersApi } from '@/api/layers'
 import { useCatalogMarkers } from '@/hooks/useCatalogMarkers'
 import { useMapLayer } from '@/hooks/useMapLayer'
 import { useMapViewport } from '@/hooks/useMapViewport'
@@ -47,8 +48,14 @@ export default function MapPage() {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false)
   const [pageVisible, setPageVisible] = useState(true)
   const [satelliteScope, setSatelliteScope] = useState<ProvinceBoundsResponse['bounds'] | null>(null)
+  const [cloudTimes, setCloudTimes] = useState<string[]>([])
+  const [cloudIndex, setCloudIndex] = useState(0)
+  const [cloudPlaying, setCloudPlaying] = useState(true)
   useDidHide(() => {
     setPageVisible(false)
+    setCloudPlaying(false)
+    setCloudTimes([])
+    setCloudIndex(0)
     setCloudMode('auto')
     setProvinceFocus([])
     setSatelliteScope(null)
@@ -76,7 +83,7 @@ export default function MapPage() {
   const req = useRequest(() => homeApi.mapOverview(currentId ?? undefined), [currentId])
 
   useEffect(() => { setPicked(null) }, [currentId])
-  useDidShow(() => { setPageVisible(true); setPicked(null) })
+  useDidShow(() => { setPageVisible(true); setPicked(null); setCloudPlaying(true) })
   const sheetHeight = picked ? 120 : req.status !== 'success' ? 172 : collapsed ? 68 : SHEET_HEIGHT
   const station = req.data?.station
   const index = req.data?.index
@@ -86,7 +93,7 @@ export default function MapPage() {
   const scale = center.scale
 
   useEffect(() => {
-    if (!pageVisible || !provinceFocus || req.status === 'loading') return
+    if (!pageVisible || !provinceFocus) return
     let cancelled = false
     const focus = provinceFocus
     const run = async () => {
@@ -105,11 +112,66 @@ export default function MapPage() {
     }
     void run()
     return () => { cancelled = true }
-  }, [pageVisible, provinceFocus?.id, req.status, sheetHeight, viewport.fitBounds, consumeProvinceFocus])
+  }, [pageVisible, provinceFocus?.id, sheetHeight, viewport.fitBounds, consumeProvinceFocus])
 
   // 「站点」图层只显示 marker，不贴图
   const dataLayer = layer === 'station' ? null : layer
-  const overlay = useMapLayer('main-map', dataLayer, pageVisible && req.status === 'success' && !provinceFocus, cloudMode, satelliteScope)
+  const satelliteActive = pageVisible && dataLayer === 'cloud' && cloudMode === 'satellite' && !!satelliteScope && !provinceFocus
+  const frameAt = satelliteActive && cloudTimes.length && cloudIndex < cloudTimes.length - 1 ? cloudTimes[cloudIndex]! : null
+  const overlay = useMapLayer('main-map', dataLayer, pageVisible && (req.status === 'success' || satelliteActive) && !provinceFocus, cloudMode, satelliteScope, frameAt)
+  const historyLoaded = useRef('')
+  const prefetchedFrame = useRef('')
+  const failedFrames = useRef(new Set<string>())
+  const attemptedFrame = useRef(0)
+  useEffect(() => { if (satelliteActive && overlay.loading) attemptedFrame.current = cloudIndex }, [satelliteActive, overlay.loading, cloudIndex])
+  useEffect(() => {
+    if (!satelliteActive) { historyLoaded.current = ''; failedFrames.current.clear(); setCloudTimes([]); return }
+    if (!overlay.observedAt) return
+    const key = `${satelliteScope!.sw.latitude}:${satelliteScope!.sw.longitude}:${satelliteScope!.ne.latitude}:${satelliteScope!.ne.longitude}`
+    if (historyLoaded.current === key) return
+    historyLoaded.current = key
+    let cancelled = false
+    let completed = false
+    void layersApi.history().then(({ times }) => {
+      if (cancelled) return
+      completed = true
+      const visible = times.filter(t => Date.parse(t) <= Date.parse(overlay.observedAt!))
+      setCloudTimes(visible)
+      setCloudIndex(Math.max(0, visible.length - 1))
+    }).catch(() => { if (!cancelled) { historyLoaded.current = ''; setCloudTimes([]) } })
+    return () => { cancelled = true; if (!completed && historyLoaded.current === key) historyLoaded.current = '' }
+  }, [satelliteActive, overlay.observedAt, satelliteScope?.sw.latitude, satelliteScope?.sw.longitude, satelliteScope?.ne.latitude, satelliteScope?.ne.longitude])
+  useEffect(() => {
+    if (!satelliteActive || overlay.loading || overlay.error || cloudTimes.length < 2) return
+    if (frameAt && Date.parse(overlay.observedAt ?? '') !== Date.parse(frameAt)) return
+    const next = cloudTimes[(cloudIndex + 1) % cloudTimes.length]
+    if (!next || cloudIndex === cloudTimes.length - 2 || prefetchedFrame.current === next) return
+    prefetchedFrame.current = next
+    const scope = satelliteScope!
+    void layersApi.get('cloud', {
+      west: scope.sw.longitude, south: scope.sw.latitude,
+      east: scope.ne.longitude, north: scope.ne.latitude,
+    }, 8, 'satellite', next).then(response => {
+      const url = response.frames[0]?.images[0]?.url
+      if (url) return Taro.getImageInfo({ src: url })
+    }).catch(() => { if (prefetchedFrame.current === next) prefetchedFrame.current = '' })
+  }, [satelliteActive, cloudTimes, cloudIndex, frameAt, overlay.loading, overlay.error, overlay.observedAt, satelliteScope])
+  useEffect(() => {
+    if (!satelliteActive || !cloudPlaying || !overlay.error || !overlay.observedAt || cloudTimes.length < 2 || attemptedFrame.current !== cloudIndex) return
+    const at = cloudTimes[cloudIndex]!
+    failedFrames.current.add(at)
+    if (failedFrames.current.size >= 3) { setCloudPlaying(false); return }
+    const timer = setTimeout(() => setCloudIndex(i => (i + 1) % cloudTimes.length), 1200)
+    return () => clearTimeout(timer)
+  }, [satelliteActive, cloudPlaying, cloudTimes, cloudIndex, overlay.error, overlay.observedAt])
+  useEffect(() => {
+    if (!satelliteActive || !cloudPlaying || overlay.loading || overlay.error || cloudTimes.length < 2) return
+    if (frameAt && Date.parse(overlay.observedAt ?? '') !== Date.parse(frameAt)) return
+    failedFrames.current.clear()
+    const delay = cloudIndex === cloudTimes.length - 1 ? 2200 : 1200
+    const timer = setTimeout(() => setCloudIndex(i => (i + 1) % cloudTimes.length), delay)
+    return () => clearTimeout(timer)
+  }, [satelliteActive, cloudPlaying, cloudTimes, cloudIndex, frameAt, overlay.loading, overlay.error, overlay.observedAt])
   // 公开电站 marker：任何图层下都显示，视野内最多 100 个
   useEffect(() => { const timer = setTimeout(() => void overlay.viewportChanged(), 250); return () => clearTimeout(timer) }, [center.latitude, center.longitude, scale, sheetHeight])
   const catalog = useCatalogMarkers('main-map', true, scale)
@@ -287,9 +349,15 @@ export default function MapPage() {
             title: '图层数据', showCancel: false,
             content: `${overlay.sourceLabel || '卫星云图'}\n${formatBeijingTime(overlay.observedAt)}（北京时间）\n${overlay.attribution}\n${overlay.coverage}${overlay.stale ? '\n当前显示缓存预报' : ''}`,
           })
-        }}><Text>{overlay.loading ? '图层加载中…' : overlay.error ? (dataLayer === 'cloud' && cloudMode === 'satellite' ? /卫星视野过大/.test(overlay.errorMessage) ? '卫星视野过大 · 放大后重试' : '卫星实况不可用 · 重试' : /正在后台准备/.test(overlay.errorMessage) ? '图层准备中 · 重试' : '图层暂不可用 · 重试') : overlay.observedAt ? `${overlay.modelName || overlay.sourceLabel || '云图'} · ${formatBeijingTime(overlay.observedAt).slice(-5)}${overlay.stale ? ' · 缓存' : ''} ⓘ` : '等待图层数据'}</Text></View>}
+        }}><Text>{overlay.error ? (dataLayer === 'cloud' && cloudMode === 'satellite' ? /卫星视野过大/.test(overlay.errorMessage) ? '卫星视野过大 · 放大后重试' : '卫星实况不可用 · 重试' : /正在后台准备/.test(overlay.errorMessage) ? '图层准备中 · 重试' : '图层暂不可用 · 重试') : overlay.observedAt ? `${overlay.modelName || overlay.sourceLabel || '云图'} · ${formatBeijingTime(overlay.observedAt).slice(-5)}${overlay.loading ? ' · 加载中' : overlay.stale ? ' · 缓存' : ''} ⓘ` : '图层加载中…'}</Text></View>}
 
-        {overlay.legend && !overlay.loading && !overlay.error && !picked && (
+        {satelliteActive && cloudTimes.length > 1 && <View className="map-page__cloud-player" style={{ bottom: `${sheetHeight + 12}px` }}>
+          <View className="map-page__cloud-play" role="button" aria-label={cloudPlaying ? '暂停云图' : '播放云图'} hoverClass="pressed" onClick={() => setCloudPlaying(v => !v)}><Text>{cloudPlaying ? '暂停' : '播放'}</Text></View>
+          <Slider className="map-page__cloud-slider" min={0} max={cloudTimes.length - 1} step={1} value={cloudIndex} blockSize={16} activeColor="#1677ff" backgroundColor="#dbe6f4" onChanging={() => setCloudPlaying(false)} onChange={e => { setCloudPlaying(false); setCloudIndex(e.detail.value) }} />
+          <Text className="map-page__cloud-time">{cloudTimes[cloudIndex] ? formatBeijingTime(cloudTimes[cloudIndex]!).slice(-5) : '—'}</Text>
+        </View>}
+
+        {overlay.legend && !satelliteActive && !overlay.loading && !overlay.error && !picked && (
           <View className="map-page__legend" style={{ bottom: `${sheetHeight + 12}px` }}>
             <MapLegend
               spec={{

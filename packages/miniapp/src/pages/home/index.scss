@@ -187,7 +187,7 @@
   &__model-range { display: block; color: var(--color-text); font-size: var(--font-metric-sm); font-weight: 600; }
   &__model-list { display: block; margin-top: var(--space-1); }
   &__tools { flex-wrap: wrap; gap: var(--space-1) var(--space-2); border-top: 1px solid var(--color-divider); padding-top: var(--space-1); }
-  &__tool { gap: var(--space-1); min-height: var(--size-control); padding: 0 var(--space-1); color: var(--color-primary); font-size: var(--font-caption); @include pressable; }
+  &__tool { flex: 1; justify-content: center; gap: var(--space-1); min-height: var(--size-control); padding: 0 var(--space-1); color: var(--color-primary); font-size: var(--font-caption); @include pressable; }
   &__foot { display: block; border-top: 1px solid var(--color-divider); padding-top: var(--space-2); }
 }
 
