@@ -1,0 +1,17 @@
+.power-risk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  &__head, &__title, &__range { display: flex; align-items: center; }
+  &__head, &__range { justify-content: space-between; gap: var(--space-2); }
+  &__title { gap: var(--space-1); color: var(--color-text); font-size: var(--font-module-title); font-weight: 700; }
+  &__level { font-size: var(--font-caption); font-weight: 700; }
+  &__track { display: flex; align-items: flex-end; gap: 3px; height: 58px; padding: 7px 4px 0; border-bottom: 1px solid var(--color-divider); }
+  &__bar { flex: 1; min-width: 2px; max-width: 12px; border-radius: 3px 3px 0 0; opacity: .85; }
+  &__range { color: var(--color-text-sub); font-size: 10px; }
+  &__range text:not(:first-child) { color: var(--color-text); }
+  &__note { color: var(--color-text-sub); font-size: var(--font-caption); line-height: 1.5; }
+}

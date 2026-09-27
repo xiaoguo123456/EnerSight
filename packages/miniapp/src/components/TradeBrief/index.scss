@@ -1,0 +1,30 @@
+.trade-brief {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-card);
+  background: linear-gradient(135deg, #f7fbff 0%, #ffffff 72%);
+  border: 1px solid #e7f0fb;
+
+  &__head, &__title, &__actions, &__metrics, &__signal, &__foot {
+    display: flex;
+    align-items: center;
+  }
+  &__head, &__foot { justify-content: space-between; gap: var(--space-2); }
+  &__title { gap: var(--space-1); color: var(--color-text); font-size: var(--font-module-title); font-weight: 700; }
+  &__actions { gap: var(--space-1); }
+  &__action { min-height: 28px; padding: 0 6px; margin: 0; border: 0; border-radius: var(--radius-thumb); background: #edf5ff; color: var(--color-primary); font-size: var(--font-caption); line-height: 28px; }
+  &__action::after { border: 0; }
+  &__scope, &__foot { color: var(--color-text-sub); font-size: var(--font-caption); }
+  &__headline { color: var(--color-text); font-size: var(--font-body); font-weight: 600; line-height: 1.55; }
+  &__metrics { gap: 0; border-top: 1px solid var(--color-divider); border-bottom: 1px solid var(--color-divider); }
+  &__metrics > view { flex: 1; min-width: 0; padding: var(--space-2) var(--space-1); }
+  &__metrics > view + view { border-left: 1px solid var(--color-divider); padding-left: var(--space-2); }
+  &__label { display: block; color: var(--color-text-sub); font-size: var(--font-caption); }
+  &__value { display: block; margin-top: 2px; color: var(--color-text); font-size: var(--font-body); font-weight: 700; white-space: nowrap; }
+  &__signals { display: flex; flex-direction: column; gap: 5px; }
+  &__signal { gap: 5px; color: var(--color-text); font-size: var(--font-caption); line-height: 1.4; }
+  &__foot { padding-top: var(--space-1); border-top: 1px solid var(--color-divider); }
+  @include pressable;
+}

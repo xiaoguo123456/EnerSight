@@ -11,9 +11,11 @@ let nextFocusId = 0
 interface MapState {
   activeLayer: LayerType
   cloudMode: 'auto' | 'satellite'
+  supplyMap: boolean
   provinceFocus: { id: number; names: string[] } | null
   setActiveLayer: (l: LayerType) => void
   setCloudMode: (mode: 'auto' | 'satellite') => void
+  setSupplyMap: (open: boolean) => void
   setProvinceFocus: (names: string[]) => void
   consumeProvinceFocus: (id: number) => void
   restore: () => void
@@ -22,12 +24,14 @@ interface MapState {
 export const useMapStore = create<MapState>((set) => ({
   activeLayer: 'cloud',
   cloudMode: 'auto',
+  supplyMap: false,
   provinceFocus: null,
   setActiveLayer: (l) => {
     Taro.setStorageSync(LAYER_KEY, l)
     set({ activeLayer: l })
   },
   setCloudMode: (cloudMode) => set({ cloudMode }),
+  setSupplyMap: (supplyMap) => set({ supplyMap }),
   setProvinceFocus: (names) => set({ provinceFocus: names.length ? { id: ++nextFocusId, names } : null }),
   consumeProvinceFocus: (id) => set(state => ({ provinceFocus: state.provinceFocus?.id === id ? null : state.provinceFocus })),
   restore: () => {
