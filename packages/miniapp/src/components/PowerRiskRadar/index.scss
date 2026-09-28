@@ -11,6 +11,9 @@
   &__level { font-size: var(--font-caption); font-weight: 700; }
   &__track { display: flex; align-items: flex-end; gap: 3px; height: 58px; padding: 7px 4px 0; border-bottom: 1px solid var(--color-divider); }
   &__bar { flex: 1; min-width: 2px; max-width: 12px; border-radius: 3px 3px 0 0; opacity: .85; }
+  &__axis { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-sub); font-size: 10px; }
+  &__axis-note { flex-shrink: 0; }
+  &__ticks { display: flex; flex: 1; justify-content: space-between; min-width: 0; }
   &__range { color: var(--color-text-sub); font-size: 10px; }
   &__range text:not(:first-child) { color: var(--color-text); }
   &__note { color: var(--color-text-sub); font-size: var(--font-caption); line-height: 1.5; }

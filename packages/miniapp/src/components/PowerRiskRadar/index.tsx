@@ -21,11 +21,13 @@ export function PowerRiskRadar({ day, alert, capacityKw }: { day: DailyOutlook |
   const trough = points.reduce((best, p) => (p.value! < best.value! ? p : best), points[0]!)
   const peakPower = formatPower(peak.value)
   const troughPower = formatPower(trough.value)
+  const axisTicks = points.filter((_, index) => index % 4 === 0)
   return <View className="power-risk">
     <View className="power-risk__head"><View className="power-risk__title"><Icon name="zap" size={17} color={color} /><Text>未来 4 小时功率风险</Text></View><Text className="power-risk__level" style={{ color }}>{level}</Text></View>
     <View className="power-risk__track">
       {points.map((point, index) => <View className="power-risk__bar" key={point.time} style={{ height: `${Math.max(12, ((point.value ?? 0) / Math.max(max, 1)) * 100)}%`, backgroundColor: index === 0 ? color : '#9fc4f7' }} />)}
     </View>
+    <View className="power-risk__axis"><Text className="power-risk__axis-note">时间 · 每柱 15 分钟</Text><View className="power-risk__ticks">{axisTicks.map((point) => <Text key={point.time}>{time(point.time)}</Text>)}</View></View>
     <View className="power-risk__range"><Text>{time(points[0]!.time)} 起</Text><Text>峰值 {peakPower.value} {peakPower.unit} · {time(peak.time)}</Text><Text>低点 {troughPower.value} {troughPower.unit} · {time(trough.time)}</Text></View>
     {alert ? <Text className="power-risk__note">{alert.title} · {alert.description}</Text> : <Text className="power-risk__note">区间变化约 {spread.toFixed(1)}% 装机，曲线来自当前预测批次</Text>}
   </View>
