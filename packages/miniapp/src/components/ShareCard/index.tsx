@@ -44,5 +44,5 @@ export function ShareCard({ data, date, visible, onClose }: { data: FleetSignalR
     }
   }
   if (!visible || !data) return null
-  return <View className="share-card-modal"><View className="share-card-modal__mask" onClick={onClose} /><View className="share-card-modal__panel"><Text className="share-card-modal__title">分享晨报</Text><Canvas canvasId={canvasId} className="share-card-modal__canvas" width="600" height="840" /><View className="share-card-modal__actions"><Button className="share-card-modal__cancel" onClick={onClose}>取消</Button><Button className="share-card-modal__confirm" onClick={() => void exportCard()}>生成图片</Button></View></View></View>
+  return <View className="share-card-modal"><View className="share-card-modal__mask" onClick={onClose} /><View className="share-card-modal__panel"><Text className="share-card-modal__title">分享晨报</Text><View className="share-card-modal__canvas-wrap"><Canvas canvasId={canvasId} className="share-card-modal__canvas" width="600" height="840" /></View><View className="share-card-modal__actions"><Button className="share-card-modal__cancel" onClick={onClose}>取消</Button><Button className="share-card-modal__confirm" onClick={() => void exportCard()}>生成图片</Button></View></View></View>
 }
