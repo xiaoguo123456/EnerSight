@@ -22,7 +22,7 @@ export function ShareCard({ data, date, visible, onClose }: { data: FleetSignalR
     ctx.setFontSize(42); ctx.fillText(energy(data.combined?.current_kwh), 68, 320)
     ctx.setFillStyle('#64748b'); ctx.setFontSize(20); ctx.fillText(`较上一轮 ${data.combined?.change_percent == null ? '暂无可比变化' : `${data.combined.change_percent > 0 ? '+' : ''}${data.combined.change_percent.toFixed(1)}%`}`, 68, 356)
     ctx.setFillStyle('#eff5ff'); ctx.fillRect(68, 402, 464, 110)
-    ctx.setFillStyle('#1f2937'); ctx.setFontSize(22); ctx.fillText('预测分歧', 92, 442)
+    ctx.setFillStyle('#1f2937'); ctx.setFontSize(22); ctx.fillText('模型分歧', 92, 442)
     ctx.setFontSize(30); ctx.fillText(data.model_range?.spread_percent == null ? '暂无' : `${data.model_range.spread_percent.toFixed(1)}%`, 92, 484)
     ctx.setFillStyle('#64748b'); ctx.setFontSize(19); ctx.fillText(data.top_windows.length ? `重点时段 ${data.top_windows[0]!.start_hour.slice(11, 16)}–${data.top_windows[0]!.end_hour.slice(11, 16)}` : '暂无重点变化时段', 68, 584)
     ctx.setFillStyle('#9ca3af'); ctx.setFontSize(17); ctx.fillText(data.generated_at ? `${formatBeijingTime(data.generated_at)} 更新` : '等待今日签发', 68, 744)

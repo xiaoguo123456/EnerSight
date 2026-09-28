@@ -100,7 +100,7 @@ export function FleetSignals({ date, model, provinces, fallbackProvince, onProvi
         <Text className="fleet-signal__section-title">重点时段</Text>
         {data.top_windows.map(item => <View className="fleet-signal__row" key={item.start_hour}>
           <Text>{hourText(item.start_hour)}–{hourText(item.end_hour)}</Text>
-          <Text className={`fleet-signal__delta fleet-signal__delta--${direction(item.change_capacity_percent)}`}>{item.change_capacity_percent > 0 ? '↑' : '↓'} {Math.abs(item.change_capacity_percent).toFixed(1)}% 装机</Text>
+          <Text className={`fleet-signal__delta fleet-signal__delta--${direction(item.change_capacity_percent)}`}>预测功率 {item.change_capacity_percent > 0 ? '↑' : '↓'} {Math.abs(item.change_capacity_percent).toFixed(1)}%（按装机）</Text>
         </View>)}
       </View>}
 
