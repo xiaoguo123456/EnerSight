@@ -7,7 +7,7 @@ import './index.scss'
 
 function energy(value: number | null | undefined) { const v = formatEnergy(value); return `${v.value} ${v.unit}` }
 
-/** 生成轻量的交易晨报图片；不上传服务端，图片只留在用户本机。 */
+/** 生成轻量的交易预测简报图片；不上传服务端，图片只留在用户本机。 */
 export function ShareCard({ data, date, visible, onClose }: { data: FleetSignalResponse | null; date: string; visible: boolean; onClose: () => void }) {
   const canvasId = useRef(`share-card-${Math.random().toString(36).slice(2)}`).current
   useEffect(() => {
@@ -16,7 +16,7 @@ export function ShareCard({ data, date, visible, onClose }: { data: FleetSignalR
     ctx.setFillStyle('#f5f9fc'); ctx.fillRect(0, 0, 600, 840)
     ctx.setFillStyle('#ffffff'); ctx.fillRect(32, 32, 536, 776)
     ctx.setFillStyle('#1f2937'); ctx.setFontSize(34); ctx.fillText('晴川观象', 68, 104)
-    ctx.setFillStyle('#64748b'); ctx.setFontSize(20); ctx.fillText('新能源供给晨报', 68, 140)
+    ctx.setFillStyle('#64748b'); ctx.setFontSize(20); ctx.fillText('新能源供给预测简报', 68, 140)
     ctx.setFillStyle('#1677ff'); ctx.setFontSize(24); ctx.fillText(date.slice(5).replace('-', '/') + ' 公开目录预测', 68, 192)
     ctx.setFillStyle('#1f2937'); ctx.setFontSize(22); ctx.fillText('预计电量', 68, 264)
     ctx.setFontSize(42); ctx.fillText(energy(data.combined?.current_kwh), 68, 320)
@@ -44,5 +44,5 @@ export function ShareCard({ data, date, visible, onClose }: { data: FleetSignalR
     }
   }
   if (!visible || !data) return null
-  return <View className="share-card-modal"><View className="share-card-modal__mask" onClick={onClose} /><View className="share-card-modal__panel"><Text className="share-card-modal__title">分享晨报</Text><View className="share-card-modal__canvas-wrap"><Canvas canvasId={canvasId} className="share-card-modal__canvas" width="600" height="840" /></View><View className="share-card-modal__actions"><Button className="share-card-modal__cancel" onClick={onClose}>取消</Button><Button className="share-card-modal__confirm" onClick={() => void exportCard()}>生成图片</Button></View></View></View>
+  return <View className="share-card-modal"><View className="share-card-modal__mask" onClick={onClose} /><View className="share-card-modal__panel"><Text className="share-card-modal__title">分享预测简报</Text><View className="share-card-modal__canvas-wrap"><Canvas canvasId={canvasId} className="share-card-modal__canvas" width="600" height="840" /></View><View className="share-card-modal__actions"><Button className="share-card-modal__cancel" onClick={onClose}>取消</Button><Button className="share-card-modal__confirm" onClick={() => void exportCard()}>生成图片</Button></View></View></View>
 }

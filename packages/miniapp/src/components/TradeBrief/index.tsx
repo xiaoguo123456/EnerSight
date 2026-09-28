@@ -30,7 +30,7 @@ function headline(data: FleetSignalResponse) {
 }
 
 /**
- * 不需要合同或价格数据的交易晨报：只描述新能源供给、预报分歧和变化时段。
+ * 不需要合同或价格数据的交易预测简报：只描述新能源供给、预报分歧和变化时段。
  * 数字均来自全目录已有签发快照，避免给出没有结算依据的金额结论。
  */
 export function TradeBrief({
@@ -48,7 +48,7 @@ export function TradeBrief({
   const revision = latest && previous ? latest.energy_kwh - previous.energy_kwh : null
   return <View className="trade-brief">
     <View className="trade-brief__head">
-      <View className="trade-brief__title"><Icon name="barChart" size={17} color="#1677ff" /><Text>交易晨报 · {date.slice(5).replace('-', '/')}</Text><InfoTip title="交易晨报口径" content="交易晨报只比较平台公开电站目录对同一目标日的预测变化。预测电量是目录样本合计；较上一轮是同一批场站、同一模型的最新签发变化；模型分歧是可比模型之间的电量范围。重点时段的百分比按目录装机容量归一化。它不代表实际并网电量、限电结果、成交电价或报价建议。" /></View>
+      <View className="trade-brief__title"><Icon name="barChart" size={17} color="#1677ff" /><Text>交易预测简报 · {date.slice(5).replace('-', '/')}</Text><InfoTip title="交易预测简报口径" content="交易预测简报只比较平台公开电站目录对同一目标日的预测变化。预测电量是目录样本合计；较上一轮是同一批场站、同一模型的最新签发变化；模型分歧是可比模型之间的电量范围。重点时段的百分比按目录装机容量归一化。它不代表实际并网电量、限电结果、成交电价或报价建议。" /></View>
       <View className="trade-brief__actions">
         {onShare && <Button className="trade-brief__action" onClick={onShare}>分享</Button>}
         {onSupplyMap && <Button className="trade-brief__action" onClick={onSupplyMap}>供给地图</Button>}
