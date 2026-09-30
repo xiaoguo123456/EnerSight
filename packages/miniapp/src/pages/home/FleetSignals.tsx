@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { formatBeijingTime, formatEnergy, powerChartUnit } from '@enersight/core/format'
 import type { FleetSignalResponse } from '@enersight/core/types'
 import { api } from '@/api'
+import { alertsApi } from '@/api/alerts'
 import { Icon, InfoTip, Skeleton, TradeBrief, TrendChart } from '@/components'
 import { useRequest } from '@/hooks/useRequest'
-import { useMapStore } from '@/store'
+import { useMapStore, useStationStore } from '@/store'
 import { servedModel } from '@/store/weatherModel'
 
 const MODELS: Record<string, string> = {
@@ -57,9 +58,11 @@ export function FleetSignals({ date, model, provinces, fallbackProvince, onProvi
 }) {
   const scope = provinces.join(',')
   const [open, setOpen] = useState(false)
+  const [nowcastLoading, setNowcastLoading] = useState(false)
   const setLayer = useMapStore(s => s.setActiveLayer)
   const setCloudMode = useMapStore(s => s.setCloudMode)
   const setProvinceFocus = useMapStore(s => s.setProvinceFocus)
+  const currentStationId = useStationStore(s => s.currentId)
   const req = useRequest(() => api.get<FleetSignalResponse>('/v1/predictions/fleet/signals', {
     date, weather_model: servedModel(model), ...(scope ? { provinces: scope } : {}),
   }), [date, model, scope, refreshKey])
@@ -70,6 +73,35 @@ export function FleetSignals({ date, model, provinces, fallbackProvince, onProvi
     setCloudMode('satellite')
     setProvinceFocus(provinces.length ? provinces : fallbackProvince ? [fallbackProvince] : [])
     void Taro.switchTab({ url: '/pages/map/index' })
+  }
+  const showNowcast = async () => {
+    if (nowcastLoading) return
+    setNowcastLoading(true)
+    let title = '站点短临'
+    let content = '当前未触发预警\n卫星短临暂未发现影响信号'
+    try {
+      const current = await alertsApi.current(currentStationId ?? undefined)
+      title = `${current.station.name} · 站点短临`
+      const motion = current.cloud_motion
+      content = motion
+        ? `云团距站点 ${motion.distance_km} km\n移动方向 ${motion.direction_detail || motion.direction}\n预计约 ${motion.impact_in_minutes} 分钟后影响`
+        : current.alert
+          ? `${current.alert.title}\n${current.alert.description}`
+          : current.satellite_status === 'unavailable'
+            ? '当前未触发预警\n卫星短临数据暂不可用'
+            : '当前未触发预警\n卫星短临暂未发现影响信号'
+    } catch {
+      content = '短临数据暂不可用\n可前往预警页查看其他站点信息'
+    } finally {
+      setNowcastLoading(false)
+    }
+    const answer = await Taro.showModal({
+      title,
+      content,
+      confirmText: '查看详情',
+      cancelText: '留在首页',
+    })
+    if (answer.confirm) void Taro.switchTab({ url: '/pages/alert/index' })
   }
   const chart = data?.hours ?? []
   const unit = powerChartUnit(chart.flatMap(h => [h.current_kw, h.previous_kw]))
@@ -130,7 +162,7 @@ export function FleetSignals({ date, model, provinces, fallbackProvince, onProvi
     </>}
     <View className="fleet-signal__tools">
       <View className="fleet-signal__tool" role="button" onClick={showCloud}><Icon name="satellite" size={15} /><Text>卫星云图</Text></View>
-      <View className="fleet-signal__tool" role="button" onClick={() => void Taro.switchTab({ url: '/pages/alert/index' })}><Icon name="cloud" size={15} /><Text>站点短临</Text></View>
+      <View className="fleet-signal__tool" role="button" onClick={() => void showNowcast()}><Icon name="cloud" size={15} /><Text>{nowcastLoading ? '加载中' : '站点短临'}</Text></View>
     </View>
     {data && <Text className="fleet-signal__foot">平台目录估算 · {data.generated_at ? `${formatBeijingTime(data.generated_at)} 更新` : '等待签发'}</Text>}
     </View>
